@@ -2,26 +2,83 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Light mode (default) ──────────────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-base: #f5f7fa;
+  --bg-card: #ffffff;
+  --bg-sidebar: #f0f3f8;
+  --bg-elevated: #ffffff;
+  --text-primary: #111827;
+  --text-muted: #6b7a99;
+  --border: #dde3ef;
+
+  --accent-cyan: #0ea5e9;
+  --accent-amber: #f59e0b;
+  --accent-green: #10b981;
+  --accent-red: #ef4444;
+
+  --chart-1: #0ea5e9;
+  --chart-2: #f59e0b;
+  --chart-3: #818cf8;
+  --chart-4: #34d399;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─── Dark mode ─────────────────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --bg-base: #0d1117;
+  --bg-card: #151c28;
+  --bg-sidebar: #0a0e18;
+  --bg-elevated: #1a2336;
+  --text-primary: #dde6f4;
+  --text-muted: #8899b4;
+  --border: #1e2d40;
+
+  --accent-cyan: #38bdf8;
+  --accent-amber: #fbbf24;
+  --accent-green: #34d399;
+  --accent-red: #f87171;
+
+  --chart-1: #38bdf8;
+  --chart-2: #fbbf24;
+  --chart-3: #a78bfa;
+  --chart-4: #34d399;
+}
+
+/* ─── Base styles ───────────────────────────────────────────────────────────── */
+html,
+body {
+  height: 100%;
 }
 
 body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+/* ─── Scrollbar styling ─────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ─── Selection ─────────────────────────────────────────────────────────────── */
+::selection {
+  background-color: var(--accent-cyan);
+  color: var(--bg-base);
 }

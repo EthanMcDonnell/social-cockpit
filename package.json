@@ -3,24 +3,34 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "NODE_ENV=development next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.97.0",
+    "@tanstack/react-virtual": "^3.13.23",
+    "better-sqlite3": "^12.9.0",
+    "clsx": "^2.1.1",
+    "next": "14.2.35",
+    "next-themes": "^0.3.0",
     "react": "^18",
     "react-dom": "^18",
-    "next": "14.2.35"
+    "recharts": "^2.15.4",
+    "tailwind-merge": "^2.6.1"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@tanstack/react-query-devtools": "^5.97.0",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "postcss": "^8",
-    "tailwindcss": "^3.4.1",
+    "autoprefixer": "^10.4.27",
     "eslint": "^8",
-    "eslint-config-next": "14.2.35"
+    "eslint-config-next": "14.2.35",
+    "postcss": "^8.5.9",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5"
   }
 }
