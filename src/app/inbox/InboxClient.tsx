@@ -1,32 +1,19 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { clsx } from "clsx";
 import { useMedia } from "@/hooks/useMedia";
 import { PostList } from "@/components/inbox/PostList";
 import { CommentThread, CommentThreadHeader } from "@/components/inbox/CommentThread";
-import { AutomationsPanel } from "@/components/inbox/AutomationsPanel";
 
 export function InboxClient() {
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
-  const [showAutomations, setShowAutomations] = useState(false);
-  const [activeAutomationPostIds, setActiveAutomationPostIds] = useState<Set<string>>(new Set());
 
   const { data: mediaData, isLoading: mediaLoading } = useMedia({ all: true });
   const posts = mediaData?.data ?? [];
 
-  const handleAutomationActivity = useCallback((postId: string, hasActive: boolean) => {
-    setActiveAutomationPostIds((prev) => {
-      const next = new Set(prev);
-      if (hasActive) next.add(postId);
-      else next.delete(postId);
-      return next;
-    });
-  }, []);
-
   function handleSelect(postId: string) {
     setSelectedPostId(postId);
-    setShowAutomations(false);
   }
 
   return (
@@ -44,7 +31,6 @@ export function InboxClient() {
           <PostList
             posts={posts}
             selectedPostId={selectedPostId}
-            activeAutomationPostIds={activeAutomationPostIds}
             onSelect={handleSelect}
             loading={mediaLoading}
           />
@@ -63,34 +49,10 @@ export function InboxClient() {
               ← Posts
             </button>
             <CommentThreadHeader postId={selectedPostId} />
-            <span className="flex-1" />
-            <button
-              onClick={() => setShowAutomations((v) => !v)}
-              className={clsx(
-                "flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl transition-colors",
-                showAutomations
-                  ? "bg-[var(--accent-amber)]/15 text-[var(--accent-amber)] border border-[var(--accent-amber)]/30"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border)]/50 border border-transparent"
-              )}
-            >
-              <span>⚡</span>
-              <span>Automations</span>
-            </button>
           </div>
 
-          <div className="flex-1 overflow-hidden flex">
-            <div className="flex-1 overflow-hidden flex flex-col">
-              <CommentThread postId={selectedPostId} />
-            </div>
-
-            {showAutomations && (
-              <div className="w-72 border-l border-[var(--border)] shrink-0 overflow-hidden flex flex-col">
-                <AutomationsPanel
-                  postId={selectedPostId}
-                  onActivityChange={handleAutomationActivity}
-                />
-              </div>
-            )}
+          <div className="flex-1 overflow-hidden flex flex-col">
+            <CommentThread postId={selectedPostId} />
           </div>
         </div>
       ) : (

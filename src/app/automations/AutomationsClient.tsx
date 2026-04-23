@@ -14,13 +14,29 @@ import type { InstagramMedia } from "@/lib/instagram/types";
 
 // ─── Default config ────────────────────────────────────────────────────────────
 
-const DEFAULT_CONFIG: CommentToDmConfig = {
+const FALLBACK_CONFIG: CommentToDmConfig = {
+  comment_replies: [
+    "Check your DMs! 📩",
+    "Sent you a DM! 🙌",
+    "Just DM'd you the details! 💬",
+  ],
   initial_message:
-    "Hey! Thanks for your comment — I'll DM you the details right now.",
-  not_following_message:
-    "To receive the link, please follow us first! Once you do, just reply here and I'll send it over.",
-  following_message: "Thanks for following! Here's your link: {{link}}",
+    "Hey! Thanks for your comment — here's the link: https://",
 };
+
+const DEFAULT_CONFIG_KEY = "automation_default_config";
+
+function loadDefaultConfig(): CommentToDmConfig {
+  try {
+    const raw = localStorage.getItem(DEFAULT_CONFIG_KEY);
+    if (raw) return { ...FALLBACK_CONFIG, ...JSON.parse(raw) };
+  } catch {}
+  return { ...FALLBACK_CONFIG };
+}
+
+function saveDefaultConfig(config: CommentToDmConfig) {
+  localStorage.setItem(DEFAULT_CONFIG_KEY, JSON.stringify(config));
+}
 
 // ─── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -294,6 +310,76 @@ function MessageField({
   );
 }
 
+// ─── Comment replies field ─────────────────────────────────────────────────────
+
+function CommentRepliesField({
+  replies,
+  onChange,
+}: {
+  replies: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+
+  function add() {
+    const trimmed = draft.trim();
+    if (trimmed && !replies.includes(trimmed)) onChange([...replies, trimmed]);
+    setDraft("");
+  }
+
+  function remove(i: number) {
+    onChange(replies.filter((_, idx) => idx !== i));
+  }
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-[10px] text-text-muted uppercase tracking-wider font-medium">
+        Comment replies <span className="normal-case">(one chosen at random)</span>
+      </label>
+      <div className="space-y-1.5">
+        {replies.map((r, i) => (
+          <div key={i} className="flex items-start gap-2 group">
+            <input
+              value={r}
+              onChange={(e) => {
+                const next = [...replies];
+                next[i] = e.target.value;
+                onChange(next);
+              }}
+              className="flex-1 text-xs bg-bg-base border border-border rounded-xl px-3 py-2 text-text-primary focus:outline-none focus:border-accent-cyan/50 transition-colors"
+            />
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="mt-2 text-text-muted hover:text-accent-red transition-colors opacity-0 group-hover:opacity-100"
+            >
+              <IconX />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+          placeholder="Add a reply option…"
+          className="flex-1 text-xs bg-bg-base border border-border rounded-xl px-3 py-2 text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-accent-cyan/50 transition-colors"
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={!draft.trim()}
+          className="px-3 py-2 rounded-xl text-xs font-medium bg-bg-card border border-border text-text-muted hover:text-accent-cyan hover:border-accent-cyan/40 disabled:opacity-40 transition-colors"
+        >
+          Add
+        </button>
+      </div>
+      <p className="text-[10px] text-text-muted/55">Use {"{{username}}"} for the commenter&apos;s name.</p>
+    </div>
+  );
+}
+
 // ─── Video selector ────────────────────────────────────────────────────────────
 
 function VideoSelector({
@@ -307,7 +393,8 @@ function VideoSelector({
   const items = data?.data ?? [];
 
   function thumb(m: InstagramMedia) {
-    return m.thumbnail_url ?? m.media_url ?? null;
+    if (m.media_type === "IMAGE") return m.media_url ?? null;
+    return m.thumbnail_url ?? null;
   }
 
   return (
@@ -336,26 +423,29 @@ function VideoSelector({
             Any post
           </button>
           {items.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => onChange(m.id)}
-              title={m.caption?.slice(0, 80) ?? m.id}
-              className={clsx(
-                "flex-shrink-0 w-16 h-16 rounded-xl border overflow-hidden transition-all",
-                selectedId === m.id
-                  ? "border-accent-cyan ring-1 ring-accent-cyan/50"
-                  : "border-border hover:border-border/80"
-              )}
-            >
-              {thumb(m) ? (
-                <img src={thumb(m)!} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-bg-card flex items-center justify-center text-[10px] text-text-muted">
-                  {m.media_type === "REEL" ? "Reel" : "Post"}
-                </div>
-              )}
-            </button>
+            <div key={m.id} className="flex-shrink-0 flex flex-col items-center gap-1 w-16">
+              <button
+                type="button"
+                onClick={() => onChange(m.id)}
+                className={clsx(
+                  "w-16 h-16 rounded-xl border overflow-hidden transition-all",
+                  selectedId === m.id
+                    ? "border-accent-cyan ring-1 ring-accent-cyan/50"
+                    : "border-border hover:border-border/80"
+                )}
+              >
+                {thumb(m) ? (
+                  <img src={thumb(m)!} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-bg-card flex items-center justify-center text-[10px] text-text-muted">
+                    {m.media_type === "REEL" ? "Reel" : "Post"}
+                  </div>
+                )}
+              </button>
+              <p className="text-[9px] text-text-muted/60 text-center leading-tight line-clamp-2 w-full">
+                {m.caption?.slice(0, 30) ?? m.media_type}
+              </p>
+            </div>
           ))}
         </div>
       )}
@@ -393,12 +483,12 @@ function FlowEditor({
     flow?.trigger_keywords ?? ["LINK"]
   );
   const [config, setConfig] = useState<CommentToDmConfig>(
-    flow?.config ?? { ...DEFAULT_CONFIG }
+    flow?.config ?? loadDefaultConfig()
   );
   const [mediaId, setMediaId] = useState<string | undefined>(flow?.media_id);
   const [error, setError] = useState<string | null>(null);
 
-  function updateConfig(key: keyof CommentToDmConfig, value: string) {
+  function updateConfig(key: keyof CommentToDmConfig, value: string | string[]) {
     setConfig((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -406,9 +496,7 @@ function FlowEditor({
     setError(null);
     if (!name.trim()) { setError("Flow name is required"); return; }
     if (keywords.length === 0) { setError("At least one trigger keyword is required"); return; }
-    if (!config.initial_message.trim()) { setError("Initial message is required"); return; }
-    if (!config.not_following_message.trim()) { setError("Not-following message is required"); return; }
-    if (!config.following_message.trim()) { setError("Reward message is required"); return; }
+    if (!config.initial_message.trim()) { setError("Message is required"); return; }
     onSave({ name: name.trim(), trigger_keywords: keywords, config, media_id: mediaId });
   }
 
@@ -450,51 +538,24 @@ function FlowEditor({
 
       <Connector />
 
-      {/* ── Step 2: Send initial DM ── */}
-      <StepCard icon={<IconDM />} label="Send DM" color="amber">
-        <MessageField
-          label="Initial message"
-          value={config.initial_message}
-          onChange={(v) => updateConfig("initial_message", v)}
-          placeholder="Hey! Thanks for your comment..."
-          hint="Use {{username}} to include the commenter's name."
+      {/* ── Step 2: Reply to comment ── */}
+      <StepCard icon={<IconComment />} label="Reply to comment" color="purple">
+        <CommentRepliesField
+          replies={config.comment_replies ?? []}
+          onChange={(v) => updateConfig("comment_replies", v)}
         />
       </StepCard>
 
       <Connector />
 
-      {/* ── Step 3: Wait for reply ── */}
-      <StepCard icon={<IconWait />} label="Wait for reply" color="purple" readonly />
-
-      <Connector />
-
-      {/* ── Step 4: Check follow ── */}
-      <StepCard icon={<IconFollow />} label="Check follow status" color="green">
-        <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-widest text-text-muted/60 font-medium">
-            If not following
-          </p>
-          <MessageField
-            label=""
-            value={config.not_following_message}
-            onChange={(v) => updateConfig("not_following_message", v)}
-            placeholder="Please follow us first, then reply here!"
-            focusColor="red"
-          />
-        </div>
-      </StepCard>
-
-      <Connector label="if following" />
-
-      {/* ── Step 5: Send reward message ── */}
-      <StepCard icon={<IconSend />} label="Send message / URL" color="indigo">
+      {/* ── Step 3: Send DM ── */}
+      <StepCard icon={<IconDM />} label="Send DM" color="amber">
         <MessageField
-          label="Reward message"
-          value={config.following_message}
-          onChange={(v) => updateConfig("following_message", v)}
-          placeholder="Here's your link: {{link}}"
-          focusColor="green"
-          hint="Use {{link}} for your URL and {{username}} for the person's name."
+          label="Message"
+          value={config.initial_message}
+          onChange={(v) => updateConfig("initial_message", v)}
+          placeholder="Hey! Here's the link: https://..."
+          hint="Type your URL directly in the message. Use {{username}} for the commenter's name."
         />
       </StepCard>
 
@@ -531,6 +592,49 @@ function FlowEditor({
 // ─── Template picker ───────────────────────────────────────────────────────────
 
 function TemplatePicker({ onSelect }: { onSelect: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [config, setConfig] = useState<CommentToDmConfig>(loadDefaultConfig);
+  const [saved, setSaved] = useState(false);
+
+  function handleSave() {
+    saveDefaultConfig(config);
+    setSaved(true);
+    setTimeout(() => { setSaved(false); setEditing(false); }, 1200);
+  }
+
+  if (editing) {
+    return (
+      <div className="flex-1 overflow-y-auto px-8 py-6 max-w-lg mx-auto w-full">
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={() => setEditing(false)} className="text-text-muted hover:text-text-primary transition-colors">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <path d="M12.5 4L6 10l6.5 6" />
+            </svg>
+          </button>
+          <h2 className="text-xs font-semibold text-text-muted uppercase tracking-widest">Edit default template</h2>
+        </div>
+        <div className="space-y-4">
+          <CommentRepliesField
+            replies={config.comment_replies ?? []}
+            onChange={(v) => setConfig((c) => ({ ...c, comment_replies: v }))}
+          />
+          <MessageField
+            label="DM message"
+            value={config.initial_message}
+            onChange={(v) => setConfig((c) => ({ ...c, initial_message: v }))}
+            hint="Type your URL directly in the message. Use {{username}} for the commenter's name."
+          />
+          <button
+            onClick={handleSave}
+            className="w-full text-sm font-medium px-4 py-2.5 rounded-xl bg-accent-cyan text-bg-base hover:opacity-90 transition-opacity"
+          >
+            {saved ? "Saved!" : "Save default template"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8 py-12">
       <div className="w-full max-w-sm space-y-4">
@@ -541,33 +645,46 @@ function TemplatePicker({ onSelect }: { onSelect: () => void }) {
           <p className="text-xs text-text-muted">Start with a pre-built flow.</p>
         </div>
 
-        <button
-          onClick={onSelect}
-          className="w-full text-left p-4 rounded-2xl border border-border hover:border-accent-cyan/40 hover:bg-accent-cyan/[0.04] transition-all group"
-        >
-          <div className="flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-accent-cyan/10 border border-accent-cyan/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-accent-cyan">
-                <path d="M17.5 12.5a2.5 2.5 0 0 1-2.5 2.5H5.833L2.5 17.5V5a2.5 2.5 0 0 1 2.5-2.5h10a2.5 2.5 0 0 1 2.5 2.5v7.5z" />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-text-primary group-hover:text-accent-cyan transition-colors">
-                Comment to DM
-              </p>
-              <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
-                Keyword in comment → DM → wait for reply → check follow → send link or ask to follow first.
-              </p>
-              <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
-                {["Keyword trigger", "DM", "Follow check", "Branch"].map((tag) => (
-                  <span key={tag} className="text-[10px] px-2 py-0.5 rounded bg-bg-card border border-border text-text-muted">
-                    {tag}
-                  </span>
-                ))}
+        <div className="rounded-2xl border border-border overflow-hidden">
+          <button
+            onClick={onSelect}
+            className="w-full text-left p-4 hover:bg-accent-cyan/[0.04] transition-all group"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-accent-cyan/10 border border-accent-cyan/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-accent-cyan">
+                  <path d="M17.5 12.5a2.5 2.5 0 0 1-2.5 2.5H5.833L2.5 17.5V5a2.5 2.5 0 0 1 2.5-2.5h10a2.5 2.5 0 0 1 2.5 2.5v7.5z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-text-primary group-hover:text-accent-cyan transition-colors">
+                  Comment to DM
+                </p>
+                <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+                  Keyword in comment → DM → wait for reply → check follow → send link or ask to follow first.
+                </p>
+                <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                  {["Keyword trigger", "DM", "Follow check", "Branch"].map((tag) => (
+                    <span key={tag} className="text-[10px] px-2 py-0.5 rounded bg-bg-card border border-border text-text-muted">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
+          </button>
+          <div className="border-t border-border px-4 py-2 flex justify-end bg-bg-base">
+            <button
+              onClick={() => setEditing(true)}
+              className="text-[11px] text-text-muted hover:text-accent-cyan transition-colors flex items-center gap-1"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" />
+              </svg>
+              Edit default messages
+            </button>
           </div>
-        </button>
+        </div>
       </div>
     </div>
   );
@@ -580,11 +697,17 @@ function FlowRow({
   isSelected,
   onSelect,
   onToggle,
+  onDelete,
+  mediaThumbnail,
+  mediaCaption,
 }: {
   flow: AutomationFlow;
   isSelected: boolean;
   onSelect: () => void;
   onToggle: () => void;
+  onDelete: () => void;
+  mediaThumbnail?: string | null;
+  mediaCaption?: string | null;
 }) {
   return (
     <button
@@ -597,10 +720,22 @@ function FlowRow({
       )}
     >
       <div className="flex items-start gap-2.5">
+        {flow.media_id && (
+          <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-bg-base border border-border">
+            {mediaThumbnail ? (
+              <img src={mediaThumbnail} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-[9px] text-text-muted">Post</div>
+            )}
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <p className={clsx("text-sm font-medium truncate", isSelected ? "text-accent-cyan" : "text-text-primary")}>
             {flow.name}
           </p>
+          {mediaCaption && (
+            <p className="text-[10px] text-text-muted/60 truncate mt-0.5">{mediaCaption}</p>
+          )}
           <div className="flex items-center gap-1 mt-1.5 flex-wrap">
             {flow.trigger_keywords.map((kw) => (
               <span key={kw} className="text-[10px] font-mono text-text-muted/70 bg-bg-base border border-border px-1.5 py-0.5 rounded">
@@ -616,12 +751,21 @@ function FlowRow({
           <Toggle checked={flow.is_active} onChange={() => onToggle()} />
         </div>
       </div>
-      {flow.is_active && (
-        <div className="mt-1.5 flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-accent-green" />
-          <span className="text-[10px] text-accent-green">Active</span>
-        </div>
-      )}
+      <div className="mt-2 flex items-center gap-2">
+        {flow.is_active && (
+          <div className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent-green" />
+            <span className="text-[10px] text-accent-green">Active</span>
+          </div>
+        )}
+        <div className="flex-1" />
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="text-[10px] text-text-muted/50 hover:text-accent-red transition-colors"
+        >
+          Delete
+        </button>
+      </div>
     </button>
   );
 }
@@ -636,12 +780,24 @@ type EditorState =
 
 export function AutomationsClient() {
   const { data: flows, isLoading } = useAutomationFlows();
+  const { data: mediaData } = useMedia({ all: true });
+  const mediaMap = Object.fromEntries(
+    (mediaData?.data ?? []).map((m) => [m.id, m])
+  );
   const create = useCreateFlow();
   const update = useUpdateFlow();
   const del = useDeleteFlow();
 
   const [editor, setEditor] = useState<EditorState>({ mode: "idle" });
   const selectedFlowId = editor.mode === "edit" ? editor.flow.id : null;
+  const rightPanelRef = useRef<HTMLDivElement>(null);
+  const isEditing = editor.mode === "new" || editor.mode === "edit";
+
+  function handleOuterClick(e: React.MouseEvent) {
+    if (isEditing && rightPanelRef.current && !rightPanelRef.current.contains(e.target as Node)) {
+      setEditor({ mode: "idle" });
+    }
+  }
 
   async function handleSave(data: {
     name: string;
@@ -659,9 +815,15 @@ export function AutomationsClient() {
 
   async function handleDelete() {
     if (editor.mode !== "edit") return;
-    if (!confirm(`Delete "${editor.flow.name}"?`)) return;
-    await del.mutateAsync(editor.flow.id);
-    setEditor({ mode: "idle" });
+    await handleDeleteFlow(editor.flow);
+  }
+
+  async function handleDeleteFlow(flow: AutomationFlow) {
+    if (!confirm(`Delete "${flow.name}"?`)) return;
+    await del.mutateAsync(flow.id);
+    if (editor.mode === "edit" && editor.flow.id === flow.id) {
+      setEditor({ mode: "idle" });
+    }
   }
 
   function handleToggle(flow: AutomationFlow) {
@@ -671,7 +833,7 @@ export function AutomationsClient() {
   const isSaving = create.isPending || update.isPending;
 
   return (
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex flex-1 overflow-hidden" onClick={handleOuterClick}>
       {/* ── Left panel ── */}
       <div className="w-72 flex-shrink-0 border-r border-border flex flex-col overflow-hidden">
         <div className="h-12 px-4 flex items-center justify-between border-b border-border flex-shrink-0">
@@ -705,20 +867,26 @@ export function AutomationsClient() {
             </div>
           )}
 
-          {flows?.map((flow) => (
+          {flows?.map((flow) => {
+            const media = flow.media_id ? mediaMap[flow.media_id] : undefined;
+            return (
             <FlowRow
               key={flow.id}
               flow={flow}
               isSelected={flow.id === selectedFlowId}
               onSelect={() => setEditor({ mode: "edit", flow })}
               onToggle={() => handleToggle(flow)}
+              onDelete={() => handleDeleteFlow(flow)}
+              mediaThumbnail={media?.media_type === "IMAGE" ? media?.media_url : media?.thumbnail_url}
+              mediaCaption={media?.caption?.slice(0, 60) ?? null}
             />
-          ))}
+          );
+          })}
         </div>
       </div>
 
       {/* ── Right panel ── */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div ref={rightPanelRef} className="flex-1 flex flex-col overflow-hidden">
         {editor.mode === "idle" && (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-xs text-text-muted">

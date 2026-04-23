@@ -74,19 +74,20 @@ interface CommentItemProps {
 
 function CommentItem({ comment, postId, isNested }: CommentItemProps) {
   const [replying, setReplying] = useState(false);
+  const username = comment.username ?? comment.from?.username;
 
   return (
     <div className={clsx("group", isNested && "ml-10 border-l-2 border-[var(--border)] pl-3")}>
       <div className="flex gap-3 py-3">
         <div className="w-8 h-8 rounded-full bg-[var(--border)] shrink-0 flex items-center justify-center">
           <span className="text-[10px] text-[var(--text-muted)] uppercase font-bold">
-            {(comment.username ?? comment.id).slice(0, 1).toUpperCase()}
+            {(username ?? comment.id).slice(0, 1).toUpperCase()}
           </span>
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-xs font-semibold text-[var(--text-primary)]">
-              {comment.username ?? comment.id.slice(-8)}
+              {username ? `@${username}` : comment.id.slice(-8)}
             </span>
             <span className="text-[10px] text-[var(--text-muted)]">{formatTime(comment.timestamp)}</span>
           </div>

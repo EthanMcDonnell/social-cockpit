@@ -31,10 +31,14 @@ export async function PUT(
       body.is_active !== undefined ? (body.is_active ? 1 : 0) : existing.is_active;
     const media_id =
       "media_id" in body ? (body.media_id ?? null) : (existing.media_id ?? null);
+    const activated_at =
+      is_active === 1 && existing.is_active === 0
+        ? new Date().toISOString()
+        : (existing.activated_at ?? null);
 
     db.prepare(
-      "UPDATE automation_flows SET name=?, trigger_keyword=?, config=?, is_active=?, media_id=? WHERE id=?"
-    ).run(name, trigger_keyword, config, is_active, media_id, params.id);
+      "UPDATE automation_flows SET name=?, trigger_keyword=?, config=?, is_active=?, media_id=?, activated_at=? WHERE id=?"
+    ).run(name, trigger_keyword, config, is_active, media_id, activated_at, params.id);
 
     const updated = db
       .prepare("SELECT * FROM automation_flows WHERE id = ?")

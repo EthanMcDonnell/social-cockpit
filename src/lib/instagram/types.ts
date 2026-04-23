@@ -131,7 +131,7 @@ export interface InstagramComment {
   username?: string;
   like_count?: number;
   hidden?: boolean;
-  from?: { id: string };
+  from?: { id: string; username?: string };
   replies?: PaginatedResponse<InstagramComment>;
 }
 

@@ -6,7 +6,6 @@ import type { InstagramMedia } from "@/lib/instagram/types";
 interface PostListProps {
   posts: InstagramMedia[];
   selectedPostId: string | null;
-  activeAutomationPostIds: Set<string>;
   onSelect: (id: string) => void;
   loading: boolean;
 }
@@ -15,7 +14,7 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export function PostList({ posts, selectedPostId, activeAutomationPostIds, onSelect, loading }: PostListProps) {
+export function PostList({ posts, selectedPostId, onSelect, loading }: PostListProps) {
   if (loading) {
     return (
       <div className="p-3 space-y-1.5">
@@ -44,7 +43,6 @@ export function PostList({ posts, selectedPostId, activeAutomationPostIds, onSel
     <div className="p-2 space-y-0.5">
       {posts.map((post) => {
         const isSelected = post.id === selectedPostId;
-        const hasActiveAutomation = activeAutomationPostIds.has(post.id);
         const thumb = post.thumbnail_url ?? post.media_url;
         const caption = post.caption?.replace(/\n/g, " ") ?? "(no caption)";
 
@@ -86,11 +84,7 @@ export function PostList({ posts, selectedPostId, activeAutomationPostIds, onSel
               </div>
             </div>
 
-            {hasActiveAutomation && (
-              <span className="text-[var(--accent-amber)] text-xs shrink-0" title="Active automation">
-                ⚡
-              </span>
-            )}
+
           </button>
         );
       })}

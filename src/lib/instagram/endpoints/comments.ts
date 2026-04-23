@@ -8,7 +8,8 @@ const DEFAULT_COMMENT_FIELDS = [
   "username",
   "like_count",
   "hidden",
-  "replies{id,text,timestamp,username,like_count}",
+  "from{id,username}",
+  "replies{id,text,timestamp,username,like_count,from{id,username}}",
 ];
 
 export async function listComments(

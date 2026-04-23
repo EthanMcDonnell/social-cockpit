@@ -40,50 +40,20 @@ export function getDb(): Database.Database {
       created_at      TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
-  try {
-    _db.exec("ALTER TABLE automation_flows ADD COLUMN media_id TEXT");
-  } catch {
-    // column already exists
+  for (const sql of [
+    "ALTER TABLE automation_flows ADD COLUMN media_id TEXT",
+    "ALTER TABLE automation_flows ADD COLUMN activated_at TEXT",
+  ]) {
+    try { _db.exec(sql); } catch { /* column already exists */ }
   }
   return _db;
-}
-
-export interface AutomationRow {
-  id: string;
-  post_id: string;
-  keyword: string;
-  action_type: "comment" | "dm";
-  template_body: string;
-  placeholder_values: string;
-  is_active: number;
-  created_at: string;
-}
-
-export interface Automation {
-  id: string;
-  post_id: string;
-  keyword: string;
-  action_type: "comment" | "dm";
-  template_body: string;
-  placeholder_values: Record<string, string>;
-  is_active: boolean;
-  created_at: string;
-}
-
-export function rowToAutomation(row: AutomationRow): Automation {
-  return {
-    ...row,
-    placeholder_values: JSON.parse(row.placeholder_values),
-    is_active: row.is_active === 1,
-  };
 }
 
 // ─── Automation Flows ────────────────────────────────────────────────────────
 
 export interface CommentToDmConfig {
+  comment_replies: string[];
   initial_message: string;
-  not_following_message: string;
-  following_message: string;
 }
 
 export interface AutomationFlowRow {
@@ -95,6 +65,7 @@ export interface AutomationFlowRow {
   is_active: number;
   created_at: string;
   media_id?: string;
+  activated_at?: string;
 }
 
 export interface AutomationFlow {
@@ -106,6 +77,7 @@ export interface AutomationFlow {
   is_active: boolean;
   created_at: string;
   media_id?: string;
+  activated_at?: string;
 }
 
 export function rowToFlow(row: AutomationFlowRow): AutomationFlow {
@@ -126,6 +98,7 @@ export function rowToFlow(row: AutomationFlowRow): AutomationFlow {
     is_active: row.is_active === 1,
     created_at: row.created_at,
     media_id: row.media_id ?? undefined,
+    activated_at: row.activated_at ?? undefined,
   };
 }
 
