@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
-import type { AutomationFlow, CommentToDmConfig } from "@/lib/db";
+import type { AutomationFlow, AutomationConfig, CommentToDmConfig, CommentToReplyConfig, AutomationTemplateType } from "@/lib/db";
 import {
   useAutomationFlows,
   useCreateFlow,
@@ -12,30 +13,36 @@ import {
 import { useMedia } from "@/hooks/useMedia";
 import type { InstagramMedia } from "@/lib/instagram/types";
 
-// ─── Default config ────────────────────────────────────────────────────────────
+// ─── Default configs ───────────────────────────────────────────────────────────
 
-const FALLBACK_CONFIG: CommentToDmConfig = {
-  comment_replies: [
-    "Check your DMs! 📩",
-    "Sent you a DM! 🙌",
-    "Just DM'd you the details! 💬",
-  ],
-  initial_message:
-    "Hey! Thanks for your comment — here's the link: https://",
+const DEFAULT_DM_CONFIG: CommentToDmConfig = {
+  comment_reply_fn: "",
+  comment_replies: [],
+  initial_message: "Hey! Thanks for your comment — here's the link: https://",
 };
 
-const DEFAULT_CONFIG_KEY = "automation_default_config";
+const DEFAULT_REPLY_CONFIG: CommentToReplyConfig = {
+  comment_reply_fn: "",
+  comment_replies: [],
+};
 
-function loadDefaultConfig(): CommentToDmConfig {
-  try {
-    const raw = localStorage.getItem(DEFAULT_CONFIG_KEY);
-    if (raw) return { ...FALLBACK_CONFIG, ...JSON.parse(raw) };
-  } catch {}
-  return { ...FALLBACK_CONFIG };
+// ─── Reply functions hook ──────────────────────────────────────────────────────
+
+interface ReplyFunctionDef {
+  name: string;
+  preview: string;
 }
 
-function saveDefaultConfig(config: CommentToDmConfig) {
-  localStorage.setItem(DEFAULT_CONFIG_KEY, JSON.stringify(config));
+function useReplyFunctions() {
+  return useQuery<ReplyFunctionDef[]>({
+    queryKey: ["automation-reply-functions"],
+    queryFn: async () => {
+      const res = await fetch("/api/automation-reply-functions");
+      if (!res.ok) throw new Error("Failed to fetch reply functions");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
 }
 
 // ─── Icons ─────────────────────────────────────────────────────────────────────
@@ -310,72 +317,66 @@ function MessageField({
   );
 }
 
-// ─── Comment replies field ─────────────────────────────────────────────────────
+// ─── Reply function selector ───────────────────────────────────────────────────
 
-function CommentRepliesField({
-  replies,
+function ReplyFunctionSelector({
+  value,
   onChange,
 }: {
-  replies: string[];
-  onChange: (v: string[]) => void;
+  value: string;
+  onChange: (v: string) => void;
 }) {
-  const [draft, setDraft] = useState("");
+  const { data: fns, isLoading } = useReplyFunctions();
 
-  function add() {
-    const trimmed = draft.trim();
-    if (trimmed && !replies.includes(trimmed)) onChange([...replies, trimmed]);
-    setDraft("");
+  if (isLoading) {
+    return <div className="h-10 rounded-xl bg-border/50 animate-pulse" />;
   }
 
-  function remove(i: number) {
-    onChange(replies.filter((_, idx) => idx !== i));
+  if (!fns || fns.length === 0) {
+    return (
+      <div className="space-y-1.5">
+        <label className="block text-[10px] text-text-muted uppercase tracking-wider font-medium">
+          Reply function
+        </label>
+        <p className="text-xs text-text-muted/60 italic">
+          No functions defined. Add them to{" "}
+          <code className="font-mono text-[11px] bg-bg-card border border-border px-1 rounded">
+            src/lib/comment-reply-functions.ts
+          </code>
+        </p>
+      </div>
+    );
   }
+
+  const selected = fns.find((f) => f.name === value) ?? fns[0];
 
   return (
     <div className="space-y-2">
       <label className="block text-[10px] text-text-muted uppercase tracking-wider font-medium">
-        Comment replies <span className="normal-case">(one chosen at random)</span>
+        Reply function
       </label>
-      <div className="space-y-1.5">
-        {replies.map((r, i) => (
-          <div key={i} className="flex items-start gap-2 group">
-            <input
-              value={r}
-              onChange={(e) => {
-                const next = [...replies];
-                next[i] = e.target.value;
-                onChange(next);
-              }}
-              className="flex-1 text-xs bg-bg-base border border-border rounded-xl px-3 py-2 text-text-primary focus:outline-none focus:border-accent-cyan/50 transition-colors"
-            />
-            <button
-              type="button"
-              onClick={() => remove(i)}
-              className="mt-2 text-text-muted hover:text-accent-red transition-colors opacity-0 group-hover:opacity-100"
-            >
-              <IconX />
-            </button>
-          </div>
+      <select
+        value={value || fns[0].name}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full text-xs bg-bg-base border border-border rounded-xl px-3 py-2.5 text-text-primary focus:outline-none focus:border-accent-cyan/50 transition-colors appearance-none"
+      >
+        {fns.map((f) => (
+          <option key={f.name} value={f.name}>
+            {f.name}
+          </option>
         ))}
-      </div>
-      <div className="flex gap-2">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
-          placeholder="Add a reply option…"
-          className="flex-1 text-xs bg-bg-base border border-border rounded-xl px-3 py-2 text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-accent-cyan/50 transition-colors"
-        />
-        <button
-          type="button"
-          onClick={add}
-          disabled={!draft.trim()}
-          className="px-3 py-2 rounded-xl text-xs font-medium bg-bg-card border border-border text-text-muted hover:text-accent-cyan hover:border-accent-cyan/40 disabled:opacity-40 transition-colors"
-        >
-          Add
-        </button>
-      </div>
-      <p className="text-[10px] text-text-muted/55">Use {"{{username}}"} for the commenter&apos;s name.</p>
+      </select>
+      {selected && (
+        <p className="text-[10px] text-text-muted/60 font-mono leading-relaxed pl-0.5">
+          Preview: &ldquo;{selected.preview}&rdquo;
+        </p>
+      )}
+      <p className="text-[10px] text-text-muted/55">
+        Functions are defined in{" "}
+        <code className="font-mono bg-bg-card border border-border px-1 rounded">
+          src/lib/comment-reply-functions.ts
+        </code>
+      </p>
     </div>
   );
 }
@@ -467,37 +468,45 @@ function VideoSelector({
 
 function FlowEditor({
   flow,
+  templateType,
   onSave,
   onDelete,
   onCancel,
   isSaving,
 }: {
   flow?: AutomationFlow;
-  onSave: (data: { name: string; trigger_keywords: string[]; config: CommentToDmConfig; media_id?: string }) => void;
+  templateType: AutomationTemplateType;
+  onSave: (data: { name: string; trigger_keywords: string[]; config: AutomationConfig; media_id?: string; template_type: AutomationTemplateType }) => void;
   onDelete?: () => void;
   onCancel: () => void;
   isSaving: boolean;
 }) {
-  const [name, setName] = useState(flow?.name ?? "Comment to DM");
-  const [keywords, setKeywords] = useState<string[]>(
-    flow?.trigger_keywords ?? ["LINK"]
-  );
-  const [config, setConfig] = useState<CommentToDmConfig>(
-    flow?.config ?? loadDefaultConfig()
+  const defaultName = templateType === "comment_to_reply" ? "Comment to Reply" : "Comment to DM";
+  const [name, setName] = useState(flow?.name ?? defaultName);
+  const [keywords, setKeywords] = useState<string[]>(flow?.trigger_keywords ?? ["LINK"]);
+  const [config, setConfig] = useState<AutomationConfig>(
+    flow?.config ?? (templateType === "comment_to_reply" ? DEFAULT_REPLY_CONFIG : DEFAULT_DM_CONFIG)
   );
   const [mediaId, setMediaId] = useState<string | undefined>(flow?.media_id);
   const [error, setError] = useState<string | null>(null);
 
-  function updateConfig(key: keyof CommentToDmConfig, value: string | string[]) {
-    setConfig((prev) => ({ ...prev, [key]: value }));
+  const isDm = templateType === "comment_to_dm";
+  const dmConfig = config as CommentToDmConfig;
+
+  function setReplyFn(fn: string) {
+    setConfig((prev) => ({ ...prev, comment_reply_fn: fn }));
+  }
+
+  function setInitialMessage(msg: string) {
+    setConfig((prev) => ({ ...prev, initial_message: msg }));
   }
 
   function handleSave() {
     setError(null);
     if (!name.trim()) { setError("Flow name is required"); return; }
     if (keywords.length === 0) { setError("At least one trigger keyword is required"); return; }
-    if (!config.initial_message.trim()) { setError("Message is required"); return; }
-    onSave({ name: name.trim(), trigger_keywords: keywords, config, media_id: mediaId });
+    if (isDm && !dmConfig.initial_message?.trim()) { setError("DM message is required"); return; }
+    onSave({ name: name.trim(), trigger_keywords: keywords, config, media_id: mediaId, template_type: templateType });
   }
 
   return (
@@ -540,24 +549,28 @@ function FlowEditor({
 
       {/* ── Step 2: Reply to comment ── */}
       <StepCard icon={<IconComment />} label="Reply to comment" color="purple">
-        <CommentRepliesField
-          replies={config.comment_replies ?? []}
-          onChange={(v) => updateConfig("comment_replies", v)}
+        <ReplyFunctionSelector
+          value={config.comment_reply_fn ?? ""}
+          onChange={setReplyFn}
         />
       </StepCard>
 
-      <Connector />
+      {isDm && (
+        <>
+          <Connector />
 
-      {/* ── Step 3: Send DM ── */}
-      <StepCard icon={<IconDM />} label="Send DM" color="amber">
-        <MessageField
-          label="Message"
-          value={config.initial_message}
-          onChange={(v) => updateConfig("initial_message", v)}
-          placeholder="Hey! Here's the link: https://..."
-          hint="Type your URL directly in the message. Use {{username}} for the commenter's name."
-        />
-      </StepCard>
+          {/* ── Step 3: Send DM ── */}
+          <StepCard icon={<IconDM />} label="Send DM" color="amber">
+            <MessageField
+              label="Message"
+              value={dmConfig.initial_message ?? ""}
+              onChange={setInitialMessage}
+              placeholder="Hey! Here's the link: https://..."
+              hint="Type your URL directly in the message. Use {{username}} for the commenter's name."
+            />
+          </StepCard>
+        </>
+      )}
 
       {error && <p className="text-xs text-accent-red pt-1">{error}</p>}
 
@@ -591,50 +604,7 @@ function FlowEditor({
 
 // ─── Template picker ───────────────────────────────────────────────────────────
 
-function TemplatePicker({ onSelect }: { onSelect: () => void }) {
-  const [editing, setEditing] = useState(false);
-  const [config, setConfig] = useState<CommentToDmConfig>(loadDefaultConfig);
-  const [saved, setSaved] = useState(false);
-
-  function handleSave() {
-    saveDefaultConfig(config);
-    setSaved(true);
-    setTimeout(() => { setSaved(false); setEditing(false); }, 1200);
-  }
-
-  if (editing) {
-    return (
-      <div className="flex-1 overflow-y-auto px-8 py-6 max-w-lg mx-auto w-full">
-        <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => setEditing(false)} className="text-text-muted hover:text-text-primary transition-colors">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-              <path d="M12.5 4L6 10l6.5 6" />
-            </svg>
-          </button>
-          <h2 className="text-xs font-semibold text-text-muted uppercase tracking-widest">Edit default template</h2>
-        </div>
-        <div className="space-y-4">
-          <CommentRepliesField
-            replies={config.comment_replies ?? []}
-            onChange={(v) => setConfig((c) => ({ ...c, comment_replies: v }))}
-          />
-          <MessageField
-            label="DM message"
-            value={config.initial_message}
-            onChange={(v) => setConfig((c) => ({ ...c, initial_message: v }))}
-            hint="Type your URL directly in the message. Use {{username}} for the commenter's name."
-          />
-          <button
-            onClick={handleSave}
-            className="w-full text-sm font-medium px-4 py-2.5 rounded-xl bg-accent-cyan text-bg-base hover:opacity-90 transition-opacity"
-          >
-            {saved ? "Saved!" : "Save default template"}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
+function TemplatePicker({ onSelect }: { onSelect: (type: AutomationTemplateType) => void }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-8 py-12">
       <div className="w-full max-w-sm space-y-4">
@@ -645,9 +615,10 @@ function TemplatePicker({ onSelect }: { onSelect: () => void }) {
           <p className="text-xs text-text-muted">Start with a pre-built flow.</p>
         </div>
 
-        <div className="rounded-2xl border border-border overflow-hidden">
+        <div className="rounded-2xl border border-border overflow-hidden divide-y divide-border">
+          {/* Comment to DM */}
           <button
-            onClick={onSelect}
+            onClick={() => onSelect("comment_to_dm")}
             className="w-full text-left p-4 hover:bg-accent-cyan/[0.04] transition-all group"
           >
             <div className="flex items-start gap-3">
@@ -661,10 +632,10 @@ function TemplatePicker({ onSelect }: { onSelect: () => void }) {
                   Comment to DM
                 </p>
                 <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
-                  Keyword in comment → DM → wait for reply → check follow → send link or ask to follow first.
+                  Keyword in comment → public reply → send a DM.
                 </p>
                 <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
-                  {["Keyword trigger", "DM", "Follow check", "Branch"].map((tag) => (
+                  {["Keyword trigger", "Comment reply", "DM"].map((tag) => (
                     <span key={tag} className="text-[10px] px-2 py-0.5 rounded bg-bg-card border border-border text-text-muted">
                       {tag}
                     </span>
@@ -673,17 +644,35 @@ function TemplatePicker({ onSelect }: { onSelect: () => void }) {
               </div>
             </div>
           </button>
-          <div className="border-t border-border px-4 py-2 flex justify-end bg-bg-base">
-            <button
-              onClick={() => setEditing(true)}
-              className="text-[11px] text-text-muted hover:text-accent-cyan transition-colors flex items-center gap-1"
-            >
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
-                <path d="M11.5 2.5l2 2-8 8H3.5v-2l8-8z" />
-              </svg>
-              Edit default messages
-            </button>
-          </div>
+
+          {/* Comment to Reply */}
+          <button
+            onClick={() => onSelect("comment_to_reply")}
+            className="w-full text-left p-4 hover:bg-accent-cyan/[0.04] transition-all group"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[var(--chart-3)]/10 border border-[var(--chart-3)]/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-[var(--chart-3)]">
+                  <path d="M17.5 12.5a2.5 2.5 0 0 1-2.5 2.5H5.833L2.5 17.5V5a2.5 2.5 0 0 1 2.5-2.5h10a2.5 2.5 0 0 1 2.5 2.5v7.5z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-text-primary group-hover:text-[var(--chart-3)] transition-colors">
+                  Comment to Reply
+                </p>
+                <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+                  Keyword in comment → public reply only, no DM.
+                </p>
+                <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                  {["Keyword trigger", "Comment reply"].map((tag) => (
+                    <span key={tag} className="text-[10px] px-2 py-0.5 rounded bg-bg-card border border-border text-text-muted">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </button>
         </div>
       </div>
     </div>
@@ -758,6 +747,14 @@ function FlowRow({
             <span className="text-[10px] text-accent-green">Active</span>
           </div>
         )}
+        <span className={clsx(
+          "text-[9px] font-mono px-1.5 py-0.5 rounded border",
+          flow.template_type === "comment_to_reply"
+            ? "text-[var(--chart-3)] border-[var(--chart-3)]/30 bg-[var(--chart-3)]/5"
+            : "text-accent-cyan/70 border-accent-cyan/20 bg-accent-cyan/5"
+        )}>
+          {flow.template_type === "comment_to_reply" ? "→ reply" : "→ DM"}
+        </span>
         <div className="flex-1" />
         <button
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
@@ -775,7 +772,7 @@ function FlowRow({
 type EditorState =
   | { mode: "idle" }
   | { mode: "pick-template" }
-  | { mode: "new" }
+  | { mode: "new"; templateType: AutomationTemplateType }
   | { mode: "edit"; flow: AutomationFlow };
 
 export function AutomationsClient() {
@@ -802,8 +799,9 @@ export function AutomationsClient() {
   async function handleSave(data: {
     name: string;
     trigger_keywords: string[];
-    config: CommentToDmConfig;
+    config: AutomationConfig;
     media_id?: string;
+    template_type: AutomationTemplateType;
   }) {
     if (editor.mode === "new") {
       await create.mutateAsync(data);
@@ -899,14 +897,16 @@ export function AutomationsClient() {
         )}
 
         {editor.mode === "pick-template" && (
-          <TemplatePicker onSelect={() => setEditor({ mode: "new" })} />
+          <TemplatePicker onSelect={(type) => setEditor({ mode: "new", templateType: type })} />
         )}
 
         {(editor.mode === "new" || editor.mode === "edit") && (
           <div className="flex-1 flex flex-col overflow-hidden">
             <div className="h-12 px-6 flex items-center gap-3 border-b border-border flex-shrink-0">
               <span className="text-xs font-semibold text-text-muted uppercase tracking-widest">
-                {editor.mode === "new" ? "New flow" : "Edit flow"}
+                {editor.mode === "new"
+                  ? editor.templateType === "comment_to_reply" ? "New reply flow" : "New DM flow"
+                  : "Edit flow"}
               </span>
               {editor.mode === "edit" && (
                 <>
@@ -927,6 +927,7 @@ export function AutomationsClient() {
 
             {editor.mode === "new" ? (
               <FlowEditor
+                templateType={editor.templateType}
                 onSave={handleSave}
                 onCancel={() => setEditor({ mode: "idle" })}
                 isSaving={isSaving}
@@ -934,6 +935,7 @@ export function AutomationsClient() {
             ) : (
               <FlowEditor
                 flow={editor.flow}
+                templateType={editor.flow.template_type}
                 onSave={handleSave}
                 onDelete={handleDelete}
                 onCancel={() => setEditor({ mode: "idle" })}

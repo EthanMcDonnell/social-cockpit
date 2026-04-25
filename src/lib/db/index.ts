@@ -51,10 +51,20 @@ export function getDb(): Database.Database {
 
 // ─── Automation Flows ────────────────────────────────────────────────────────
 
+export type AutomationTemplateType = "comment_to_dm" | "comment_to_reply";
+
 export interface CommentToDmConfig {
+  comment_reply_fn?: string;
   comment_replies: string[];
   initial_message: string;
 }
+
+export interface CommentToReplyConfig {
+  comment_reply_fn?: string;
+  comment_replies: string[];
+}
+
+export type AutomationConfig = CommentToDmConfig | CommentToReplyConfig;
 
 export interface AutomationFlowRow {
   id: string;
@@ -71,9 +81,9 @@ export interface AutomationFlowRow {
 export interface AutomationFlow {
   id: string;
   name: string;
-  template_type: "comment_to_dm";
+  template_type: AutomationTemplateType;
   trigger_keywords: string[];
-  config: CommentToDmConfig;
+  config: AutomationConfig;
   is_active: boolean;
   created_at: string;
   media_id?: string;
@@ -89,12 +99,14 @@ export function rowToFlow(row: AutomationFlowRow): AutomationFlow {
   } catch {
     trigger_keywords = row.trigger_keyword ? [row.trigger_keyword] : [];
   }
+  const template_type: AutomationTemplateType =
+    row.template_type === "comment_to_reply" ? "comment_to_reply" : "comment_to_dm";
   return {
     id: row.id,
     name: row.name,
-    template_type: "comment_to_dm",
+    template_type,
     trigger_keywords,
-    config: JSON.parse(row.config) as CommentToDmConfig,
+    config: JSON.parse(row.config) as AutomationConfig,
     is_active: row.is_active === 1,
     created_at: row.created_at,
     media_id: row.media_id ?? undefined,

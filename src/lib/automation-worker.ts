@@ -1,4 +1,5 @@
-import { getDb, rowToFlow, resolveTemplate, type AutomationFlowRow } from "@/lib/db";
+import { getDb, rowToFlow, resolveTemplate, type AutomationFlowRow, type CommentToDmConfig } from "@/lib/db";
+import { callReplyFunction } from "@/lib/comment-reply-functions";
 import { listMedia } from "@/lib/instagram/endpoints/media";
 import { listComments, replyToComment, sendPrivateReply } from "@/lib/instagram/endpoints/comments";
 import type { InstagramComment } from "@/lib/instagram/types";
@@ -45,27 +46,41 @@ export async function processFlows(postId: string, comments: InstagramComment[])
       const placeholders = { username: comment.username ?? comment.from?.username ?? "" };
       console.log(`[automation] flow "${flow.name}" matched comment ${comment.id} by @${placeholders.username}: "${comment.text}"`);
 
-      if (flow.config.comment_replies?.length > 0) {
+      // Resolve comment reply: function reference takes priority over static list
+      let replyText: string | null = null;
+      if (flow.config.comment_reply_fn) {
+        replyText = callReplyFunction(flow.config.comment_reply_fn, {
+          username: placeholders.username,
+          comment: comment.text ?? "",
+        });
+        if (!replyText) console.warn(`[automation] comment_reply_fn "${flow.config.comment_reply_fn}" not found`);
+      } else if (flow.config.comment_replies && flow.config.comment_replies.length > 0) {
         const replies = flow.config.comment_replies;
-        const reply = replies[Math.floor(Math.random() * replies.length)];
-        console.log(`[automation] posting comment reply: "${reply}"`);
+        replyText = replies[Math.floor(Math.random() * replies.length)];
+      }
+
+      if (replyText) {
+        console.log(`[automation] posting comment reply: "${replyText}"`);
         try {
-          const result = await replyToComment(comment.id, resolveTemplate(reply, placeholders));
+          const result = await replyToComment(comment.id, resolveTemplate(replyText, placeholders));
           console.log(`[automation] comment reply posted OK, id=${result.id}`);
         } catch (err) {
           console.error(`[automation] comment reply FAILED:`, err);
         }
       } else {
-        console.log(`[automation] no comment_replies configured — skipping public reply`);
+        console.log(`[automation] no comment reply configured — skipping public reply`);
       }
 
-      if (flow.config.initial_message?.trim()) {
-        console.log(`[automation] sending DM to @${placeholders.username}`);
-        try {
-          await sendPrivateReply(comment.id, resolveTemplate(flow.config.initial_message, placeholders));
-          console.log(`[automation] DM sent OK`);
-        } catch (err) {
-          console.error(`[automation] DM FAILED:`, err);
+      if (flow.template_type === "comment_to_dm") {
+        const dmCfg = flow.config as CommentToDmConfig;
+        if (dmCfg.initial_message?.trim()) {
+          console.log(`[automation] sending DM to @${placeholders.username}`);
+          try {
+            await sendPrivateReply(comment.id, resolveTemplate(dmCfg.initial_message, placeholders));
+            console.log(`[automation] DM sent OK`);
+          } catch (err) {
+            console.error(`[automation] DM FAILED:`, err);
+          }
         }
       }
     }

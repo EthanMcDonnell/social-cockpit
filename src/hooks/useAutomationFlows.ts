@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { AutomationFlow, CommentToDmConfig } from "@/lib/db";
+import type { AutomationFlow, AutomationConfig, AutomationTemplateType } from "@/lib/db";
 
 const QUERY_KEY = ["automation-flows"];
 
@@ -24,8 +24,9 @@ export function useCreateFlow() {
     mutationFn: async (data: {
       name: string;
       trigger_keywords: string[];
-      config: CommentToDmConfig;
+      config: AutomationConfig;
       media_id?: string;
+      template_type?: AutomationTemplateType;
     }) => {
       const res = await fetch("/api/automation-flows", {
         method: "POST",

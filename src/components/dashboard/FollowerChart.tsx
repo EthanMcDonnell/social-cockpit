@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -32,7 +32,7 @@ function buildCumulativeSeries(
   return sorted.map((point, i) => ({ ...point, value: totals[i] }));
 }
 
-export function FollowerChart() {
+export function FollowerChart({ className }: { className?: string }) {
   const [period] = usePeriod();
   const insightsQuery = useUserInsights(period);
   const profileQuery = useProfile();
@@ -55,19 +55,25 @@ export function FollowerChart() {
   };
 
   return (
-    <Card padding="lg" className="flex flex-col gap-4">
+    <Card padding="lg" className={`flex flex-col gap-4 ${className ?? ""}`}>
       <p className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-medium">
         Total Followers
       </p>
-      {isLoading && <ChartSkeleton height={200} />}
+      {isLoading && <ChartSkeleton height={180} />}
       {isError && isRateLimitError(error) ? (
         <RateLimitError onRetry={refetch} />
       ) : isError ? (
         <ErrorState message={(error as Error)?.message} onRetry={refetch} />
       ) : null}
       {!isLoading && !isError && (
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+        <ResponsiveContainer width="100%" className="flex-1" height="100%" minHeight={180}>
+          <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+            <defs>
+              <linearGradient id="followerGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--accent-cyan)" stopOpacity={0.22} />
+                <stop offset="100%" stopColor="var(--accent-cyan)" stopOpacity={0} />
+              </linearGradient>
+            </defs>
             <CartesianGrid
               strokeDasharray="3 3"
               stroke="var(--border)"
@@ -101,15 +107,16 @@ export function FollowerChart() {
               labelStyle={{ color: "var(--text-muted)" }}
               cursor={{ stroke: "var(--border)" }}
             />
-            <Line
+            <Area
               type="monotone"
               dataKey="value"
               stroke="var(--accent-cyan)"
               strokeWidth={2}
+              fill="url(#followerGrad)"
               dot={false}
               activeDot={{ r: 4, fill: "var(--accent-cyan)" }}
             />
-          </LineChart>
+          </AreaChart>
         </ResponsiveContainer>
       )}
     </Card>

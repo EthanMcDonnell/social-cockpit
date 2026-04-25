@@ -7,6 +7,7 @@ import { VideoViewsChart } from "@/components/dashboard/VideoViewsChart";
 import { PostMetricsTable } from "@/components/dashboard/PostMetricsTable";
 import { DataDelayBanner } from "@/components/dashboard/DataDelayBanner";
 import { PostingConsistencyChart } from "@/components/dashboard/PostingConsistencyChart";
+import { BestTimeHeatmap } from "@/components/dashboard/BestTimeHeatmap";
 
 export const metadata = {
   title: "Dashboard",
@@ -22,14 +23,25 @@ export default function DashboardPage() {
           {/* KPI row */}
           <StatCardGrid />
 
-          {/* Followers + Profile Views (50/50) */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <FollowerChart />
-            <VideoViewsChart />
+          {/* Strip 1: Followers (3/5) + Video Views (2/5) */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-5 lg:items-stretch">
+            <div className="lg:col-span-3 flex flex-col">
+              <FollowerChart className="flex-1" />
+            </div>
+            <div className="lg:col-span-2 flex flex-col">
+              <VideoViewsChart className="flex-1" />
+            </div>
           </div>
 
-          {/* Posting consistency */}
-          <PostingConsistencyChart />
+          {/* Strip 2: Posting Consistency (2/5) + Heatmap (3/5) */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+            <div className="lg:col-span-2">
+              <PostingConsistencyChart />
+            </div>
+            <div className="lg:col-span-3">
+              <BestTimeHeatmap />
+            </div>
+          </div>
 
           {/* Post metrics table */}
           <PostMetricsTable />

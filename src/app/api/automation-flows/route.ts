@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, rowToFlow, type AutomationFlowRow, type CommentToDmConfig } from "@/lib/db";
+import { getDb, rowToFlow, type AutomationFlowRow, type AutomationConfig, type AutomationTemplateType } from "@/lib/db";
 import { randomUUID } from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -20,11 +20,12 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, trigger_keywords, config, media_id } = body as {
+    const { name, trigger_keywords, config, media_id, template_type } = body as {
       name: string;
       trigger_keywords: string[];
-      config: CommentToDmConfig;
+      config: AutomationConfig;
       media_id?: string;
+      template_type?: AutomationTemplateType;
     };
 
     const keywords = (Array.isArray(trigger_keywords) ? trigger_keywords : [])
@@ -38,11 +39,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const resolvedType: AutomationTemplateType =
+      template_type === "comment_to_reply" ? "comment_to_reply" : "comment_to_dm";
+
     const db = getDb();
     const id = randomUUID();
     db.prepare(
       "INSERT INTO automation_flows (id, name, template_type, trigger_keyword, config, media_id) VALUES (?, ?, ?, ?, ?, ?)"
-    ).run(id, name.trim(), "comment_to_dm", JSON.stringify(keywords), JSON.stringify(config ?? {}), media_id ?? null);
+    ).run(id, name.trim(), resolvedType, JSON.stringify(keywords), JSON.stringify(config ?? {}), media_id ?? null);
 
     const row = db.prepare("SELECT * FROM automation_flows WHERE id = ?").get(id) as AutomationFlowRow;
     return NextResponse.json(rowToFlow(row), { status: 201 });

@@ -113,7 +113,7 @@ export function PostingConsistencyChart() {
             />
             <Bar
               dataKey="count"
-              fill="var(--accent-amber)"
+              fill="var(--accent-cyan)"
               radius={[3, 3, 0, 0]}
               maxBarSize={32}
             />
