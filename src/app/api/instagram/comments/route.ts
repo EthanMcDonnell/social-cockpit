@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const result = await listComments(postId);
+    console.log(`[comments] post=${postId} total=${result.data.length} hasMore=${!!result.paging?.next} firstCommentUsername=${result.data[0]?.username ?? result.data[0]?.from?.username ?? "(none)"}`);
     await processFlows(postId, result.data).catch(console.error);
     return NextResponse.json(result);
   } catch (err) {

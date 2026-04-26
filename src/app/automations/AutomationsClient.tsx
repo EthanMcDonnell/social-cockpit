@@ -317,6 +317,73 @@ function MessageField({
   );
 }
 
+// ─── Comment replies field ─────────────────────────────────────────────────────
+
+function CommentRepliesField({
+  replies,
+  onChange,
+}: {
+  replies: string[];
+  onChange: (v: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+
+  function add() {
+    const trimmed = draft.trim();
+    if (trimmed && !replies.includes(trimmed)) onChange([...replies, trimmed]);
+    setDraft("");
+  }
+
+  function remove(i: number) {
+    onChange(replies.filter((_, idx) => idx !== i));
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1.5">
+        {replies.map((r, i) => (
+          <div key={i} className="flex items-start gap-2 group">
+            <input
+              value={r}
+              onChange={(e) => {
+                const next = [...replies];
+                next[i] = e.target.value;
+                onChange(next);
+              }}
+              className="flex-1 text-xs bg-bg-base border border-border rounded-xl px-3 py-2 text-text-primary focus:outline-none focus:border-accent-cyan/50 transition-colors"
+            />
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="mt-2 text-text-muted hover:text-accent-red transition-colors opacity-0 group-hover:opacity-100"
+            >
+              <IconX />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+          placeholder="Add a reply option…"
+          className="flex-1 text-xs bg-bg-base border border-border rounded-xl px-3 py-2 text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-accent-cyan/50 transition-colors"
+        />
+        <button
+          type="button"
+          onClick={add}
+          disabled={!draft.trim()}
+          className="px-3 py-2 rounded-xl text-xs font-medium bg-bg-card border border-border text-text-muted hover:text-accent-cyan hover:border-accent-cyan/40 disabled:opacity-40 transition-colors"
+        >
+          Add
+        </button>
+      </div>
+      <p className="text-[10px] text-text-muted/55">One reply chosen at random. Use {"{{username}}"} for the commenter&apos;s name.</p>
+    </div>
+  );
+}
+
 // ─── Reply function selector ───────────────────────────────────────────────────
 
 function ReplyFunctionSelector({
@@ -493,12 +560,30 @@ function FlowEditor({
   const isDm = templateType === "comment_to_dm";
   const dmConfig = config as CommentToDmConfig;
 
+  // Determine initial reply mode from existing config
+  const [replyMode, setReplyMode] = useState<"function" | "manual">(
+    () => (flow?.config.comment_reply_fn ? "function" : (flow?.config.comment_replies?.length ? "manual" : "function"))
+  );
+
   function setReplyFn(fn: string) {
-    setConfig((prev) => ({ ...prev, comment_reply_fn: fn }));
+    setConfig((prev) => ({ ...prev, comment_reply_fn: fn, comment_replies: [] }));
+  }
+
+  function setManualReplies(replies: string[]) {
+    setConfig((prev) => ({ ...prev, comment_replies: replies, comment_reply_fn: "" }));
   }
 
   function setInitialMessage(msg: string) {
     setConfig((prev) => ({ ...prev, initial_message: msg }));
+  }
+
+  function switchReplyMode(mode: "function" | "manual") {
+    setReplyMode(mode);
+    if (mode === "function") {
+      setConfig((prev) => ({ ...prev, comment_reply_fn: "", comment_replies: [] }));
+    } else {
+      setConfig((prev) => ({ ...prev, comment_reply_fn: "", comment_replies: prev.comment_replies ?? [] }));
+    }
   }
 
   function handleSave() {
@@ -549,10 +634,47 @@ function FlowEditor({
 
       {/* ── Step 2: Reply to comment ── */}
       <StepCard icon={<IconComment />} label="Reply to comment" color="purple">
-        <ReplyFunctionSelector
-          value={config.comment_reply_fn ?? ""}
-          onChange={setReplyFn}
-        />
+        <div className="space-y-3">
+          {/* Mode toggle */}
+          <div className="flex gap-1 p-0.5 bg-bg-base border border-border rounded-xl w-fit">
+            <button
+              type="button"
+              onClick={() => switchReplyMode("function")}
+              className={clsx(
+                "px-3 py-1.5 rounded-[10px] text-[10px] font-medium transition-all",
+                replyMode === "function"
+                  ? "bg-bg-card text-text-primary shadow-sm"
+                  : "text-text-muted hover:text-text-primary"
+              )}
+            >
+              Function
+            </button>
+            <button
+              type="button"
+              onClick={() => switchReplyMode("manual")}
+              className={clsx(
+                "px-3 py-1.5 rounded-[10px] text-[10px] font-medium transition-all",
+                replyMode === "manual"
+                  ? "bg-bg-card text-text-primary shadow-sm"
+                  : "text-text-muted hover:text-text-primary"
+              )}
+            >
+              Manual
+            </button>
+          </div>
+
+          {replyMode === "function" ? (
+            <ReplyFunctionSelector
+              value={config.comment_reply_fn ?? ""}
+              onChange={setReplyFn}
+            />
+          ) : (
+            <CommentRepliesField
+              replies={config.comment_replies ?? []}
+              onChange={setManualReplies}
+            />
+          )}
+        </div>
       </StepCard>
 
       {isDm && (
@@ -934,6 +1056,7 @@ export function AutomationsClient() {
               />
             ) : (
               <FlowEditor
+                key={editor.flow.id}
                 flow={editor.flow}
                 templateType={editor.flow.template_type}
                 onSave={handleSave}

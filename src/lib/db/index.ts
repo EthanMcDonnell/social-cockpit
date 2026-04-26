@@ -43,8 +43,12 @@ export function getDb(): Database.Database {
   for (const sql of [
     "ALTER TABLE automation_flows ADD COLUMN media_id TEXT",
     "ALTER TABLE automation_flows ADD COLUMN activated_at TEXT",
+    `CREATE TABLE IF NOT EXISTS automation_post_cursors (
+      media_id        TEXT PRIMARY KEY,
+      last_checked_at TEXT NOT NULL
+    )`,
   ]) {
-    try { _db.exec(sql); } catch { /* column already exists */ }
+    try { _db.exec(sql); } catch { /* already exists */ }
   }
   return _db;
 }

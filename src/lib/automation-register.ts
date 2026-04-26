@@ -1,6 +1,4 @@
-import { runAutomationCycle } from "@/lib/automation-worker";
-
-const INTERVAL_MS = 60_000;
+import { runAutomationCycle, INTERVAL_MS } from "@/lib/automation-worker";
 
 const tick = async () => {
   try {
