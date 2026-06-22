@@ -64,33 +64,6 @@ function IconDM() {
   );
 }
 
-function IconWait() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-      <circle cx="10" cy="10" r="7.5" />
-      <path d="M10 6v4l2.5 2.5" />
-    </svg>
-  );
-}
-
-function IconFollow() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-      <circle cx="8" cy="6.5" r="3" />
-      <path d="M2.5 17.5c0-3.314 2.462-6 5.5-6s5.5 2.686 5.5 6" />
-      <path d="M14.5 9l1.5 1.5 3-3" />
-    </svg>
-  );
-}
-
-function IconSend() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-      <path d="M17.5 2.5L9.5 10.5M17.5 2.5L12.5 17.5l-3-7-7-3 15-5z" />
-    </svg>
-  );
-}
-
 function IconPlus() {
   return (
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" className="w-4 h-4">
@@ -624,7 +597,7 @@ function FlowEditor({
             Type a keyword and press <kbd className="font-mono bg-bg-card border border-border px-1 py-0.5 rounded text-[9px]">Enter</kbd> or <kbd className="font-mono bg-bg-card border border-border px-1 py-0.5 rounded text-[9px]">,</kbd> to add it. Matching is case-insensitive and checks for the word anywhere in the comment.
             <br />
             <span className="text-text-muted/40">
-              Note: Instagram "fancy font" variations (𝗯𝗼𝗹𝗱, 𝘪𝘵𝘢𝘭𝘪𝘤, ꜰᴜʟʟᴡɪᴅᴛʜ) use different unicode characters. Add them as separate keywords if needed.
+              Note: Instagram &quot;fancy font&quot; variations (𝗯𝗼𝗹𝗱, 𝘪𝘵𝘢𝘭𝘪𝘤, ꜰᴜʟʟᴡɪᴅᴛʜ) use different unicode characters. Add them as separate keywords if needed.
             </span>
           </p>
         </div>

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listComments } from "@/lib/instagram/endpoints/comments";
 import { instagramFetch } from "@/lib/instagram/client";
 
 export const dynamic = "force-dynamic";

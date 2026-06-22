@@ -7,11 +7,9 @@ import { listComments, replyToComment, sendPrivateReply } from "@/lib/instagram/
 import type { InstagramComment, PaginatedResponse } from "@/lib/instagram/types";
 import { instagramFetch } from "@/lib/instagram/client";
 
-// Fetch all comments newer than `since`, paginating forward until exhausted.
-// Using `since` avoids scanning thousands of old comments on every cycle.
-async function listRecentComments(postId: string, since: Date): Promise<InstagramComment[]> {
+async function listAllComments(postId: string): Promise<InstagramComment[]> {
   const all: InstagramComment[] = [];
-  let result: PaginatedResponse<InstagramComment> = await listComments(postId, undefined, since);
+  let result: PaginatedResponse<InstagramComment> = await listComments(postId);
   all.push(...result.data);
   while (result.paging?.next) {
     result = await instagramFetch<PaginatedResponse<InstagramComment>>(result.paging.next);
@@ -132,36 +130,8 @@ export async function runAutomationCycle() {
 
   for (const postId of Array.from(postIds)) {
     try {
-      const cycleStart = new Date();
-
-      // Determine how far back to look. On first check for a post, use the oldest
-      // active flow's created_at so we don't miss comments made right after setup.
-      // On subsequent checks, use the last successful check time — typically ~60s ago.
-      const cursor = db
-        .prepare("SELECT last_checked_at FROM automation_post_cursors WHERE media_id = ?")
-        .get(postId) as { last_checked_at: string } | undefined;
-
-      let since: Date;
-      if (cursor) {
-        // Subtract one full interval as a safety overlap — catches anything that landed
-        // at the edge of the previous window. Deduplication via fired_automations prevents double-firing.
-        since = new Date(new Date(cursor.last_checked_at).getTime() - INTERVAL_MS);
-      } else {
-        const oldest = db
-          .prepare(
-            "SELECT created_at FROM automation_flows WHERE is_active = 1 AND (media_id IS NULL OR media_id = ?) ORDER BY created_at ASC LIMIT 1"
-          )
-          .get(postId) as { created_at: string } | undefined;
-        since = oldest ? new Date(oldest.created_at) : new Date(Date.now() - 60 * 60 * 1000);
-      }
-
-      const comments = await listRecentComments(postId, since);
+      const comments = await listAllComments(postId);
       await processFlows(postId, comments);
-
-      // Advance the cursor so the next cycle only fetches comments posted after this one started.
-      db.prepare(
-        "INSERT OR REPLACE INTO automation_post_cursors (media_id, last_checked_at) VALUES (?, ?)"
-      ).run(postId, cycleStart.toISOString());
     } catch (err) {
       console.error(`[automation] failed to process post ${postId}:`, err);
     }

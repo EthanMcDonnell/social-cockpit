@@ -262,6 +262,24 @@ export const commentReplyFunctions: Record<string, ReplyFn> = {
       `Got you ${at(username)} — check your DMs!`,
     ]),
 
+  chill_replies: ({ username }) =>
+    pick([
+      `Hey ${at(username)}, sent you a DM`,
+      `Just messaged you ${at(username)}`,
+      `Sent it over to your DMs ${at(username)}`,
+      `${atSpace(username)}it's in your DMs`,
+      `Dropped you a message ${at(username)}`,
+      `Sent you a message ${at(username)}`,
+      `${atSpace(username)}check your DMs`,
+      `Just sent that to your DMs ${at(username)}`,
+      `Replied in your DMs ${at(username)}`,
+      `In your DMs now ${at(username)}`,
+      `Sent it your way ${at(username)}`,
+      `Hey ${at(username)}, check your inbox`,
+      `Just slid into your DMs ${at(username)}`,
+      `${atSpace(username)}you've got a DM from me`,
+    ]),
+
   spirit_animal: ({ username }) =>
     `${atSpace(username)}${pick(SPIRIT_ANIMALS)}`,
 

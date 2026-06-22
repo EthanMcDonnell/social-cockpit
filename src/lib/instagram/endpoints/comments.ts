@@ -14,14 +14,10 @@ const DEFAULT_COMMENT_FIELDS = [
 
 export async function listComments(
   mediaId: string,
-  fields: string[] = DEFAULT_COMMENT_FIELDS,
-  since?: Date
+  fields: string[] = DEFAULT_COMMENT_FIELDS
 ): Promise<CommentListResponse> {
   return instagramFetch<CommentListResponse>(`/${mediaId}/comments`, {
-    params: {
-      fields: fields.join(","),
-      ...(since ? { since: Math.floor(since.getTime() / 1000) } : {}),
-    },
+    params: { fields: fields.join(",") },
   });
 }
 

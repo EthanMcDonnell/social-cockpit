@@ -4,7 +4,6 @@ import { TopBar } from "@/components/layout/TopBar";
 import { StatCardGrid } from "@/components/dashboard/StatCardGrid";
 import { FollowerChart } from "@/components/dashboard/FollowerChart";
 import { VideoViewsChart } from "@/components/dashboard/VideoViewsChart";
-import { PostMetricsTable } from "@/components/dashboard/PostMetricsTable";
 import { DataDelayBanner } from "@/components/dashboard/DataDelayBanner";
 import { PostingConsistencyChart } from "@/components/dashboard/PostingConsistencyChart";
 import { BestTimeHeatmap } from "@/components/dashboard/BestTimeHeatmap";
@@ -42,9 +41,6 @@ export default function DashboardPage() {
               <BestTimeHeatmap />
             </div>
           </div>
-
-          {/* Post metrics table */}
-          <PostMetricsTable />
         </Suspense>
       </div>
     </AppShell>
