@@ -1,0 +1,11 @@
+# Python dependencies for the video transcription worker (scripts/transcribe.py).
+# Create a local virtualenv and install these, then point TRANSCRIPTION_PYTHON
+# at its interpreter — see the Transcription section of README.md.
+#
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r requirements.txt
+#
+faster-whisper==1.1.0
+# faster-whisper's model-download path imports `requests` but doesn't pin it
+# as a hard dependency, so install it explicitly.
+requests==2.34.2

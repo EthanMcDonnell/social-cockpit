@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useSingleMedia } from "@/hooks/useMedia";
 import { useMediaInsights } from "@/hooks/useMediaInsights";
+import { TranscriptPanel } from "./TranscriptPanel";
 import { formatCount, formatPercent, formatDuration } from "@/lib/utils/format";
 import { formatChartDate, isWithin48Hours, hoursUntilInsightsAvailable } from "@/lib/utils/dates";
 
@@ -191,6 +192,9 @@ export function PostDetailPanel({ mediaId }: PostDetailPanelProps) {
           </div>
         )}
       </Card>
+
+      {/* Transcript — renders only for videos/reels when the feature is enabled */}
+      <TranscriptPanel mediaId={mediaId} mediaType={media.media_type} />
 
       <div className="flex justify-start">
         <Link

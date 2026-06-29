@@ -2,6 +2,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { TopBar } from "@/components/layout/TopBar";
 import { TokenStatusPanel } from "@/components/settings/TokenStatusPanel";
 import { ExchangeTokenForm } from "@/components/settings/ExchangeTokenForm";
+import { TranscriptionSettingsPanel } from "@/components/settings/TranscriptionSettingsPanel";
 
 export const metadata = {
   title: "Settings",
@@ -25,6 +26,13 @@ export default function SettingsPage() {
               Token Management
             </h2>
             <ExchangeTokenForm />
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-medium">
+              Features
+            </h2>
+            <TranscriptionSettingsPanel />
           </section>
 
           <section className="space-y-2">

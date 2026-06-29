@@ -4,8 +4,48 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { clsx } from "clsx";
 import { Card } from "@/components/ui/Card";
+import { Skeleton } from "@/components/ui/Skeleton";
 import type { PostTableRow } from "@/lib/data/transforms";
 import { MEDIA_TYPE_LABEL, METRICS, METRIC_MAP, type MetricKey } from "./metrics";
+import { useTranscript } from "@/hooks/useTranscript";
+import { useTranscriptionSetting } from "@/hooks/useTranscriptionSetting";
+
+function InlineTranscript({ mediaId, mediaType }: { mediaId: string; mediaType: string }) {
+  const settingQuery = useTranscriptionSetting();
+  const enabled = settingQuery.data === true;
+  const isVideo = mediaType === "VIDEO" || mediaType === "REEL";
+  const transcriptQuery = useTranscript(mediaId, enabled && isVideo);
+
+  if (!enabled || !isVideo) return null;
+
+  const transcript = transcriptQuery.data;
+
+  return (
+    <div>
+      <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Script</p>
+      <div className="mt-1">
+        {transcriptQuery.isLoading ? (
+          <div className="space-y-1.5">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-2.5 w-full" />
+            ))}
+          </div>
+        ) : transcript ? (
+          <p className="text-sm leading-relaxed text-[var(--text-primary)] whitespace-pre-wrap">
+            {transcript.text || (
+              <span className="italic text-[var(--text-muted)]">No speech detected.</span>
+            )}
+          </p>
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Queued for transcription…
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 type SortKey = MetricKey | "timestamp";
 
@@ -211,15 +251,7 @@ export function PostsTable({ rows, metric, loadingIds }: PostsTableProps) {
                           {row.caption || <span className="italic text-[var(--text-muted)]">No caption</span>}
                         </p>
                       </div>
-                      {/* Placeholder for upcoming Script feature */}
-                      <div>
-                        <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
-                          Script
-                        </p>
-                        <p className="mt-1 rounded-lg border border-dashed border-[var(--border)] px-3 py-2 text-xs italic text-[var(--text-muted)]">
-                          Script coming soon — this post&apos;s script will appear here.
-                        </p>
-                      </div>
+                      <InlineTranscript mediaId={row.id} mediaType={row.mediaType} />
                     </div>
 
                     {/* All metrics */}
