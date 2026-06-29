@@ -1,61 +1,72 @@
 "use client";
 
-import { useQueries } from "@tanstack/react-query";
-import { useMedia } from "./useMedia";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useProfile } from "./useProfile";
-import type { MediaInsights } from "@/lib/instagram/types";
+import type { PostListItem } from "@/lib/posts";
+import type { InstagramMedia, MediaInsights } from "@/lib/instagram/types";
 import { mediaWithInsightsToRanked } from "@/lib/data/transforms";
 import { rankPostsByEngagement } from "@/lib/data/calculations";
 
-async function fetchMediaInsights(mediaId: string): Promise<MediaInsights> {
-  const res = await fetch(`/api/instagram/media/${mediaId}/insights`);
+// Pull the most recent posts (insights embedded from cache — no per-post
+// fan-out) and rank them by engagement rate client-side.
+const SOURCE_LIMIT = 20;
+
+async function fetchRecentPosts(): Promise<PostListItem[]> {
+  const res = await fetch(`/api/posts?limit=${SOURCE_LIMIT}`);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.message ?? "Failed to fetch media insights");
+    throw new Error(body.message ?? "Failed to fetch posts");
   }
-  return res.json();
+  const body = await res.json();
+  return body.data as PostListItem[];
 }
 
 /**
- * Fetches the top N posts by engagement rate.
- * Fan-out: fetches insights for each media item in parallel.
+ * Top N posts by engagement rate. Sourced from the local Meta cache in a single
+ * request (insights embedded), replacing the previous per-post insights fan-out.
  */
 export function useTopPosts(limit = 5) {
-  const mediaQuery = useMedia({ limit: 20 });
+  const postsQuery = useQuery({
+    queryKey: ["posts", "recent", SOURCE_LIMIT],
+    queryFn: fetchRecentPosts,
+    staleTime: 15 * 60 * 1000,
+  });
   const profileQuery = useProfile();
-  const mediaList = mediaQuery.data?.data ?? [];
-
-  const insightQueries = useQueries({
-    queries: mediaList.map((media) => ({
-      queryKey: ["instagram", "media", media.id, "insights"],
-      queryFn: () => fetchMediaInsights(media.id),
-      staleTime: 15 * 60 * 1000,
-      enabled: mediaList.length > 0,
-    })),
-  });
-
-  const allInsightsLoaded = insightQueries.every((q) => !q.isLoading);
-  const insightsMap = new Map<string, MediaInsights>();
-  insightQueries.forEach((q, i) => {
-    if (q.data && mediaList[i]) {
-      insightsMap.set(mediaList[i].id, q.data);
-    }
-  });
-
   const followerCount = profileQuery.data?.followers_count;
-  const ranked =
-    allInsightsLoaded && mediaList.length > 0
-      ? rankPostsByEngagement(
-          mediaWithInsightsToRanked(mediaList, insightsMap, followerCount),
-          limit
-        )
-      : [];
+
+  const ranked = useMemo(() => {
+    const posts = postsQuery.data ?? [];
+    if (posts.length === 0) return [];
+
+    const mediaList: InstagramMedia[] = [];
+    const insightsMap = new Map<string, MediaInsights>();
+    for (const p of posts) {
+      mediaList.push({
+        id: p.id,
+        caption: p.caption ?? undefined,
+        media_type: p.mediaType,
+        media_product_type: p.mediaProductType,
+        permalink: p.permalink,
+        thumbnail_url: p.thumbnailUrl,
+        timestamp: p.timestamp,
+        like_count: p.likeCount,
+        comments_count: p.commentsCount,
+        shortcode: p.shortcode,
+      });
+      if (p.insights) insightsMap.set(p.id, p.insights);
+    }
+
+    return rankPostsByEngagement(
+      mediaWithInsightsToRanked(mediaList, insightsMap, followerCount),
+      limit
+    );
+  }, [postsQuery.data, followerCount, limit]);
 
   return {
     data: ranked,
-    isLoading: mediaQuery.isLoading || insightQueries.some((q) => q.isLoading),
-    isError:
-      mediaQuery.isError || insightQueries.some((q) => q.isError),
-    error: mediaQuery.error ?? insightQueries.find((q) => q.error)?.error,
+    isLoading: postsQuery.isLoading,
+    isError: postsQuery.isError,
+    error: postsQuery.error,
   };
 }

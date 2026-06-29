@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useQueries } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { clsx } from "clsx";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState, EmptyState } from "@/components/ui/ErrorState";
@@ -9,23 +8,17 @@ import { PostCard } from "./PostCard";
 import { PostsTable } from "./PostsTable";
 import { PostsCompare } from "./PostsCompare";
 import { METRICS, METRIC_MAP, MEDIA_TYPE_LABEL, type MetricKey } from "./metrics";
-import { useMedia } from "@/hooks/useMedia";
+import { useAllPosts } from "@/hooks/usePosts";
 import { useProfile } from "@/hooks/useProfile";
 import { mediaWithInsightsToTableRows, type PostTableRow } from "@/lib/data/transforms";
 import { formatCount } from "@/lib/utils/format";
-import type { MediaInsights } from "@/lib/instagram/types";
+import type { InstagramMedia, MediaInsights } from "@/lib/instagram/types";
 
 type View = "grid" | "compare" | "table";
 type TypeFilter = "ALL" | string;
 
-async function fetchInsights(mediaId: string): Promise<MediaInsights> {
-  const res = await fetch(`/api/instagram/media/${mediaId}/insights?flat=true`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message ?? "Failed to fetch insights");
-  }
-  return res.json();
-}
+// How many rows to render at a time; more are appended as the user scrolls.
+const RENDER_PAGE = 24;
 
 const VIEWS: { value: View; label: string; icon: React.ReactNode }[] = [
   {
@@ -119,32 +112,35 @@ export function PostsExplorer() {
   const [metric, setMetric] = useState<MetricKey>("engagementRate");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
 
-  const mediaQuery = useMedia({ all: true });
+  const postsQuery = useAllPosts();
   const profileQuery = useProfile();
-  const mediaList = useMemo(() => mediaQuery.data?.data ?? [], [mediaQuery.data]);
+  const posts = useMemo(() => postsQuery.data ?? [], [postsQuery.data]);
 
-  const insightQueries = useQueries({
-    queries: mediaList.map((m) => ({
-      queryKey: ["instagram", "media", m.id, "insights"],
-      queryFn: () => fetchInsights(m.id),
-      staleTime: 15 * 60 * 1000,
-      enabled: mediaList.length > 0,
-    })),
-  });
-
-  const { insightsMap, loadingIds } = useMemo(() => {
+  // Adapt cached PostListItem[] (insights already embedded) into the existing
+  // table-row shape — no per-post insights fan-out.
+  const { mediaList, insightsMap } = useMemo(() => {
+    const list: InstagramMedia[] = [];
     const map = new Map<string, MediaInsights>();
-    const loading = new Set<string>();
-    insightQueries.forEach((q, i) => {
-      const media = mediaList[i];
-      if (!media) return;
-      if (q.data) map.set(media.id, q.data);
-      if (q.isPending) loading.add(media.id);
-    });
-    return { insightsMap: map, loadingIds: loading };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [insightQueries.map((q) => q.status).join(","), mediaList.length]);
+    for (const p of posts) {
+      list.push({
+        id: p.id,
+        caption: p.caption ?? undefined,
+        media_type: p.mediaType,
+        media_product_type: p.mediaProductType,
+        permalink: p.permalink,
+        thumbnail_url: p.thumbnailUrl,
+        timestamp: p.timestamp,
+        like_count: p.likeCount,
+        comments_count: p.commentsCount,
+        shortcode: p.shortcode,
+      });
+      if (p.insights) map.set(p.id, p.insights);
+    }
+    return { mediaList: list, insightsMap: map };
+  }, [posts]);
 
+  // All insights arrive together now, so nothing is individually "loading".
+  const loadingIds = useMemo(() => new Set<string>(), []);
   const followersCount = profileQuery.data?.followers_count;
   const allRows: PostTableRow[] = useMemo(
     () =>
@@ -178,7 +174,29 @@ export function PostsExplorer() {
     return { top, avg, totalReach };
   }, [rows, metric]);
 
-  if (mediaQuery.isLoading) {
+  // Lazy rendering: render a window of the (globally-ranked) rows, growing as
+  // the user scrolls. The full dataset is already loaded, so ranking is correct.
+  const [visibleCount, setVisibleCount] = useState(RENDER_PAGE);
+  useEffect(() => setVisibleCount(RENDER_PAGE), [typeFilter, metric, view]);
+  const visibleRows = useMemo(() => rows.slice(0, visibleCount), [rows, visibleCount]);
+  const hasMore = visibleCount < rows.length;
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((c) => Math.min(c + RENDER_PAGE, rows.length));
+        }
+      },
+      { rootMargin: "600px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [rows.length]);
+
+  if (postsQuery.isLoading) {
     return (
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {Array.from({ length: 18 }).map((_, i) => (
@@ -194,8 +212,8 @@ export function PostsExplorer() {
     );
   }
 
-  if (mediaQuery.isError) {
-    return <ErrorState message={(mediaQuery.error as Error)?.message} />;
+  if (postsQuery.isError) {
+    return <ErrorState message={(postsQuery.error as Error)?.message} />;
   }
 
   if (allRows.length === 0) {
@@ -278,7 +296,7 @@ export function PostsExplorer() {
         <EmptyState title="No matching posts" message="Try a different media type filter." />
       ) : view === "grid" ? (
         <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {rows.map((row, i) => (
+          {visibleRows.map((row, i) => (
             <PostCard
               key={row.id}
               row={row}
@@ -290,9 +308,18 @@ export function PostsExplorer() {
           ))}
         </div>
       ) : view === "compare" ? (
-        <PostsCompare rows={rows} metric={metric} loadingIds={loadingIds} />
+        <PostsCompare rows={visibleRows} metric={metric} loadingIds={loadingIds} />
       ) : (
-        <PostsTable rows={rows} metric={metric} loadingIds={loadingIds} />
+        <PostsTable rows={visibleRows} metric={metric} loadingIds={loadingIds} />
+      )}
+
+      {/* Infinite-scroll sentinel: appends more rows as it scrolls into view */}
+      {hasMore && (
+        <div ref={sentinelRef} className="flex justify-center py-4">
+          <span className="text-[11px] text-[var(--text-muted)]">
+            Showing {visibleRows.length} of {rows.length}
+          </span>
+        </div>
       )}
     </div>
   );
