@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMediaInsights, getMediaInsightsFlat } from "@/lib/instagram/endpoints/insights";
+import { ensureMediaFresh, ensureInsightsFresh } from "@/lib/cache/sync";
+import { getCachedMedia, getCachedInsights } from "@/lib/cache/store";
 import { InstagramError, RateLimitError, type MediaInsightMetric } from "@/lib/instagram/types";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +19,19 @@ export async function GET(
     : undefined;
 
   try {
+    // Cache fast-path: the common flat request with the default metric set is
+    // served from the local cache (read-through). Raw or custom-metric requests
+    // fall through to a live fetch.
+    if (flat && !metricsParam) {
+      await ensureMediaFresh();
+      const media = getCachedMedia(id);
+      if (media) {
+        await ensureInsightsFresh(media);
+        const cached = getCachedInsights(id);
+        if (cached) return NextResponse.json(cached);
+      }
+    }
+
     if (flat) {
       const insights = await getMediaInsightsFlat(id, metrics);
       return NextResponse.json(insights);

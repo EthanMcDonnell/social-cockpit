@@ -29,6 +29,26 @@ export async function listMedia(
   });
 }
 
+/**
+ * Fetch a single cursor-paginated page of media. Pass `after` (the cursor from
+ * a previous response's `paging.cursors.after`) to get the next page. Returns
+ * the raw response including `paging` so callers can surface the next cursor.
+ */
+export async function listMediaPage(
+  limit: number = 25,
+  after?: string,
+  fields: string[] = DEFAULT_FIELDS
+): Promise<MediaListResponse> {
+  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
+  if (!accountId) {
+    throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
+  }
+
+  return instagramFetch<MediaListResponse>(`/${accountId}/media`, {
+    params: { fields: fields.join(","), limit, after },
+  });
+}
+
 export async function getAllMedia(
   fields: string[] = DEFAULT_FIELDS
 ): Promise<InstagramMedia[]> {

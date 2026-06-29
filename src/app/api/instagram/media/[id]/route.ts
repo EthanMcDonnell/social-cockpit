@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMedia } from "@/lib/instagram/endpoints/media";
+import { getCachedMedia } from "@/lib/cache/store";
 import { InstagramError, RateLimitError } from "@/lib/instagram/types";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +12,9 @@ export async function GET(
   const { id } = params;
 
   try {
-    const media = await getMedia(id);
+    // Serve from cache when present; fall back to a live fetch on a miss.
+    const cached = getCachedMedia(id);
+    const media = cached ?? (await getMedia(id));
     return NextResponse.json(media);
   } catch (err) {
     if (err instanceof RateLimitError) {
