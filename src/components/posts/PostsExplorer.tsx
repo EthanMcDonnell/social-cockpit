@@ -8,7 +8,7 @@ import { PostCard } from "./PostCard";
 import { PostsTable } from "./PostsTable";
 import { PostsCompare } from "./PostsCompare";
 import { METRICS, METRIC_MAP, MEDIA_TYPE_LABEL, type MetricKey } from "./metrics";
-import { useAllPosts } from "@/hooks/usePosts";
+import { useAllPosts, useRefreshPosts } from "@/hooks/usePosts";
 import { useProfile } from "@/hooks/useProfile";
 import { mediaWithInsightsToTableRows, type PostTableRow } from "@/lib/data/transforms";
 import { formatCount } from "@/lib/utils/format";
@@ -16,6 +16,10 @@ import type { InstagramMedia, MediaInsights } from "@/lib/instagram/types";
 
 type View = "grid" | "compare" | "table";
 type TypeFilter = "ALL" | string;
+type SortKey = MetricKey | "recent";
+
+// Display metric used for column highlight/bars when sorting by date.
+const DEFAULT_DISPLAY_METRIC: MetricKey = "engagementRate";
 
 // How many rows to render at a time; more are appended as the user scrolls.
 const RENDER_PAGE = 24;
@@ -56,6 +60,32 @@ const VIEWS: { value: View; label: string; icon: React.ReactNode }[] = [
     ),
   },
 ];
+
+function RefreshButton({ onClick, busy }: { onClick: () => void; busy: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      title="Fetch latest posts from Instagram"
+      className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-2.5 py-1.5 text-xs font-medium text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-60"
+      aria-busy={busy}
+    >
+      <svg
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.6}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={clsx("h-3.5 w-3.5", busy && "animate-spin")}
+      >
+        <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
+        <path d="M13.5 2v3h-3" />
+      </svg>
+      <span className="hidden sm:inline">{busy ? "Refreshing…" : "Refresh"}</span>
+    </button>
+  );
+}
 
 function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }) {
   return (
@@ -109,10 +139,15 @@ function StatTile({
 
 export function PostsExplorer() {
   const [view, setView] = useState<View>("table");
-  const [metric, setMetric] = useState<MetricKey>("engagementRate");
+  const [sort, setSort] = useState<SortKey>("recent");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
 
+  // When sorting by date there's no ranking metric, so fall back to a sensible
+  // metric for the column highlight / progress bars.
+  const metric: MetricKey = sort === "recent" ? DEFAULT_DISPLAY_METRIC : sort;
+
   const postsQuery = useAllPosts();
+  const refreshPosts = useRefreshPosts();
   const profileQuery = useProfile();
   const posts = useMemo(() => postsQuery.data ?? [], [postsQuery.data]);
 
@@ -159,8 +194,12 @@ export function PostsExplorer() {
 
   const rows = useMemo(() => {
     const filtered = typeFilter === "ALL" ? allRows : allRows.filter((r) => r.mediaType === typeFilter);
-    return [...filtered].sort((a, b) => b[metric] - a[metric]);
-  }, [allRows, typeFilter, metric]);
+    return [...filtered].sort((a, b) =>
+      sort === "recent"
+        ? new Date(b.isoTimestamp).getTime() - new Date(a.isoTimestamp).getTime()
+        : b[sort] - a[sort]
+    );
+  }, [allRows, typeFilter, sort]);
 
   const def = METRIC_MAP[metric];
   const metricMax = rows.reduce((m, r) => Math.max(m, r[metric]), 0);
@@ -177,7 +216,7 @@ export function PostsExplorer() {
   // Lazy rendering: render a window of the (globally-ranked) rows, growing as
   // the user scrolls. The full dataset is already loaded, so ranking is correct.
   const [visibleCount, setVisibleCount] = useState(RENDER_PAGE);
-  useEffect(() => setVisibleCount(RENDER_PAGE), [typeFilter, metric, view]);
+  useEffect(() => setVisibleCount(RENDER_PAGE), [typeFilter, sort, view]);
   const visibleRows = useMemo(() => rows.slice(0, visibleCount), [rows, visibleCount]);
   const hasMore = visibleCount < rows.length;
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -231,9 +270,9 @@ export function PostsExplorer() {
             sub={typeFilter === "ALL" ? "all types" : MEDIA_TYPE_LABEL[typeFilter] ?? typeFilter}
           />
           <StatTile
-            label={`Top ${def.label}`}
+            label={sort === "recent" ? "Most recent" : `Top ${def.label}`}
             accent
-            value={def.format(summary.top[metric])}
+            value={sort === "recent" ? summary.top.timestamp : def.format(summary.top[metric])}
             sub={
               <span className="flex items-center gap-1.5">
                 <span className="opacity-70">▲</span>
@@ -264,25 +303,50 @@ export function PostsExplorer() {
               </FilterChip>
             ))}
           </div>
-          <ViewToggle view={view} onChange={setView} />
+          <div className="flex items-center gap-2">
+            <RefreshButton
+              onClick={() => refreshPosts.mutate()}
+              busy={refreshPosts.isPending}
+            />
+            <ViewToggle view={view} onChange={setView} />
+          </div>
         </div>
 
-        {/* Rank-by metric selector */}
+        {refreshPosts.isError && (
+          <p className="text-[11px] text-[var(--accent-red)]">
+            Couldn&apos;t refresh: {(refreshPosts.error as Error)?.message ?? "try again in a moment"}
+          </p>
+        )}
+
+        {/* Sort-by selector */}
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-0.5 font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
-            Rank by
+            Sort by
           </span>
+          <button
+            onClick={() => setSort("recent")}
+            className={clsx(
+              "flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors",
+              sort === "recent"
+                ? "border-[var(--accent-cyan)] bg-[var(--accent-cyan)]/10 text-[var(--accent-cyan)]"
+                : "border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            )}
+            aria-pressed={sort === "recent"}
+          >
+            <span className="opacity-70">◷</span>
+            Recent
+          </button>
           {METRICS.map((m) => (
             <button
               key={m.key}
-              onClick={() => setMetric(m.key)}
+              onClick={() => setSort(m.key)}
               className={clsx(
                 "flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors",
-                metric === m.key
+                sort === m.key
                   ? "border-[var(--accent-cyan)] bg-[var(--accent-cyan)]/10 text-[var(--accent-cyan)]"
                   : "border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
               )}
-              aria-pressed={metric === m.key}
+              aria-pressed={sort === m.key}
             >
               <span className="opacity-70">{m.glyph}</span>
               {m.short}
@@ -310,7 +374,7 @@ export function PostsExplorer() {
       ) : view === "compare" ? (
         <PostsCompare rows={visibleRows} metric={metric} loadingIds={loadingIds} />
       ) : (
-        <PostsTable rows={visibleRows} metric={metric} loadingIds={loadingIds} />
+        <PostsTable rows={visibleRows} metric={metric} sort={sort} loadingIds={loadingIds} />
       )}
 
       {/* Infinite-scroll sentinel: appends more rows as it scrolls into view */}

@@ -22,9 +22,13 @@ export async function processFlows(postId: string, comments: InstagramComment[])
   const db = getDb();
   const flows = (
     db
-      .prepare("SELECT * FROM automation_flows WHERE is_active = 1 AND (media_id IS NULL OR media_id = ?)")
-      .all(postId) as AutomationFlowRow[]
-  ).map(rowToFlow);
+      .prepare("SELECT * FROM automation_flows WHERE is_active = 1")
+      .all() as AutomationFlowRow[]
+  )
+    .map(rowToFlow)
+    // A flow applies to this post if it targets no specific posts (any post)
+    // or if this post is one of its targeted posts.
+    .filter((flow) => flow.media_ids.length === 0 || flow.media_ids.includes(postId));
 
   if (flows.length === 0) return;
 
@@ -110,14 +114,18 @@ export async function runAutomationCycle() {
   // Collect post IDs to check: explicitly targeted posts + recent posts for any-post flows
   const postIds = new Set<string>();
 
-  const targetedRows = db
-    .prepare("SELECT DISTINCT media_id FROM automation_flows WHERE is_active = 1 AND media_id IS NOT NULL")
-    .all() as { media_id: string }[];
-  for (const { media_id } of targetedRows) postIds.add(media_id);
+  const activeFlows = (
+    db.prepare("SELECT * FROM automation_flows WHERE is_active = 1").all() as AutomationFlowRow[]
+  ).map(rowToFlow);
 
-  const hasAnyPostFlow = !!db
-    .prepare("SELECT 1 FROM automation_flows WHERE is_active = 1 AND media_id IS NULL LIMIT 1")
-    .get();
+  let hasAnyPostFlow = false;
+  for (const flow of activeFlows) {
+    if (flow.media_ids.length === 0) {
+      hasAnyPostFlow = true;
+    } else {
+      for (const id of flow.media_ids) postIds.add(id);
+    }
+  }
 
   if (hasAnyPostFlow) {
     try {

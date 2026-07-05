@@ -424,11 +424,11 @@ function ReplyFunctionSelector({
 // ─── Video selector ────────────────────────────────────────────────────────────
 
 function VideoSelector({
-  selectedId,
+  selectedIds,
   onChange,
 }: {
-  selectedId: string | undefined;
-  onChange: (id: string | undefined) => void;
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
 }) {
   const { data, isLoading } = useMedia({ limit: 20 });
   const items = data?.data ?? [];
@@ -437,6 +437,16 @@ function VideoSelector({
     if (m.media_type === "IMAGE") return m.media_url ?? null;
     return m.thumbnail_url ?? null;
   }
+
+  function toggle(id: string) {
+    onChange(
+      selectedIds.includes(id)
+        ? selectedIds.filter((x) => x !== id)
+        : [...selectedIds, id]
+    );
+  }
+
+  const count = selectedIds.length;
 
   return (
     <div className="space-y-1.5 mb-5">
@@ -453,24 +463,26 @@ function VideoSelector({
         <div className="flex gap-2 overflow-x-auto pb-1">
           <button
             type="button"
-            onClick={() => onChange(undefined)}
+            onClick={() => onChange([])}
             className={clsx(
               "flex-shrink-0 w-16 h-16 rounded-xl border text-[10px] font-medium transition-all",
-              !selectedId
+              count === 0
                 ? "border-accent-cyan bg-accent-cyan/10 text-accent-cyan"
                 : "border-border bg-bg-base text-text-muted hover:border-border/80"
             )}
           >
             Any post
           </button>
-          {items.map((m) => (
+          {items.map((m) => {
+            const isSelected = selectedIds.includes(m.id);
+            return (
             <div key={m.id} className="flex-shrink-0 flex flex-col items-center gap-1 w-16">
               <button
                 type="button"
-                onClick={() => onChange(m.id)}
+                onClick={() => toggle(m.id)}
                 className={clsx(
-                  "w-16 h-16 rounded-xl border overflow-hidden transition-all",
-                  selectedId === m.id
+                  "relative w-16 h-16 rounded-xl border overflow-hidden transition-all",
+                  isSelected
                     ? "border-accent-cyan ring-1 ring-accent-cyan/50"
                     : "border-border hover:border-border/80"
                 )}
@@ -482,20 +494,27 @@ function VideoSelector({
                     {m.media_type === "REEL" ? "Reel" : "Post"}
                   </div>
                 )}
+                {isSelected && (
+                  <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-accent-cyan text-bg-base flex items-center justify-center">
+                    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-2.5 h-2.5">
+                      <path d="M2.5 6.5l2.5 2.5 4.5-5" />
+                    </svg>
+                  </span>
+                )}
               </button>
               <p className="text-[9px] text-text-muted/60 text-center leading-tight line-clamp-2 w-full">
                 {m.caption?.slice(0, 30) ?? m.media_type}
               </p>
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
-      {selectedId && (
+      {count > 0 ? (
         <p className="text-[10px] text-text-muted/55">
-          Automation will only trigger on comments from the selected post.
+          Automation will only trigger on comments from {count === 1 ? "the selected post" : `the ${count} selected posts`}. Tap a post to add or remove it.
         </p>
-      )}
-      {!selectedId && (
+      ) : (
         <p className="text-[10px] text-text-muted/55">
           Automation will trigger on any post.
         </p>
@@ -516,7 +535,7 @@ function FlowEditor({
 }: {
   flow?: AutomationFlow;
   templateType: AutomationTemplateType;
-  onSave: (data: { name: string; trigger_keywords: string[]; config: AutomationConfig; media_id?: string; template_type: AutomationTemplateType }) => void;
+  onSave: (data: { name: string; trigger_keywords: string[]; config: AutomationConfig; media_ids: string[]; template_type: AutomationTemplateType }) => void;
   onDelete?: () => void;
   onCancel: () => void;
   isSaving: boolean;
@@ -527,7 +546,7 @@ function FlowEditor({
   const [config, setConfig] = useState<AutomationConfig>(
     flow?.config ?? (templateType === "comment_to_reply" ? DEFAULT_REPLY_CONFIG : DEFAULT_DM_CONFIG)
   );
-  const [mediaId, setMediaId] = useState<string | undefined>(flow?.media_id);
+  const [mediaIds, setMediaIds] = useState<string[]>(flow?.media_ids ?? []);
   const [error, setError] = useState<string | null>(null);
 
   const isDm = templateType === "comment_to_dm";
@@ -564,7 +583,7 @@ function FlowEditor({
     if (!name.trim()) { setError("Flow name is required"); return; }
     if (keywords.length === 0) { setError("At least one trigger keyword is required"); return; }
     if (isDm && !dmConfig.initial_message?.trim()) { setError("DM message is required"); return; }
-    onSave({ name: name.trim(), trigger_keywords: keywords, config, media_id: mediaId, template_type: templateType });
+    onSave({ name: name.trim(), trigger_keywords: keywords, config, media_ids: mediaIds, template_type: templateType });
   }
 
   return (
@@ -584,7 +603,7 @@ function FlowEditor({
       </div>
 
       {/* Video selector */}
-      <VideoSelector selectedId={mediaId} onChange={setMediaId} />
+      <VideoSelector selectedIds={mediaIds} onChange={setMediaIds} />
 
       {/* ── Step 1: Trigger ── */}
       <StepCard icon={<IconComment />} label="Trigger — keyword in comment" color="cyan">
@@ -793,6 +812,7 @@ function FlowRow({
   mediaThumbnail?: string | null;
   mediaCaption?: string | null;
 }) {
+  const mediaCount = flow.media_ids.length;
   return (
     <button
       onClick={onSelect}
@@ -804,12 +824,17 @@ function FlowRow({
       )}
     >
       <div className="flex items-start gap-2.5">
-        {flow.media_id && (
-          <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-bg-base border border-border">
+        {mediaCount > 0 && (
+          <div className="relative w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-bg-base border border-border">
             {mediaThumbnail ? (
               <img src={mediaThumbnail} alt="" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-[9px] text-text-muted">Post</div>
+            )}
+            {mediaCount > 1 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-accent-cyan text-bg-base text-[9px] font-semibold flex items-center justify-center">
+                {mediaCount}
+              </span>
             )}
           </div>
         )}
@@ -817,8 +842,12 @@ function FlowRow({
           <p className={clsx("text-sm font-medium truncate", isSelected ? "text-accent-cyan" : "text-text-primary")}>
             {flow.name}
           </p>
-          {mediaCaption && (
-            <p className="text-[10px] text-text-muted/60 truncate mt-0.5">{mediaCaption}</p>
+          {mediaCount > 1 ? (
+            <p className="text-[10px] text-text-muted/60 truncate mt-0.5">{mediaCount} posts</p>
+          ) : (
+            mediaCaption && (
+              <p className="text-[10px] text-text-muted/60 truncate mt-0.5">{mediaCaption}</p>
+            )
           )}
           <div className="flex items-center gap-1 mt-1.5 flex-wrap">
             {flow.trigger_keywords.map((kw) => (
@@ -895,7 +924,7 @@ export function AutomationsClient() {
     name: string;
     trigger_keywords: string[];
     config: AutomationConfig;
-    media_id?: string;
+    media_ids: string[];
     template_type: AutomationTemplateType;
   }) {
     if (editor.mode === "new") {

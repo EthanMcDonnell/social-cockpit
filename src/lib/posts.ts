@@ -33,6 +33,8 @@ export interface PostTranscriptSummary {
   model?: string;
   charCount?: number;
   preview?: string;
+  // Full transcript text — only populated when the caller asks (fullText=1).
+  text?: string;
   createdAt?: string;
   // Link to the full transcript resource, present only when status === "ready".
   href?: string;

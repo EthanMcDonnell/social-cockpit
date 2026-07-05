@@ -32,6 +32,33 @@ function buildCumulativeSeries(
   return sorted.map((point, i) => ({ ...point, value: totals[i] }));
 }
 
+/** Rounds a step up to a "nice" 1 / 2 / 5 × 10ⁿ value. */
+function niceStep(rough: number): number {
+  if (rough <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(rough)));
+  const norm = rough / pow;
+  const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return nice * pow;
+}
+
+/**
+ * Builds a tight, evenly-spaced Y axis around the data range so a near-flat
+ * follower series doesn't collapse to repeated labels. Returns the domain and
+ * explicit ticks (≈5) snapped to nice round numbers.
+ */
+function buildAxis(values: number[]): { domain: [number, number]; ticks: number[]; step: number } {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  // Flat series: invent a small band so ticks stay distinct.
+  const span = max - min || Math.max(1, Math.round(max * 0.02));
+  const step = niceStep(span / 4);
+  const lo = Math.floor(min / step) * step;
+  const hi = Math.ceil(max / step) * step;
+  const ticks: number[] = [];
+  for (let t = lo; t <= hi + step / 2; t += step) ticks.push(t);
+  return { domain: [lo, hi], ticks, step };
+}
+
 export function FollowerChart({ className }: { className?: string }) {
   const [period] = usePeriod();
   const insightsQuery = useUserInsights(period);
@@ -48,6 +75,14 @@ export function FollowerChart({ className }: { className?: string }) {
           profileQuery.data.followers_count
         )
       : [];
+
+  const axis =
+    series.length > 0 ? buildAxis(series.map((p) => p.value)) : null;
+
+  // When ticks are closer together than 1K, the K-suffix rounds neighbours to
+  // the same label — fall back to grouped full numbers (e.g. "1,150").
+  const formatTick = (v: number) =>
+    axis && axis.step < 1000 ? Math.round(v).toLocaleString() : formatCount(v);
 
   const refetch = () => {
     insightsQuery.refetch();
@@ -90,9 +125,10 @@ export function FollowerChart({ className }: { className?: string }) {
               tick={{ fontSize: 11, fill: "var(--text-muted)", fontFamily: "var(--font-dm-mono)" }}
               tickLine={false}
               axisLine={false}
-              tickFormatter={formatCount}
+              tickFormatter={formatTick}
               width={48}
-              domain={["auto", "auto"]}
+              domain={axis ? axis.domain : ["auto", "auto"]}
+              ticks={axis ? axis.ticks : undefined}
             />
             <Tooltip
               contentStyle={{

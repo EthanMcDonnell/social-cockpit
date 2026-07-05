@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ensureMediaFresh } from "@/lib/cache/sync";
+import { ensureMediaFresh, refreshMedia } from "@/lib/cache/sync";
 import {
   getAllCachedMedia,
   getCachedMediaPage,
@@ -24,6 +24,10 @@ export async function GET(request: NextRequest) {
 
   const after = searchParams.get("after") ?? undefined;
   const all = searchParams.get("all") === "true";
+  // Force an immediate re-fetch of the media list from Meta, bypassing the
+  // stale-while-revalidate TTL — used by the "Refresh" button so new posts
+  // show up without waiting for the cache to expire.
+  const refresh = searchParams.get("refresh") === "true";
 
   const rawLimit = parseInt(searchParams.get("limit") ?? "", 10);
   const limit = Number.isFinite(rawLimit)
@@ -36,7 +40,11 @@ export async function GET(request: NextRequest) {
     : undefined;
 
   try {
-    await ensureMediaFresh();
+    if (refresh) {
+      await refreshMedia();
+    } else {
+      await ensureMediaFresh();
+    }
 
     // `all=true` returns the full catalog (insights embedded) in one cheap local
     // query — used by the posts page, which ranks across every post.

@@ -26,6 +26,7 @@ export function useCreateFlow() {
       trigger_keywords: string[];
       config: AutomationConfig;
       media_id?: string;
+      media_ids?: string[];
       template_type?: AutomationTemplateType;
     }) => {
       const res = await fetch("/api/automation-flows", {

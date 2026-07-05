@@ -52,21 +52,24 @@ type SortKey = MetricKey | "timestamp";
 interface PostsTableProps {
   rows: PostTableRow[];
   metric: MetricKey;
+  /** Active sort from the explorer; "recent" maps to the Post (date) column */
+  sort: MetricKey | "recent";
   loadingIds: Set<string>;
 }
 
 /** Compact secondary metrics shown inline on each large row (excludes active) */
 const SECONDARY_KEYS: MetricKey[] = ["likes", "comments", "reach", "engagementRate"];
 
-export function PostsTable({ rows, metric, loadingIds }: PostsTableProps) {
-  const [sortKey, setSortKey] = useState<SortKey>(metric);
+export function PostsTable({ rows, metric, sort, loadingIds }: PostsTableProps) {
+  const activeSort: SortKey = sort === "recent" ? "timestamp" : sort;
+  const [sortKey, setSortKey] = useState<SortKey>(activeSort);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
-    setSortKey(metric);
+    setSortKey(activeSort);
     setSortDir("desc");
-  }, [metric]);
+  }, [activeSort]);
 
   function handleSort(key: SortKey) {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));

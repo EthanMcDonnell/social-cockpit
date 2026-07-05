@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PostListItem } from "@/lib/posts";
 import type { PostsSummary } from "@/lib/cache/store";
 
@@ -28,6 +28,23 @@ export function useAllPosts(mediaType?: string) {
     queryKey: ["posts", "all", mediaType ?? "ALL"],
     queryFn: () => fetchAllPosts(mediaType),
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+// Forces the server to re-fetch the media list from Meta (bypassing the cache
+// TTL), then invalidates the client query cache so the UI reloads the fresh
+// data. Used by the "Refresh" button on the posts page.
+export function useRefreshPosts() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/posts?refresh=true&limit=1");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? "Failed to refresh posts");
+      }
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["posts"] }),
   });
 }
 

@@ -61,11 +61,15 @@ export interface CommentToDmConfig {
   comment_reply_fn?: string;
   comment_replies: string[];
   initial_message: string;
+  // Posts this flow applies to. Absent/empty = any post. Stored inside the
+  // config JSON so no schema migration is needed to support multiple videos.
+  media_ids?: string[];
 }
 
 export interface CommentToReplyConfig {
   comment_reply_fn?: string;
   comment_replies: string[];
+  media_ids?: string[];
 }
 
 export type AutomationConfig = CommentToDmConfig | CommentToReplyConfig;
@@ -90,7 +94,10 @@ export interface AutomationFlow {
   config: AutomationConfig;
   is_active: boolean;
   created_at: string;
+  // Primary/first targeted post — kept for backward compatibility and list display.
   media_id?: string;
+  // Full set of targeted posts. Empty = any post. Source of truth for matching.
+  media_ids: string[];
   activated_at?: string;
 }
 
@@ -105,15 +112,23 @@ export function rowToFlow(row: AutomationFlowRow): AutomationFlow {
   }
   const template_type: AutomationTemplateType =
     row.template_type === "comment_to_reply" ? "comment_to_reply" : "comment_to_dm";
+  const config = JSON.parse(row.config) as AutomationConfig;
+  // Resolve targeted posts: new flows store the full list in config.media_ids;
+  // older flows only have the single media_id column (or none = any post).
+  const configMediaIds = Array.isArray(config.media_ids)
+    ? config.media_ids.filter(Boolean)
+    : undefined;
+  const media_ids = configMediaIds ?? (row.media_id ? [row.media_id] : []);
   return {
     id: row.id,
     name: row.name,
     template_type,
     trigger_keywords,
-    config: JSON.parse(row.config) as AutomationConfig,
+    config,
     is_active: row.is_active === 1,
     created_at: row.created_at,
-    media_id: row.media_id ?? undefined,
+    media_id: media_ids[0] ?? row.media_id ?? undefined,
+    media_ids,
     activated_at: row.activated_at ?? undefined,
   };
 }

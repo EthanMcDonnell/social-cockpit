@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, rowToFlow, type AutomationFlowRow } from "@/lib/db";
+import { getDb, rowToFlow, type AutomationFlowRow, type AutomationConfig } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -25,12 +25,25 @@ export async function PUT(
             .filter(Boolean)
         )
       : existing.trigger_keyword;
-    const config =
-      body.config !== undefined ? JSON.stringify(body.config) : existing.config;
+    // Resolve the target post list (source of truth), honouring the new
+    // media_ids field, the legacy media_id field, or the existing stored value.
+    const existingFlow = rowToFlow(existing);
+    let mediaIds: string[];
+    if ("media_ids" in body) {
+      mediaIds = Array.isArray(body.media_ids) ? body.media_ids.filter(Boolean) : [];
+    } else if ("media_id" in body) {
+      mediaIds = body.media_id ? [body.media_id] : [];
+    } else {
+      mediaIds = existingFlow.media_ids;
+    }
+
+    // Merge media_ids into whichever config we persist (new body or existing).
+    const baseConfig: AutomationConfig =
+      body.config !== undefined ? body.config : existingFlow.config;
+    const config = JSON.stringify({ ...baseConfig, media_ids: mediaIds });
     const is_active =
       body.is_active !== undefined ? (body.is_active ? 1 : 0) : existing.is_active;
-    const media_id =
-      "media_id" in body ? (body.media_id ?? null) : (existing.media_id ?? null);
+    const media_id = mediaIds[0] ?? null;
     const activated_at =
       is_active === 1 && existing.is_active === 0
         ? new Date().toISOString()
