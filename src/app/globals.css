@@ -52,8 +52,14 @@ body {
   height: 100%;
 }
 
+/* The app renders entirely inside the cockpit theme, so anchor the document
+   background to charcoal — prevents a light flash on load / overscroll. */
+html {
+  background-color: #121110;
+}
+
 body {
-  background-color: var(--bg-base);
+  background-color: #121110;
   color: var(--text-primary);
   font-family: var(--font-outfit), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -83,4 +89,1151 @@ body {
 ::selection {
   background-color: var(--accent-cyan);
   color: var(--bg-base);
+}
+
+/* ════════════════════════════════════════════════════════════════════════════ */
+/*  COCKPIT v2 — scoped instrument-panel aesthetic (dashboard only)              */
+/*  All rules live under `.cockpit`; nothing here affects the rest of the app.   */
+/* ════════════════════════════════════════════════════════════════════════════ */
+.cockpit {
+  --char: #121110;
+  --panel: #171613;
+  --hair: #282520;
+  --hair-2: #3b3730;
+  --amber: #ffb324;
+  --amber-hi: #ffc72e;
+  --amber-dim: #8f6a18;
+  --txt: #f2efe9;
+  --mut: #9b958a;
+  --faint: #5c574e;
+  --cond: "Avenir Next Condensed", "Arial Narrow", ui-sans-serif, sans-serif;
+  --mono: var(--font-dm-mono), "Menlo", "SF Mono", ui-monospace, monospace;
+
+  /* Remap the app's shared theme tokens so reused primitives (Skeleton,
+     ErrorState, recharts inline styles) inherit cockpit colors automatically. */
+  --bg-base: var(--char);
+  --bg-card: var(--panel);
+  --bg-sidebar: var(--char);
+  --bg-elevated: #1d1b17;
+  --border: var(--hair);
+  --text-primary: var(--txt);
+  --text-muted: var(--mut);
+  --accent-cyan: var(--amber);
+  --accent-cyan-rgb: 255, 179, 36;
+  --accent-amber: var(--amber-hi);
+  --accent-green: var(--amber);
+  --accent-red: #d98a3a;
+  --chart-1: var(--amber);
+  --chart-2: var(--amber-dim);
+  --chart-3: #d9a621;
+  --chart-4: #b3871c;
+
+  position: relative;
+  min-height: 100vh;
+  color: var(--txt);
+  background: var(--char);
+  font-family: var(--mono);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+/* atmospheric wash + vignette */
+.cockpit::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 900px 420px at 60% 0%, rgba(255, 179, 36, 0.05), transparent 70%),
+    radial-gradient(ellipse 130% 100% at 50% 50%, transparent 65%, rgba(0, 0, 0, 0.45));
+}
+.cockpit ::selection {
+  background: var(--amber);
+  color: var(--char);
+}
+
+.cockpit .deck {
+  position: relative;
+  z-index: 1;
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 0 30px 60px;
+}
+
+/* ── status strip / header ── */
+.cockpit .ck-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  /* Top space clears the macOS "Add to Dock" title bar; reads as breathing
+     room in a normal tab. One number, applied everywhere. */
+  padding: 30px 0 14px;
+  border-bottom: 1px solid var(--hair);
+}
+.cockpit .ck-sig {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 21px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cockpit .ck-sig b {
+  color: var(--amber);
+  font-weight: 700;
+}
+.cockpit .ck-nav {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+}
+.cockpit .ck-nav a {
+  color: var(--mut);
+  text-decoration: none;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  padding: 7px 13px;
+  border: 1px solid transparent;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+.cockpit .ck-nav a:hover {
+  color: var(--txt);
+  border-color: var(--hair-2);
+}
+.cockpit .ck-nav a.on {
+  color: var(--amber-hi);
+  border: 1px solid var(--amber-dim);
+  background: rgba(255, 179, 36, 0.06);
+}
+.cockpit .ck-hud {
+  margin-left: auto;
+  text-align: right;
+  font-size: 10px;
+  color: var(--mut);
+  letter-spacing: 0.12em;
+  line-height: 1.9;
+}
+.cockpit .ck-hud b {
+  color: var(--txt);
+  font-weight: 400;
+}
+.cockpit .ck-hud .warn {
+  color: var(--amber-hi);
+}
+.cockpit .ck-window {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+.cockpit .ck-window button {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--mut);
+  background: transparent;
+  border: 1px solid var(--hair-2);
+  padding: 2px 7px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.cockpit .ck-window button:hover {
+  color: var(--txt);
+}
+.cockpit .ck-window button.on {
+  color: var(--amber-hi);
+  border-color: var(--amber-dim);
+  background: rgba(255, 179, 36, 0.08);
+}
+
+/* ── shell: page content wrapper (document-scroll pages) ── */
+.cockpit .ck-page {
+  padding-top: 26px;
+}
+
+/* ── shell: fixed-viewport app pages (Inbox, Automations) ── */
+.cockpit.is-fill {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.cockpit.is-fill .ck-topbar {
+  width: 100%;
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 0 30px;
+  flex-shrink: 0;
+}
+.cockpit.is-fill .ck-fill {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 1380px;
+  margin: 0 auto;
+  padding: 0 30px 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── main grid: readouts | instruments ── */
+.cockpit .cabin {
+  display: grid;
+  grid-template-columns: 248px 1fr;
+  gap: 34px;
+}
+.cockpit .readouts {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--hair);
+  padding-right: 30px;
+}
+.cockpit .ro {
+  padding: 18px 0 20px;
+  border-bottom: 1px dashed var(--hair-2);
+}
+.cockpit .ro:first-child {
+  padding-top: 4px;
+}
+.cockpit .ro:last-of-type {
+  border-bottom: none;
+}
+.cockpit .ro .k {
+  font-size: 9px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--mut);
+  display: flex;
+  justify-content: space-between;
+}
+.cockpit .ro .k i {
+  font-style: normal;
+  color: var(--faint);
+}
+.cockpit .ro .v {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 54px;
+  line-height: 1.05;
+  margin-top: 5px;
+}
+.cockpit .ro.hero .v {
+  font-size: 76px;
+  color: var(--amber-hi);
+  text-shadow: 0 0 26px rgba(255, 179, 36, 0.35);
+}
+.cockpit .ro .d {
+  font-size: 10px;
+  color: var(--mut);
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+.cockpit .ro .d b {
+  color: var(--amber);
+  font-weight: 400;
+}
+.cockpit .ro .d b.dn {
+  color: #d98a3a;
+}
+.cockpit .ro .g {
+  margin-top: 10px;
+  height: 3px;
+  background: var(--hair);
+  position: relative;
+}
+.cockpit .ro .g i {
+  position: absolute;
+  inset: 0;
+  right: auto;
+  background: var(--amber-dim);
+}
+.cockpit .ro.hero .g i {
+  background: var(--amber);
+  box-shadow: 0 0 8px rgba(255, 179, 36, 0.7);
+}
+.cockpit .syncnote {
+  margin-top: 20px;
+  font-size: 8.5px;
+  letter-spacing: 0.22em;
+  color: var(--faint);
+  text-transform: uppercase;
+  line-height: 2;
+}
+.cockpit .syncnote b {
+  color: var(--mut);
+  font-weight: 400;
+}
+
+/* ── instruments ── */
+.cockpit .instruments {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+.cockpit .panel {
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  position: relative;
+  padding: 18px 22px 20px;
+}
+.cockpit .panel::before,
+.cockpit .panel::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--amber-dim);
+}
+.cockpit .panel::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.cockpit .panel::after {
+  bottom: -1px;
+  right: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+.cockpit .p-h {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.cockpit .p-h .tag {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--amber-hi);
+  border: 1px solid var(--amber-dim);
+  background: rgba(255, 179, 36, 0.06);
+  padding: 2px 8px;
+}
+.cockpit .p-h h2 {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--txt);
+}
+.cockpit .p-h .rhs {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+}
+.cockpit .duo {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 26px;
+}
+
+/* recharts axis + tooltip tuning inside cockpit */
+.cockpit .recharts-cartesian-axis-tick text {
+  font-family: var(--mono);
+  font-size: 10px;
+  fill: var(--mut);
+}
+.cockpit .recharts-text {
+  fill: var(--mut);
+}
+
+/* heatmap legend */
+.cockpit .legend {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mut);
+  margin-top: 10px;
+}
+.cockpit .legend .cell {
+  width: 20px;
+  height: 9px;
+  border: 1px solid var(--hair-2);
+}
+
+/* radar scope sweep */
+@keyframes ck-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.cockpit .ck-sweep {
+  transform-origin: 17px 17px;
+  animation: ck-spin 7s linear infinite;
+}
+
+@media (max-width: 1080px) {
+  .cockpit .cabin {
+    grid-template-columns: 1fr;
+  }
+  .cockpit .readouts {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 24px;
+    border-right: none;
+    border-bottom: 1px solid var(--hair);
+    padding: 0 0 18px;
+  }
+  .cockpit .ro {
+    border-bottom: none;
+    padding: 8px 0;
+    flex: 1 1 40%;
+  }
+  .cockpit .syncnote {
+    display: none;
+  }
+  .cockpit .duo {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .cockpit .deck {
+    padding: 0 16px 40px;
+  }
+  .cockpit.is-fill .ck-topbar {
+    padding: 0 16px;
+  }
+  .cockpit.is-fill .ck-fill {
+    padding: 0 16px 16px;
+  }
+  .cockpit .ck-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .cockpit .ck-hud {
+    width: 100%;
+    text-align: left;
+    margin-left: 0;
+  }
+  .cockpit .ck-nav {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════ */
+/*  COMPOSE STUDIO — /compose. Scoped under `.compose`; inherits cockpit tokens.  */
+/* ════════════════════════════════════════════════════════════════════════════ */
+.compose .cs-stage {
+  display: grid;
+  grid-template-columns: 1fr 372px;
+  gap: 34px;
+  align-items: start;
+}
+.compose .cs-controls {
+  min-width: 0;
+}
+
+/* title */
+.compose .cs-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.compose .cs-tag {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--amber-hi);
+  border: 1px solid var(--amber-dim);
+  background: rgba(255, 179, 36, 0.06);
+  padding: 2px 8px;
+}
+.compose .cs-title h1 {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.compose .cs-endpoint {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+
+/* media type strip */
+.compose .cs-seg {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 2px;
+  margin-bottom: 24px;
+  border: 1px solid var(--hair);
+  background: var(--hair);
+}
+.compose .cs-seg button {
+  font-family: var(--cond);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mut);
+  background: var(--panel);
+  border: 0;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.compose .cs-seg button:hover {
+  color: var(--txt);
+}
+.compose .cs-seg button.on {
+  color: var(--char);
+  background: var(--amber);
+}
+
+/* section panel */
+.compose .cs-sec {
+  border: 1px solid var(--hair);
+  background: var(--panel);
+  position: relative;
+  margin-bottom: 20px;
+  padding: 16px 20px 20px;
+}
+.compose .cs-sec::before,
+.compose .cs-sec::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--amber-dim);
+}
+.compose .cs-sec::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+.compose .cs-sec::after {
+  bottom: -1px;
+  right: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+.compose .cs-sh {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 16px;
+}
+.compose .cs-sh .n {
+  font-size: 9px;
+  color: var(--amber-dim);
+  letter-spacing: 0.1em;
+}
+.compose .cs-sh h2 {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.compose .cs-sh .hint {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--faint);
+  letter-spacing: 0.06em;
+}
+.compose .cs-sh .hint.over {
+  color: #d98a3a;
+}
+
+/* fields */
+.compose .cs-field {
+  margin-bottom: 14px;
+}
+.compose .cs-field:last-child {
+  margin-bottom: 0;
+}
+.compose .cs-flabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mut);
+  margin-bottom: 7px;
+}
+.compose .cs-flabel b {
+  color: var(--amber-dim);
+  font-weight: 400;
+}
+.compose .cs-input,
+.compose .cs-textarea {
+  width: 100%;
+  background: var(--char);
+  border: 1px solid var(--hair);
+  color: var(--txt);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  padding: 11px 12px;
+  line-height: 1.6;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.compose .cs-input:focus,
+.compose .cs-textarea:focus {
+  outline: 0;
+  border-color: var(--amber-dim);
+  background: #100f0d;
+}
+.compose .cs-textarea {
+  min-height: 104px;
+  resize: vertical;
+}
+.compose .cs-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.compose .cs-three {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+/* file dropzone */
+.compose .cs-drop {
+  border: 1px dashed var(--hair-2);
+  background: var(--char);
+  position: relative;
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.compose .cs-drop:hover,
+.compose .cs-drop:focus-visible,
+.compose .cs-drop.drag {
+  border-color: var(--amber-dim);
+  background: #1d1b17;
+  outline: none;
+}
+.compose .cs-drop.drag {
+  box-shadow: inset 0 0 0 1px var(--amber-dim);
+}
+.compose .cs-dropring {
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--amber-dim);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--amber);
+  font-size: 18px;
+}
+.compose .cs-dropt {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mut);
+  line-height: 1.9;
+}
+.compose .cs-dropt b {
+  color: var(--amber);
+  font-weight: 400;
+}
+.compose .cs-drops {
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+
+/* disabled "upload from computer" placeholder (photos need a public host) */
+.compose .cs-drop.is-soon {
+  cursor: default;
+  opacity: 0.5;
+}
+.compose .cs-drop.is-soon:hover {
+  border-color: var(--hair-2);
+  background: var(--char);
+  box-shadow: none;
+}
+.compose .cs-note {
+  margin-top: 12px;
+  font-size: 9px;
+  line-height: 1.7;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  border-left: 1px solid var(--hair-2);
+  padding-left: 10px;
+}
+
+/* photo url rows (single image → carousel) */
+.compose .cs-photorow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.compose .cs-photorow:last-child {
+  margin-bottom: 0;
+}
+.compose .cs-photonum {
+  flex: 0 0 auto;
+  width: 20px;
+  text-align: center;
+  font-size: 10px;
+  color: var(--amber-dim);
+}
+.compose .cs-photorow .cs-input {
+  flex: 1;
+}
+.compose .cs-addrow {
+  margin-top: 10px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mut);
+  background: transparent;
+  border: 1px dashed var(--hair-2);
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.compose .cs-addrow:hover {
+  color: var(--amber);
+  border-color: var(--amber-dim);
+}
+
+/* selected file */
+.compose .cs-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--amber-dim);
+  background: rgba(255, 179, 36, 0.05);
+  padding: 12px 14px;
+}
+.compose .cs-file-ic {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 1px solid var(--amber-dim);
+  color: var(--amber);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+.compose .cs-file-meta {
+  min-width: 0;
+}
+.compose .cs-file-meta b {
+  display: block;
+  font-size: 12px;
+  color: var(--txt);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.compose .cs-file-meta span {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+.compose .cs-file-x {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--mut);
+  background: transparent;
+  border: 1px solid var(--hair-2);
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.compose .cs-file-x:hover {
+  color: var(--txt);
+  border-color: var(--mut);
+}
+
+/* scrubber */
+.compose .cs-scrub {
+  margin-top: 14px;
+}
+.compose .cs-film {
+  display: flex;
+  gap: 2px;
+  height: 46px;
+  margin-bottom: 8px;
+}
+.compose .cs-film div {
+  flex: 1;
+  background: linear-gradient(135deg, #1d1b17, var(--hair));
+  border: 1px solid var(--hair);
+}
+.compose .cs-rd {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--faint);
+  letter-spacing: 0.1em;
+}
+
+/* toggle rows */
+.compose .cs-trow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px dashed var(--hair-2);
+}
+.compose .cs-trow:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.compose .cs-trow-lead {
+  border-bottom: 1px solid var(--hair);
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+}
+.compose .cs-trow .l b {
+  display: block;
+  font-family: var(--cond);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.compose .cs-trow .l span {
+  font-size: 9px;
+  color: var(--faint);
+  letter-spacing: 0.04em;
+}
+.compose .cs-trow .r {
+  margin-left: auto;
+}
+
+/* switch */
+.compose .cs-sw {
+  position: relative;
+  width: 38px;
+  height: 20px;
+  border: 1px solid var(--hair-2);
+  background: var(--char);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  flex: 0 0 auto;
+}
+.compose .cs-sw::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: var(--faint);
+  transition: left 0.2s ease, background 0.2s ease;
+}
+.compose .cs-sw.on {
+  border-color: var(--amber-dim);
+  background: rgba(255, 179, 36, 0.12);
+}
+.compose .cs-sw.on::after {
+  left: 20px;
+  background: var(--amber);
+  box-shadow: 0 0 8px var(--amber);
+}
+
+/* graduation picker */
+.compose .cs-grad {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  border: 1px solid var(--hair);
+  background: var(--hair);
+}
+.compose .cs-grad button {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mut);
+  background: var(--char);
+  border: 0;
+  padding: 13px 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+.compose .cs-grad button b {
+  display: block;
+  font-family: var(--cond);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--txt);
+  margin-bottom: 4px;
+}
+.compose .cs-grad button:hover {
+  background: #1d1b17;
+}
+.compose .cs-grad button.on {
+  background: rgba(255, 179, 36, 0.08);
+  box-shadow: inset 0 0 0 1px var(--amber-dim);
+}
+.compose .cs-grad button.on b {
+  color: var(--amber-hi);
+}
+.compose .cs-chip {
+  display: inline-block;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+  border: 1px solid var(--hair-2);
+  padding: 1px 6px;
+  margin-top: 8px;
+}
+
+/* preview column */
+.compose .cs-preview {
+  position: sticky;
+  top: 22px;
+}
+.compose .cs-pvhead {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 14px;
+  border: 1px solid var(--hair);
+  background: var(--hair);
+}
+.compose .cs-pvhead button {
+  flex: 1;
+  font-family: var(--cond);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mut);
+  background: var(--panel);
+  border: 0;
+  padding: 8px;
+  cursor: pointer;
+}
+.compose .cs-pvhead button.on {
+  color: var(--amber-hi);
+  background: rgba(255, 179, 36, 0.08);
+}
+.compose .cs-phone {
+  width: 100%;
+  aspect-ratio: 9 / 19.5;
+  background: #000;
+  border: 1px solid var(--hair-2);
+  position: relative;
+  overflow: hidden;
+}
+.compose .cs-reel {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 30%, transparent 60%, rgba(0, 0, 0, 0.75)),
+    repeating-linear-gradient(115deg, #2a2622, #2a2622 22px, #221f1b 22px, #221f1b 44px);
+}
+.compose .cs-topbar {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  font-size: 10px;
+  color: #fff;
+  letter-spacing: 0.14em;
+}
+.compose .cs-topbar b {
+  font-family: var(--cond);
+  font-weight: 700;
+}
+.compose .cs-badge {
+  position: absolute;
+  top: 44px;
+  left: 14px;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--amber-hi);
+  border: 1px solid var(--amber-dim);
+  background: rgba(18, 17, 16, 0.8);
+  padding: 2px 7px;
+}
+.compose .cs-side {
+  position: absolute;
+  right: 12px;
+  bottom: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: center;
+  color: #fff;
+  font-size: 18px;
+  opacity: 0.9;
+}
+.compose .cs-meta {
+  position: absolute;
+  left: 14px;
+  right: 56px;
+  bottom: 20px;
+  color: #fff;
+}
+.compose .cs-u {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 7px;
+}
+.compose .cs-av {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid #fff;
+  background: linear-gradient(135deg, var(--amber), var(--amber-dim));
+}
+.compose .cs-cap {
+  font-size: 10px;
+  line-height: 1.5;
+  opacity: 0.95;
+  max-height: 44px;
+  overflow: hidden;
+}
+.compose .cs-audio {
+  font-size: 9px;
+  margin-top: 9px;
+  opacity: 0.85;
+}
+.compose .cs-pvfoot {
+  margin-top: 14px;
+  font-size: 9px;
+  color: var(--faint);
+  letter-spacing: 0.08em;
+  line-height: 1.9;
+  text-transform: uppercase;
+}
+.compose .cs-pvfoot b {
+  color: var(--mut);
+  font-weight: 400;
+}
+.compose .cs-pvfoot .ln {
+  display: flex;
+  justify-content: space-between;
+}
+
+/* messages */
+.compose .cs-msg {
+  margin-top: 14px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  padding: 10px 12px;
+  border: 1px solid var(--hair-2);
+}
+.compose .cs-msg.err {
+  color: #e8a25a;
+  border-color: #6b4a24;
+  background: rgba(217, 138, 58, 0.06);
+}
+.compose .cs-msg.ok {
+  color: var(--amber-hi);
+  border-color: var(--amber-dim);
+  background: rgba(255, 179, 36, 0.06);
+}
+.compose .cs-msg.ok a {
+  color: var(--amber-hi);
+  text-decoration: underline;
+}
+.compose .cs-msg.warn {
+  color: var(--mut);
+}
+
+/* actions */
+.compose .cs-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 10px;
+}
+.compose .cs-ghost {
+  flex: 1;
+  font-family: var(--cond);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mut);
+  background: transparent;
+  border: 1px solid var(--hair-2);
+  padding: 12px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.compose .cs-ghost:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.compose .cs-ghost:not(:disabled):hover {
+  color: var(--txt);
+  border-color: var(--mut);
+}
+.compose .cs-transmit {
+  flex: 1.4;
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--char);
+  background: var(--amber);
+  border: 0;
+  padding: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.compose .cs-transmit:disabled {
+  background: var(--hair-2);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+.compose .cs-transmit:not(:disabled):hover {
+  background: var(--amber-hi);
+  box-shadow: 0 0 22px rgba(255, 179, 36, 0.4);
+}
+
+@media (max-width: 960px) {
+  .compose .cs-stage {
+    grid-template-columns: 1fr;
+  }
+  .compose .cs-preview {
+    position: static;
+  }
+  .compose .cs-phone {
+    max-width: 300px;
+    margin: 0 auto;
+  }
+}
+@media (max-width: 560px) {
+  .compose .cs-two,
+  .compose .cs-three,
+  .compose .cs-grad {
+    grid-template-columns: 1fr;
+  }
 }

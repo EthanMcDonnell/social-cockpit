@@ -50,6 +50,9 @@ missing, transcription simply doesn't run — the rest of the app is unaffected.
 
 ## Meta API cache
 
+Reference for the underlying endpoints:
+[Instagram Platform API reference](https://developers.facebook.com/documentation/instagram-platform/reference).
+
 Instagram media and per-post insights are cached locally in `data/cache.db`
 (`src/lib/cache/`) rather than fetched live on every request. A background worker
 boots with the server and re-syncs every ~30 minutes; reads are served

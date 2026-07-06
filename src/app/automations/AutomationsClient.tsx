@@ -12,6 +12,7 @@ import {
 } from "@/hooks/useAutomationFlows";
 import { useMedia } from "@/hooks/useMedia";
 import type { InstagramMedia } from "@/lib/instagram/types";
+import { ApiUsageMeter } from "@/components/automations/ApiUsageMeter";
 
 // ─── Default configs ───────────────────────────────────────────────────────────
 
@@ -1005,6 +1006,8 @@ export function AutomationsClient() {
           );
           })}
         </div>
+
+        <ApiUsageMeter />
       </div>
 
       {/* ── Right panel ── */}

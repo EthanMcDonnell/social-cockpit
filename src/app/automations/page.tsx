@@ -1,14 +1,12 @@
-import { AppShell } from "@/components/layout/AppShell";
-import { TopBar } from "@/components/layout/TopBar";
+import { CockpitShell } from "@/components/dashboard/cockpit/CockpitShell";
 import { AutomationsClient } from "./AutomationsClient";
 
 export const metadata = { title: "Automations" };
 
 export default function AutomationsPage() {
   return (
-    <AppShell>
-      <TopBar title="Automations" />
+    <CockpitShell fill>
       <AutomationsClient />
-    </AppShell>
+    </CockpitShell>
   );
 }

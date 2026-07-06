@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { DM_Mono, Syne, Outfit } from "next/font/google";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { ThemeProvider } from "@/providers/ThemeProvider";
@@ -31,6 +31,10 @@ export const metadata: Metadata = {
     template: "%s | Social Cockpit",
   },
   description: "Instagram analytics dashboard",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#121110",
 };
 
 export default function RootLayout({

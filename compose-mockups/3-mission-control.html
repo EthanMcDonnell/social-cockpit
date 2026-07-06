@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compose · Mission Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --char:#121110; --panel:#171613; --panel-2:#1d1b17;
+    --hair:#282520; --hair-2:#3b3730;
+    --amber:#ffb324; --amber-hi:#ffc72e; --amber-dim:#8f6a18;
+    --txt:#f2efe9; --mut:#9b958a; --faint:#5c574e; --grn:#8fd14f;
+    --cond:"Avenir Next Condensed","Oswald",ui-sans-serif,sans-serif;
+    --mono:"DM Mono","Menlo",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--char);color:var(--txt);font-family:var(--mono);min-height:100vh;-webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(ellipse 1400px 560px at 50% -5%,rgba(255,179,36,.06),transparent 70%),
+      radial-gradient(ellipse 130% 100% at 50% 50%,transparent 60%,rgba(0,0,0,.5)),
+      repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.10) 3px,rgba(0,0,0,.10) 4px)}
+  ::selection{background:var(--amber);color:var(--char)}
+  ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:var(--hair-2);border-radius:6px}
+
+  .hdr{max-width:1320px;margin:0 auto;display:flex;align-items:center;gap:16px;padding:22px 30px 14px;border-bottom:1px solid var(--hair)}
+  .sig{font-family:var(--cond);font-weight:700;font-size:20px;letter-spacing:.3em;text-transform:uppercase}
+  .sig b{color:var(--amber)}
+  .hud{margin-left:auto;font-size:10px;color:var(--mut);letter-spacing:.12em;text-align:right;line-height:1.8}
+  .hud b{color:var(--grn)}
+  .hud .blink{animation:bl 1.4s steps(2) infinite}@keyframes bl{50%{opacity:.2}}
+
+  .deck{max-width:1320px;margin:0 auto;padding:20px 30px 40px}
+  .ptitle{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+  .tag{font-size:9px;letter-spacing:.14em;color:var(--amber-hi);border:1px solid var(--amber-dim);background:rgba(255,179,36,.06);padding:3px 9px}
+  .ptitle h1{font-family:var(--cond);font-weight:700;font-size:28px;letter-spacing:.2em;text-transform:uppercase}
+  .ptitle .type{margin-left:auto;display:inline-grid;grid-auto-flow:column;gap:2px;border:1px solid var(--hair);background:var(--hair)}
+  .ptitle .type button{font-family:var(--cond);font-weight:600;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);
+    background:var(--panel);border:0;padding:8px 16px;cursor:pointer;transition:.15s}
+  .ptitle .type button.on{color:var(--char);background:var(--amber)}
+
+  .grid{display:grid;grid-template-columns:300px 1fr 340px;gap:20px;align-items:start}
+
+  /* generic instrument panel */
+  .mod{border:1px solid var(--hair);background:var(--panel);position:relative;padding:15px 17px 17px;margin-bottom:20px}
+  .mod::before,.mod::after{content:"";position:absolute;width:8px;height:8px;border:1px solid var(--amber-dim)}
+  .mod::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+  .mod::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+  .mh{display:flex;align-items:center;gap:9px;margin-bottom:14px;padding-bottom:11px;border-bottom:1px dashed var(--hair-2)}
+  .mh .led{width:6px;height:6px;border-radius:50%;background:var(--amber);box-shadow:0 0 7px var(--amber)}
+  .mh h2{font-family:var(--cond);font-weight:700;font-size:13px;letter-spacing:.2em;text-transform:uppercase}
+  .mh .code{margin-left:auto;font-size:8px;color:var(--faint);letter-spacing:.06em}
+
+  .flabel{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--mut);margin-bottom:6px}
+  .flabel b{color:var(--amber-dim);font-weight:400}
+  textarea,input[type=text]{width:100%;background:var(--char);border:1px solid var(--hair);color:var(--txt);
+    font-family:var(--mono);font-size:12px;padding:9px 11px;transition:.15s;line-height:1.6}
+  textarea:focus,input:focus{outline:0;border-color:var(--amber-dim)}
+  textarea{min-height:88px;resize:vertical}
+  .gap{margin-top:12px}
+
+  /* toggle rows */
+  .trow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px dashed var(--hair-2)}
+  .trow:last-child{border-bottom:0;padding-bottom:0}
+  .trow .l b{display:block;font-family:var(--cond);font-weight:600;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+  .trow .l span{font-size:8px;color:var(--faint);letter-spacing:.03em}
+  .sw{position:relative;width:36px;height:19px;border:1px solid var(--hair-2);background:var(--char);cursor:pointer;transition:.2s;flex:0 0 auto;margin-left:auto}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;background:var(--faint);transition:.2s}
+  .sw.on{border-color:var(--amber-dim);background:rgba(255,179,36,.12)}
+  .sw.on::after{left:19px;background:var(--amber);box-shadow:0 0 8px var(--amber)}
+
+  /* dropzone (left col) */
+  .drop{border:1px dashed var(--hair-2);background:var(--char);aspect-ratio:9/16;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;cursor:pointer;transition:.2s;position:relative}
+  .drop:hover{border-color:var(--amber-dim)}
+  .drop .ring{width:40px;height:40px;border:1px solid var(--amber-dim);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--amber)}
+  .drop .ring svg{width:18px;height:18px}
+  .drop .t{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);text-align:center;line-height:1.9}
+  .drop .t b{color:var(--amber);font-weight:400}
+  .drop .sp{position:absolute;bottom:9px;font-size:7.5px;letter-spacing:.12em;color:var(--faint)}
+
+  /* GRADUATION DIAL (center highlight) */
+  .dial-wrap{display:flex;gap:18px;align-items:center}
+  .dial{width:118px;height:118px;flex:0 0 auto;border-radius:50%;border:1px solid var(--hair-2);position:relative;
+    background:radial-gradient(circle at 50% 40%,var(--panel-2),var(--char));display:flex;align-items:center;justify-content:center}
+  .dial .core{width:64px;height:64px;border-radius:50%;border:1px solid var(--amber-dim);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;background:rgba(255,179,36,.05)}
+  .dial .core b{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.1em;color:var(--amber-hi)}
+  .dial .core span{font-size:7px;letter-spacing:.14em;color:var(--mut);margin-top:2px}
+  .dial .tick{position:absolute;top:6px;left:50%;width:2px;height:11px;background:var(--amber);transform-origin:50% 53px;
+    transform:translateX(-50%) rotate(-38deg);box-shadow:0 0 8px var(--amber);transition:transform .3s}
+  .dial.perf .tick{transform:translateX(-50%) rotate(38deg)}
+  .dopts{flex:1;display:flex;flex-direction:column;gap:2px;border:1px solid var(--hair);background:var(--hair)}
+  .dopts button{font-family:var(--mono);font-size:9px;color:var(--mut);background:var(--char);border:0;padding:11px 12px;cursor:pointer;text-align:left;transition:.15s}
+  .dopts button b{display:block;font-family:var(--cond);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--txt);margin-bottom:3px}
+  .dopts button:hover{background:var(--panel-2)}
+  .dopts button.on{background:rgba(255,179,36,.08);box-shadow:inset 0 0 0 1px var(--amber-dim)}
+  .dopts button.on b{color:var(--amber-hi)}
+
+  /* PAYLOAD READOUT (right) */
+  .term{border:1px solid var(--hair);background:#0d0c0a;position:relative}
+  .term::before,.term::after{content:"";position:absolute;width:8px;height:8px;border:1px solid var(--amber-dim)}
+  .term::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+  .term::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+  .term .tbar{display:flex;align-items:center;gap:8px;padding:9px 13px;border-bottom:1px solid var(--hair);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+  .term .tbar b{color:var(--amber);font-weight:400}
+  .term .tbar .cp{margin-left:auto;color:var(--faint);cursor:pointer;border:1px solid var(--hair-2);padding:2px 8px;transition:.15s}
+  .term .tbar .cp:hover{color:var(--amber);border-color:var(--amber-dim)}
+  pre{padding:13px;font-family:var(--mono);font-size:10.5px;line-height:1.75;color:var(--mut);overflow-x:auto;white-space:pre}
+  pre .k{color:#c9b98f}pre .s{color:var(--grn)}pre .n{color:var(--amber-hi)}pre .b{color:#d98a3a}pre .c{color:var(--faint)}
+
+  .curl{margin-top:20px}
+  .curl pre{font-size:10px;color:var(--mut)}
+  .curl pre .cmd{color:var(--amber)}
+
+  /* ARM / TRANSMIT sequence */
+  .launch{margin-top:20px;border:1px solid var(--amber-dim);background:rgba(255,179,36,.04);padding:15px 16px}
+  .launch .row{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .launch .arm{font-family:var(--cond);font-weight:700;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);
+    background:transparent;border:1px solid var(--hair-2);padding:10px 16px;cursor:pointer;transition:.15s;flex:1}
+  .launch .arm.on{color:var(--amber-hi);border-color:var(--amber-dim);background:rgba(255,179,36,.08)}
+  .launch .st{font-size:8px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+  .launch .st b{color:var(--amber)}
+  .transmit{width:100%;font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--char);background:var(--amber);border:0;padding:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;transition:.15s}
+  .transmit:disabled{background:var(--hair-2);color:var(--faint);cursor:not-allowed}
+  .transmit:not(:disabled):hover{background:var(--amber-hi);box-shadow:0 0 28px rgba(255,179,36,.45)}
+  .transmit svg{width:16px;height:16px}
+
+  @media(max-width:1120px){.grid{grid-template-columns:1fr}.drop{max-width:220px;margin:0 auto}}
+</style>
+</head>
+<body>
+  <header class="hdr">
+    <div class="sig">SOCIAL <b>COCKPIT</b></div>
+    <div class="hud"><span class="blink">◈</span> ENDPOINT <b>ONLINE</b> · /api/publish · GRAPH v21.0</div>
+  </header>
+
+  <div class="deck">
+    <div class="ptitle">
+      <span class="tag">05 · PAYLOAD BAY</span>
+      <h1>Compose</h1>
+      <div class="type"><button class="on">Reel</button><button>Photo</button><button>Carousel</button><button>Story</button></div>
+    </div>
+
+    <div class="grid">
+      <!-- LEFT: source + tagging -->
+      <div>
+        <section class="mod">
+          <div class="mh"><span class="led"></span><h2>Payload</h2><span class="code">video_url</span></div>
+          <label class="drop">
+            <div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg></div>
+            <div class="t">Load <b>reel video</b><br>drop / browse / URL</div>
+            <div class="sp">MP4 · ≤90s · 9:16 · resumable</div>
+          </label>
+          <div class="gap"><div class="flabel"><span>Cover · thumb_offset</span><b>0 ms</b></div><input type="text" value="0" oninput="build()"></div>
+          <div class="gap"><div class="flabel"><span>cover_url</span></div><input type="text" placeholder="optional custom cover"></div>
+          <div class="gap"><div class="flabel"><span>audio_name</span></div><input type="text" placeholder="rename original audio" oninput="build()"></div>
+        </section>
+
+        <section class="mod">
+          <div class="mh"><span class="led"></span><h2>Tagging</h2><span class="code">*_tags</span></div>
+          <div class="flabel"><span>collaborators</span><b>≤3</b></div><input type="text" placeholder="@a, @b, @c" oninput="build()">
+          <div class="gap"><div class="flabel"><span>user_tags</span></div><input type="text" placeholder="@user @x/@y"></div>
+          <div class="gap"><div class="flabel"><span>product_tags</span><b>≤5</b></div><input type="text" placeholder="product ids"></div>
+          <div class="gap"><div class="flabel"><span>location_id</span></div><input type="text" placeholder="search a place…"></div>
+        </section>
+      </div>
+
+      <!-- CENTER: caption + trial dial + flags -->
+      <div>
+        <section class="mod">
+          <div class="mh"><span class="led"></span><h2>Caption</h2><span class="code" id="cnt">0 / 2200 · 0# · 0@</span></div>
+          <textarea id="cap" placeholder="Write your caption… #hashtags @mentions" oninput="build()"></textarea>
+        </section>
+
+        <section class="mod">
+          <div class="mh"><span class="led"></span><h2>Trial Reel · Graduation</h2><span class="code">trial_params</span></div>
+          <div class="trow" style="border-bottom:1px solid var(--hair);padding-bottom:12px;margin-bottom:14px">
+            <div class="l"><b>Publish as Trial Reel</b><span>Show to non-followers, then graduate to audience</span></div>
+            <div class="sw" id="trialSw" onclick="this.classList.toggle('on');build()"></div>
+          </div>
+          <div class="dial-wrap">
+            <div class="dial" id="dial"><div class="tick"></div><div class="core"><b id="dialLbl">MAN</b><span>STRATEGY</span></div></div>
+            <div class="dopts">
+              <button class="on" onclick="setGrad('MANUAL',this)"><b>Manual</b>Graduate it yourself, in the app, when you decide.</button>
+              <button onclick="setGrad('SS_PERFORMANCE',this)"><b>Auto · Performance</b>Auto-graduates when metrics clear the bar.</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="mod">
+          <div class="mh"><span class="led"></span><h2>Flags</h2><span class="code">booleans</span></div>
+          <div class="trow"><div class="l"><b>share_to_feed</b><span>Feed + Reels tab</span></div><div class="sw on" onclick="this.classList.toggle('on');build()"></div></div>
+          <div class="trow"><div class="l"><b>is_paid_partnership</b><span>adds partnership label</span></div><div class="sw" onclick="this.classList.toggle('on');build()"></div></div>
+          <div class="trow"><div class="l"><b>is_ai_generated</b><span>self-disclosure</span></div><div class="sw" onclick="this.classList.toggle('on');build()"></div></div>
+        </section>
+      </div>
+
+      <!-- RIGHT: live payload + launch -->
+      <div>
+        <section class="term">
+          <div class="tbar">◈ <b>REQUEST BODY</b> → /api/publish <span class="cp">COPY</span></div>
+          <pre id="payload"></pre>
+        </section>
+
+        <div class="curl">
+          <section class="term">
+            <div class="tbar">◈ <b>cURL</b> · use anywhere <span class="cp">COPY</span></div>
+            <pre><span class="cmd">curl</span> -X POST \
+  https://cockpit.local<span class="s">/api/publish</span> \
+  -H <span class="s">"Authorization: Bearer $TOKEN"</span> \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d @payload.json</pre>
+          </section>
+        </div>
+
+        <div class="launch">
+          <div class="row">
+            <button class="arm" id="armBtn" onclick="arm()">◉ Arm</button>
+            <div class="st">SAFETY<br><b id="armSt">LOCKED</b></div>
+          </div>
+          <button class="transmit" id="tx" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            Transmit
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  let grad='MANUAL';
+  const cap=document.getElementById('cap');
+  function setGrad(g,el){grad=g;document.querySelectorAll('.dopts button').forEach(x=>x.classList.remove('on'));el.classList.add('on');
+    const d=document.getElementById('dial');d.classList.toggle('perf',g==='SS_PERFORMANCE');
+    document.getElementById('dialLbl').textContent=g==='MANUAL'?'MAN':'AUTO';build();}
+  function esc(s){return s.replace(/</g,'&lt;');}
+  function build(){
+    const v=cap.value;const h=(v.match(/#/g)||[]).length,a=(v.match(/@/g)||[]).length;
+    document.getElementById('cnt').textContent=`${v.length} / 2200 · ${h}# · ${a}@`;
+    const trial=document.getElementById('trialSw').classList.contains('on');
+    const flags=[...document.querySelectorAll('.mod .trow .sw')];
+    const s2f=flags[0]&&flags[0].classList.contains('on');
+    // build JSON
+    const capTxt=v?esc(v.slice(0,40))+(v.length>40?'…':''):'';
+    let j='';
+    j+='<span class="c">{</span>\n';
+    j+='  <span class="k">"media_type"</span>: <span class="s">"REELS"</span>,\n';
+    j+='  <span class="k">"video_url"</span>: <span class="s">"…/reel.mp4"</span>,\n';
+    j+='  <span class="k">"upload_type"</span>: <span class="s">"resumable"</span>,\n';
+    if(capTxt) j+='  <span class="k">"caption"</span>: <span class="s">"'+capTxt+'"</span>,\n';
+    j+='  <span class="k">"share_to_feed"</span>: <span class="b">'+s2f+'</span>,\n';
+    if(trial){
+      j+='  <span class="k">"trial_params"</span>: <span class="c">{</span>\n';
+      j+='    <span class="k">"graduation_strategy"</span>: <span class="s">"'+grad+'"</span>\n';
+      j+='  <span class="c">}</span>,\n';
+    }
+    j+='  <span class="k">"access_token"</span>: <span class="s">"$IG_TOKEN"</span>\n';
+    j+='<span class="c">}</span>';
+    document.getElementById('payload').innerHTML=j;
+  }
+  function arm(){const b=document.getElementById('armBtn');b.classList.toggle('on');
+    const on=b.classList.contains('on');document.getElementById('armSt').textContent=on?'ARMED':'LOCKED';
+    document.getElementById('tx').disabled=!on;}
+  document.querySelectorAll('.ptitle .type button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.ptitle .type button').forEach(x=>x.classList.remove('on'));b.classList.add('on');});
+  build();
+</script>
+</body>
+</html>

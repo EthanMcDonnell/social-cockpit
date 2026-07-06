@@ -1,5 +1,4 @@
-import { AppShell } from "@/components/layout/AppShell";
-import { TopBar } from "@/components/layout/TopBar";
+import { CockpitShell } from "@/components/dashboard/cockpit/CockpitShell";
 import { InboxClient } from "./InboxClient";
 
 export const metadata = {
@@ -8,9 +7,8 @@ export const metadata = {
 
 export default function InboxPage() {
   return (
-    <AppShell>
-      <TopBar title="Inbox" />
+    <CockpitShell fill>
       <InboxClient />
-    </AppShell>
+    </CockpitShell>
   );
 }

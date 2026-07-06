@@ -1,5 +1,4 @@
-import { AppShell } from "@/components/layout/AppShell";
-import { TopBar } from "@/components/layout/TopBar";
+import { CockpitShell } from "@/components/dashboard/cockpit/CockpitShell";
 import { TokenStatusPanel } from "@/components/settings/TokenStatusPanel";
 import { ExchangeTokenForm } from "@/components/settings/ExchangeTokenForm";
 import { TranscriptionSettingsPanel } from "@/components/settings/TranscriptionSettingsPanel";
@@ -8,57 +7,58 @@ export const metadata = {
   title: "Settings",
 };
 
+const ENV_VARS = [
+  "INSTAGRAM_ACCOUNT_ID",
+  "INSTAGRAM_ACCESS_TOKEN",
+  "INSTAGRAM_APP_SECRET",
+  "TOKEN_EXPIRES_AT",
+];
+
+function SectionLabel({ tag, children }: { tag: string; children: React.ReactNode }) {
+  return (
+    <div className="p-h" style={{ marginBottom: 0 }}>
+      <span className="tag">{tag}</span>
+      <h2>{children}</h2>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   return (
-    <AppShell>
-      <TopBar title="Settings" />
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-xl space-y-6">
-          <section className="space-y-2">
-            <h2 className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-medium">
-              Account
-            </h2>
-            <TokenStatusPanel />
-          </section>
+    <CockpitShell>
+      <div className="max-w-xl space-y-8">
+        <section className="space-y-3">
+          <SectionLabel tag="S1">Account</SectionLabel>
+          <TokenStatusPanel />
+        </section>
 
-          <section className="space-y-2">
-            <h2 className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-medium">
-              Token Management
-            </h2>
-            <ExchangeTokenForm />
-          </section>
+        <section className="space-y-3">
+          <SectionLabel tag="S2">Token Management</SectionLabel>
+          <ExchangeTokenForm />
+        </section>
 
-          <section className="space-y-2">
-            <h2 className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-medium">
-              Features
-            </h2>
-            <TranscriptionSettingsPanel />
-          </section>
+        <section className="space-y-3">
+          <SectionLabel tag="S3">Features</SectionLabel>
+          <TranscriptionSettingsPanel />
+        </section>
 
-          <section className="space-y-2">
-            <h2 className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-medium">
-              Environment Variables
-            </h2>
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-5">
-              <p className="text-xs text-[var(--text-muted)] leading-relaxed mb-3">
-                The following variables must be set in <code className="font-mono text-[var(--text-primary)]">.env.local</code>:
-              </p>
-              <div className="space-y-1.5">
-                {[
-                  "INSTAGRAM_ACCOUNT_ID",
-                  "INSTAGRAM_ACCESS_TOKEN",
-                  "INSTAGRAM_APP_SECRET",
-                  "TOKEN_EXPIRES_AT",
-                ].map((key) => (
-                  <p key={key} className="font-mono text-xs text-[var(--text-primary)]">
-                    {key}
-                  </p>
-                ))}
-              </div>
+        <section className="space-y-3">
+          <SectionLabel tag="S4">Environment Variables</SectionLabel>
+          <div className="panel">
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed mb-3">
+              The following variables must be set in{" "}
+              <code className="font-mono text-[var(--amber)]">.env.local</code>:
+            </p>
+            <div className="space-y-1.5">
+              {ENV_VARS.map((key) => (
+                <p key={key} className="font-mono text-xs text-[var(--text-primary)]">
+                  <span className="text-[var(--amber-dim)]">›</span> {key}
+                </p>
+              ))}
             </div>
-          </section>
-        </div>
+          </div>
+        </section>
       </div>
-    </AppShell>
+    </CockpitShell>
   );
 }

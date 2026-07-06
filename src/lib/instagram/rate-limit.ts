@@ -12,16 +12,26 @@ export function parseRateLimit(headers: Headers): RateLimitInfo {
     return { usage: null, isThrottled: false };
   }
 
-  let usage: AppUsage;
+  let parsed: Record<string, number>;
   try {
-    usage = JSON.parse(raw) as AppUsage;
+    parsed = JSON.parse(raw) as Record<string, number>;
   } catch {
     return { usage: null, isThrottled: false };
   }
 
+  // Normalise across the two Graph surfaces: graph.instagram.com sends
+  // `call_volume`/`cpu_time`; graph.facebook.com sends
+  // `call_count`/`total_cputime`/`total_time`. Keying only on `call_count`
+  // previously left the Instagram surface's call metric read as 0 (blind).
+  const usage: AppUsage = {
+    call_count: parsed.call_volume ?? parsed.call_count ?? 0,
+    cpu_time: parsed.cpu_time ?? parsed.total_cputime ?? 0,
+    total_time: parsed.total_time ?? 0,
+  };
+
   const fields: (keyof AppUsage)[] = ["call_count", "cpu_time", "total_time"];
   for (const field of fields) {
-    if ((usage[field] ?? 0) >= THROTTLE_THRESHOLD) {
+    if (usage[field] >= THROTTLE_THRESHOLD) {
       return { usage, isThrottled: true, throttledField: field };
     }
   }

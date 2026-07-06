@@ -9,42 +9,17 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Card } from "@/components/ui/Card";
 import { ChartSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState, isRateLimitError, RateLimitError } from "@/components/ui/ErrorState";
 import { useMedia } from "@/hooks/useMedia";
-import { usePeriod } from "@/hooks/usePeriod";
-import type { PeriodDays } from "@/hooks/usePeriod";
+import { usePeriod, type PeriodDays } from "@/hooks/usePeriod";
+import { Panel } from "./Panel";
+import { cockpitTooltip } from "./chartTheme";
 
 interface Bucket {
   label: string;
   isoKey: string;
   count: number;
-}
-
-function buildBuckets(timestamps: string[], period: PeriodDays): Bucket[] {
-  const now = new Date();
-  const cutoff = new Date(now);
-  cutoff.setDate(cutoff.getDate() - period);
-
-  const map = new Map<string, Bucket>();
-
-  for (let i = 0; i < period; i++) {
-    const d = new Date(cutoff);
-    d.setDate(d.getDate() + i);
-    const key = dayKey(d);
-    map.set(key, { label: dayLabel(d, period), isoKey: key, count: 0 });
-  }
-
-  for (const ts of timestamps) {
-    const date = new Date(ts);
-    if (date < cutoff) continue;
-    const key = dayKey(date);
-    const bucket = map.get(key);
-    if (bucket) bucket.count++;
-  }
-
-  return Array.from(map.values()).sort((a, b) => a.isoKey.localeCompare(b.isoKey));
 }
 
 function dayKey(d: Date) {
@@ -56,42 +31,60 @@ function dayLabel(d: Date, period: PeriodDays) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function buildBuckets(timestamps: string[], period: PeriodDays): Bucket[] {
+  const now = new Date();
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - period);
 
-// How many buckets to skip between x-axis ticks per period
+  const map = new Map<string, Bucket>();
+  for (let i = 0; i < period; i++) {
+    const d = new Date(cutoff);
+    d.setDate(d.getDate() + i);
+    const key = dayKey(d);
+    map.set(key, { label: dayLabel(d, period), isoKey: key, count: 0 });
+  }
+  for (const ts of timestamps) {
+    const date = new Date(ts);
+    if (date < cutoff) continue;
+    const bucket = map.get(dayKey(date));
+    if (bucket) bucket.count++;
+  }
+  return Array.from(map.values()).sort((a, b) => a.isoKey.localeCompare(b.isoKey));
+}
+
 const TICK_INTERVAL: Record<PeriodDays, number> = { 7: 0, 30: 1, 90: 6 };
 
-export function PostingConsistencyChart() {
+export function PostsPerDayChart() {
   const [period] = usePeriod();
   const { data, isLoading, isError, error, refetch } = useMedia({ all: true });
 
   const timestamps = data?.data.map((m) => m.timestamp) ?? [];
   const buckets = buildBuckets(timestamps, period);
+  const rangeLabel =
+    buckets.length > 0 ? `${buckets[0].label} → ${buckets[buckets.length - 1].label}` : "";
 
   return (
-    <Card padding="lg" className="flex flex-col gap-4">
-      <p className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-medium">
-        Posting Consistency
-      </p>
-      {isLoading && <ChartSkeleton height={200} />}
+    <Panel tag="04" title="Posts Per Day" rhs={rangeLabel}>
+      {isLoading && <ChartSkeleton height={150} />}
       {isError && isRateLimitError(error) ? (
         <RateLimitError onRetry={() => refetch()} />
       ) : isError ? (
         <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
       ) : null}
       {!isLoading && !isError && (
-        <ResponsiveContainer width="100%" height={200}>
+        <ResponsiveContainer width="100%" height={150}>
           <BarChart data={buckets} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+            <CartesianGrid strokeDasharray="0" stroke="var(--hair)" vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fontSize: 11, fill: "var(--text-muted)", fontFamily: "var(--font-dm-mono)" }}
+              tick={{ fontSize: 10, fill: "var(--mut)", fontFamily: "var(--mono)" }}
               tickLine={false}
               axisLine={false}
               interval={TICK_INTERVAL[period]}
             />
             <YAxis
               allowDecimals={false}
-              tick={{ fontSize: 11, fill: "var(--text-muted)", fontFamily: "var(--font-dm-mono)" }}
+              tick={{ fontSize: 10, fill: "var(--mut)", fontFamily: "var(--mono)" }}
               tickLine={false}
               axisLine={false}
               tickFormatter={(v) => String(v)}
@@ -99,27 +92,14 @@ export function PostingConsistencyChart() {
               domain={[0, "auto"]}
             />
             <Tooltip
-              contentStyle={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                fontSize: 12,
-                fontFamily: "var(--font-dm-mono)",
-                color: "var(--text-primary)",
-              }}
+              {...cockpitTooltip}
               formatter={(value: number) => [value, "Posts"]}
-              labelStyle={{ color: "var(--text-muted)" }}
-              cursor={{ fill: "var(--border)", opacity: 0.4 }}
+              cursor={{ fill: "var(--amber)", opacity: 0.08 }}
             />
-            <Bar
-              dataKey="count"
-              fill="var(--accent-cyan)"
-              radius={[3, 3, 0, 0]}
-              maxBarSize={32}
-            />
+            <Bar dataKey="count" fill="var(--amber-dim)" maxBarSize={20} />
           </BarChart>
         </ResponsiveContainer>
       )}
-    </Card>
+    </Panel>
   );
 }

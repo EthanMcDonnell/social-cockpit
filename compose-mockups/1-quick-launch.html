@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compose · Quick Launch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --char:#121110; --panel:#171613; --panel-2:#1d1b17;
+    --hair:#282520; --hair-2:#3b3730;
+    --amber:#ffb324; --amber-hi:#ffc72e; --amber-dim:#8f6a18;
+    --txt:#f2efe9; --mut:#9b958a; --faint:#5c574e;
+    --cond:"Avenir Next Condensed","Oswald",ui-sans-serif,sans-serif;
+    --mono:"DM Mono","Menlo",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--char); color:var(--txt); font-family:var(--mono);
+    min-height:100vh; -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(ellipse 900px 420px at 60% 0%,rgba(255,179,36,.05),transparent 70%),
+      radial-gradient(ellipse 130% 100% at 50% 50%,transparent 65%,rgba(0,0,0,.45));
+  }
+  ::selection{background:var(--amber); color:var(--char)}
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-thumb{background:var(--hair-2);border-radius:6px}
+
+  /* header */
+  .hdr{max-width:640px;margin:0 auto;display:flex;align-items:center;gap:16px;
+    padding:26px 24px 14px;border-bottom:1px solid var(--hair)}
+  .sig{font-family:var(--cond);font-weight:700;font-size:20px;letter-spacing:.3em;text-transform:uppercase}
+  .sig b{color:var(--amber)}
+  .hud{margin-left:auto;font-size:10px;color:var(--mut);letter-spacing:.12em;text-align:right;line-height:1.8}
+  .hud b{color:var(--txt)}
+
+  .wrap{max-width:640px;margin:0 auto;padding:34px 24px 90px}
+
+  /* page title */
+  .ptitle{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+  .tag{font-size:9px;letter-spacing:.14em;color:var(--amber-hi);border:1px solid var(--amber-dim);
+    background:rgba(255,179,36,.06);padding:2px 8px}
+  .ptitle h1{font-family:var(--cond);font-weight:700;font-size:30px;letter-spacing:.18em;text-transform:uppercase}
+  .sub{font-size:11px;color:var(--mut);letter-spacing:.05em;margin-bottom:26px}
+
+  /* media type selector */
+  .seg{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-bottom:22px;
+    border:1px solid var(--hair);background:var(--hair)}
+  .seg button{font-family:var(--cond);font-weight:600;font-size:13px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--mut);background:var(--panel);border:0;padding:13px 6px;cursor:pointer;transition:.15s;position:relative}
+  .seg button:hover{color:var(--txt)}
+  .seg button.on{color:var(--char);background:var(--amber)}
+  .seg button small{display:block;font-family:var(--mono);font-size:8px;letter-spacing:.1em;opacity:.7;margin-top:3px}
+
+  /* dropzone */
+  .drop{border:1px dashed var(--hair-2);background:var(--panel);position:relative;
+    aspect-ratio:9/16;max-height:340px;margin:0 auto 22px;width:100%;max-width:220px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;cursor:pointer;transition:.2s}
+  .drop:hover{border-color:var(--amber-dim);background:var(--panel-2)}
+  .drop .ring{width:46px;height:46px;border:1px solid var(--amber-dim);border-radius:50%;
+    display:flex;align-items:center;justify-content:center;color:var(--amber)}
+  .drop .ring svg{width:20px;height:20px}
+  .drop .cap{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut);text-align:center;line-height:1.9}
+  .drop .cap b{color:var(--amber);font-weight:400}
+  .drop .spec{position:absolute;bottom:10px;font-size:8px;letter-spacing:.14em;color:var(--faint)}
+  .drop::before,.drop::after{content:"";position:absolute;width:9px;height:9px;border:1px solid var(--amber-dim)}
+  .drop::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+  .drop::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+
+  /* caption */
+  .field{margin-bottom:18px}
+  .flabel{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--mut);margin-bottom:7px}
+  .flabel .count{font-family:var(--mono);color:var(--faint)}
+  .flabel .count b{color:var(--amber-dim);font-weight:400}
+  textarea,input[type=text]{width:100%;background:var(--panel);border:1px solid var(--hair);color:var(--txt);
+    font-family:var(--mono);font-size:13px;padding:12px 13px;resize:vertical;transition:.15s;line-height:1.6}
+  textarea:focus,input:focus{outline:0;border-color:var(--amber-dim);background:var(--panel-2)}
+  textarea{min-height:120px}
+
+  /* trial reel prominent card */
+  .trial{border:1px solid var(--amber-dim);background:rgba(255,179,36,.05);padding:16px 18px;margin-bottom:20px;position:relative}
+  .trial .th{display:flex;align-items:center;gap:11px;margin-bottom:4px}
+  .trial .th .dot{width:7px;height:7px;background:var(--amber);border-radius:50%;box-shadow:0 0 8px var(--amber)}
+  .trial .th h3{font-family:var(--cond);font-weight:700;font-size:15px;letter-spacing:.16em;text-transform:uppercase}
+  .trial .th .sw{margin-left:auto}
+  .trial p{font-size:10px;color:var(--mut);letter-spacing:.03em;line-height:1.7;margin-left:18px}
+  .grad{display:none;grid-template-columns:1fr 1fr;gap:2px;margin:14px 0 0 18px;border:1px solid var(--hair);background:var(--hair)}
+  .trial.open .grad{display:grid}
+  .grad button{font-family:var(--mono);font-size:10px;letter-spacing:.08em;color:var(--mut);background:var(--panel);
+    border:0;padding:11px 12px;cursor:pointer;text-align:left;transition:.15s}
+  .grad button b{display:block;font-family:var(--cond);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--txt);margin-bottom:3px}
+  .grad button:hover{background:var(--panel-2)}
+  .grad button.on{background:rgba(255,179,36,.08);box-shadow:inset 0 0 0 1px var(--amber-dim)}
+  .grad button.on b{color:var(--amber-hi)}
+
+  /* switch */
+  .sw{position:relative;width:38px;height:20px;border:1px solid var(--hair-2);background:var(--char);cursor:pointer;transition:.2s;flex:0 0 auto}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;background:var(--faint);transition:.2s}
+  .sw.on{border-color:var(--amber-dim);background:rgba(255,179,36,.12)}
+  .sw.on::after{left:20px;background:var(--amber);box-shadow:0 0 8px var(--amber)}
+
+  /* advanced disclosure */
+  .adv-toggle{display:flex;align-items:center;gap:10px;width:100%;background:transparent;border:0;border-top:1px dashed var(--hair-2);
+    color:var(--mut);font-family:var(--cond);font-weight:600;font-size:13px;letter-spacing:.2em;text-transform:uppercase;
+    padding:18px 0;cursor:pointer;transition:.15s}
+  .adv-toggle:hover{color:var(--txt)}
+  .adv-toggle .chev{margin-left:auto;transition:.2s}
+  .adv-toggle.open .chev{transform:rotate(180deg)}
+  .adv{display:none;flex-direction:column;gap:2px;border:1px solid var(--hair);background:var(--hair);margin-bottom:8px}
+  .adv.open{display:flex}
+  .row{display:flex;align-items:center;gap:12px;background:var(--panel);padding:13px 15px}
+  .row .rl{min-width:0}
+  .row .rl b{display:block;font-size:11px;letter-spacing:.1em;color:var(--txt);text-transform:uppercase;font-family:var(--cond);font-weight:600}
+  .row .rl span{font-size:9px;color:var(--faint);letter-spacing:.05em}
+  .row .rr{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .row .mini{background:var(--char);border:1px solid var(--hair-2);color:var(--txt);font-family:var(--mono);
+    font-size:11px;padding:6px 9px;width:90px}
+  .row .mini.wide{width:150px}
+
+  /* action bar */
+  .bar{position:fixed;bottom:0;left:0;right:0;background:rgba(18,17,16,.92);backdrop-filter:blur(8px);
+    border-top:1px solid var(--hair);padding:14px 24px}
+  .bar-in{max-width:640px;margin:0 auto;display:flex;align-items:center;gap:14px}
+  .bar .status{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut)}
+  .bar .status b{color:var(--amber);font-weight:400}
+  .ghost{margin-left:auto;font-family:var(--cond);font-weight:600;font-size:13px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--mut);background:transparent;border:1px solid var(--hair-2);padding:12px 20px;cursor:pointer;transition:.15s}
+  .ghost:hover{color:var(--txt);border-color:var(--mut)}
+  .transmit{font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--char);background:var(--amber);border:0;padding:13px 26px;cursor:pointer;transition:.15s;
+    display:flex;align-items:center;gap:9px}
+  .transmit:hover{background:var(--amber-hi);box-shadow:0 0 22px rgba(255,179,36,.4)}
+  .transmit svg{width:15px;height:15px}
+</style>
+</head>
+<body>
+  <header class="hdr">
+    <div class="sig">SOCIAL <b>COCKPIT</b></div>
+    <div class="hud"><b>@xelle.studio</b><br>◈ LINK NOMINAL · 05:12Z</div>
+  </header>
+
+  <main class="wrap">
+    <div class="ptitle"><span class="tag">05</span><h1>Compose</h1></div>
+    <p class="sub">Draft → arm → transmit. One payload to the Instagram Graph API.</p>
+
+    <!-- media type -->
+    <div class="seg">
+      <button class="on">Reel<small>REELS</small></button>
+      <button>Photo<small>IMAGE</small></button>
+      <button>Carousel<small>CAROUSEL</small></button>
+      <button>Story<small>STORIES</small></button>
+    </div>
+
+    <!-- dropzone -->
+    <label class="drop">
+      <div class="ring">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12h14"/></svg>
+      </div>
+      <div class="cap">Drop <b>reel video</b><br>or click to browse</div>
+      <div class="spec">MP4 · ≤90s · 9:16 · resumable upload</div>
+    </label>
+
+    <!-- caption -->
+    <div class="field">
+      <div class="flabel"><span>Caption</span><span class="count"><b id="cc">0</b>/2200 · <b>0</b>/30# · <b>0</b>/20@</span></div>
+      <textarea id="cap" placeholder="Write a caption… #hashtags @mentions"></textarea>
+    </div>
+
+    <!-- trial reel -->
+    <div class="trial" id="trial">
+      <div class="th">
+        <span class="dot"></span>
+        <h3>Trial Reel</h3>
+        <div class="sw" id="trialSw" onclick="toggleTrial()"></div>
+      </div>
+      <p>Publish to non-followers only. Graduate to your main audience manually, or automatically when it performs.</p>
+      <div class="grad">
+        <button class="on"><b>Manual</b>Graduate yourself in-app<br><span style="color:var(--faint)">MANUAL</span></button>
+        <button><b>Auto · Performance</b>Graduate if it performs<br><span style="color:var(--faint)">SS_PERFORMANCE</span></button>
+      </div>
+    </div>
+
+    <!-- advanced -->
+    <button class="adv-toggle" id="advBtn" onclick="toggleAdv()">
+      Advanced Payload
+      <span class="chev">▾</span>
+    </button>
+    <div class="adv" id="adv">
+      <div class="row"><div class="rl"><b>Share to Feed</b><span>share_to_feed · show in Feed + Reels tab</span></div><div class="rr"><div class="sw on"></div></div></div>
+      <div class="row"><div class="rl"><b>Cover Frame</b><span>thumb_offset · ms into video</span></div><div class="rr"><input class="mini" value="0"></div></div>
+      <div class="row"><div class="rl"><b>Cover Image</b><span>cover_url · custom cover</span></div><div class="rr"><button class="ghost" style="padding:7px 12px;font-size:10px">Upload</button></div></div>
+      <div class="row"><div class="rl"><b>Audio Name</b><span>audio_name · rename original audio</span></div><div class="rr"><input class="mini wide" placeholder="Original audio"></div></div>
+      <div class="row"><div class="rl"><b>Location</b><span>location_id · tag a place</span></div><div class="rr"><input class="mini wide" placeholder="Search…"></div></div>
+      <div class="row"><div class="rl"><b>Collaborators</b><span>collaborators · up to 3</span></div><div class="rr"><input class="mini wide" placeholder="@user, @user"></div></div>
+      <div class="row"><div class="rl"><b>Tag People</b><span>user_tags · x/y positioned</span></div><div class="rr"><button class="ghost" style="padding:7px 12px;font-size:10px">0 tagged</button></div></div>
+      <div class="row"><div class="rl"><b>Paid Partnership</b><span>is_paid_partnership + sponsor ids</span></div><div class="rr"><div class="sw"></div></div></div>
+      <div class="row"><div class="rl"><b>AI Generated</b><span>is_ai_generated · self-disclosure</span></div><div class="rr"><div class="sw"></div></div></div>
+    </div>
+  </main>
+
+  <div class="bar">
+    <div class="bar-in">
+      <div class="status">STATE · <b>DRAFT ARMED</b> · REELS</div>
+      <button class="ghost">Schedule</button>
+      <button class="transmit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        Transmit
+      </button>
+    </div>
+  </div>
+
+<script>
+  const cap=document.getElementById('cap'), cc=document.getElementById('cc');
+  cap.addEventListener('input',()=>{cc.textContent=cap.value.length;});
+  function toggleAdv(){document.getElementById('adv').classList.toggle('open');document.getElementById('advBtn').classList.toggle('open');}
+  function toggleTrial(){const t=document.getElementById('trial');document.getElementById('trialSw').classList.toggle('on');t.classList.toggle('open');}
+  document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.seg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');});
+  document.querySelectorAll('.grad button').forEach(b=>b.onclick=()=>{document.querySelectorAll('.grad button').forEach(x=>x.classList.remove('on'));b.classList.add('on');});
+  document.querySelectorAll('.adv .sw').forEach(s=>s.onclick=()=>s.classList.toggle('on'));
+</script>
+</body>
+</html>

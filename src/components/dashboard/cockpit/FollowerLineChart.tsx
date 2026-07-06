@@ -9,7 +9,6 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Card } from "@/components/ui/Card";
 import { ChartSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState, RateLimitError, isRateLimitError } from "@/components/ui/ErrorState";
 import { useUserInsights } from "@/hooks/useUserInsights";
@@ -17,6 +16,8 @@ import { useProfile } from "@/hooks/useProfile";
 import { usePeriod } from "@/hooks/usePeriod";
 import { userInsightsToTimeSeries, type TimeSeriesPoint } from "@/lib/data/transforms";
 import { formatCount } from "@/lib/utils/format";
+import { Panel } from "./Panel";
+import { cockpitTooltip } from "./chartTheme";
 
 function buildCumulativeSeries(
   deltas: TimeSeriesPoint[],
@@ -32,7 +33,6 @@ function buildCumulativeSeries(
   return sorted.map((point, i) => ({ ...point, value: totals[i] }));
 }
 
-/** Rounds a step up to a "nice" 1 / 2 / 5 × 10ⁿ value. */
 function niceStep(rough: number): number {
   if (rough <= 0) return 1;
   const pow = Math.pow(10, Math.floor(Math.log10(rough)));
@@ -41,15 +41,9 @@ function niceStep(rough: number): number {
   return nice * pow;
 }
 
-/**
- * Builds a tight, evenly-spaced Y axis around the data range so a near-flat
- * follower series doesn't collapse to repeated labels. Returns the domain and
- * explicit ticks (≈5) snapped to nice round numbers.
- */
 function buildAxis(values: number[]): { domain: [number, number]; ticks: number[]; step: number } {
   const min = Math.min(...values);
   const max = Math.max(...values);
-  // Flat series: invent a small band so ticks stay distinct.
   const span = max - min || Math.max(1, Math.round(max * 0.02));
   const step = niceStep(span / 4);
   const lo = Math.floor(min / step) * step;
@@ -59,7 +53,7 @@ function buildAxis(values: number[]): { domain: [number, number]; ticks: number[
   return { domain: [lo, hi], ticks, step };
 }
 
-export function FollowerChart({ className }: { className?: string }) {
+export function FollowerLineChart() {
   const [period] = usePeriod();
   const insightsQuery = useUserInsights(period);
   const profileQuery = useProfile();
@@ -76,11 +70,9 @@ export function FollowerChart({ className }: { className?: string }) {
         )
       : [];
 
-  const axis =
-    series.length > 0 ? buildAxis(series.map((p) => p.value)) : null;
+  const axis = series.length > 0 ? buildAxis(series.map((p) => p.value)) : null;
+  const net = series.length > 1 ? series[series.length - 1].value - series[0].value : 0;
 
-  // When ticks are closer together than 1K, the K-suffix rounds neighbours to
-  // the same label — fall back to grouped full numbers (e.g. "1,150").
   const formatTick = (v: number) =>
     axis && axis.step < 1000 ? Math.round(v).toLocaleString() : formatCount(v);
 
@@ -89,72 +81,71 @@ export function FollowerChart({ className }: { className?: string }) {
     profileQuery.refetch();
   };
 
+  const rhs =
+    series.length > 1
+      ? `${series[0].date} → ${series[series.length - 1].date} · daily · ${net >= 0 ? "+" : ""}${net}`
+      : "daily";
+
   return (
-    <Card padding="lg" className={`flex flex-col gap-4 ${className ?? ""}`}>
-      <p className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-medium">
-        Total Followers
-      </p>
-      {isLoading && <ChartSkeleton height={180} />}
+    <Panel tag="01" title="Followers" rhs={rhs}>
+      {isLoading && <ChartSkeleton height={264} />}
       {isError && isRateLimitError(error) ? (
         <RateLimitError onRetry={refetch} />
       ) : isError ? (
         <ErrorState message={(error as Error)?.message} onRetry={refetch} />
       ) : null}
       {!isLoading && !isError && (
-        <ResponsiveContainer width="100%" className="flex-1" height="100%" minHeight={180}>
-          <AreaChart data={series} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+        <ResponsiveContainer width="100%" height={264}>
+          <AreaChart data={series} margin={{ top: 8, right: 52, bottom: 0, left: 0 }}>
             <defs>
-              <linearGradient id="followerGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--accent-cyan)" stopOpacity={0.22} />
-                <stop offset="100%" stopColor="var(--accent-cyan)" stopOpacity={0} />
+              <linearGradient id="ckFollowerFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="var(--amber)" stopOpacity={0.16} />
+                <stop offset="100%" stopColor="var(--amber)" stopOpacity={0} />
               </linearGradient>
+              <filter id="ckFollowerGlow" x="-30%" y="-30%" width="160%" height="160%">
+                <feGaussianBlur stdDeviation="3" result="b" />
+                <feMerge>
+                  <feMergeNode in="b" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
             </defs>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="var(--border)"
-              vertical={false}
-            />
+            <CartesianGrid strokeDasharray="0" stroke="var(--hair)" vertical={false} />
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 11, fill: "var(--text-muted)", fontFamily: "var(--font-dm-mono)" }}
+              tick={{ fontSize: 10, fill: "var(--mut)", fontFamily: "var(--mono)" }}
               tickLine={false}
               axisLine={false}
               interval="preserveStartEnd"
+              minTickGap={40}
             />
             <YAxis
-              tick={{ fontSize: 11, fill: "var(--text-muted)", fontFamily: "var(--font-dm-mono)" }}
+              tick={{ fontSize: 10, fill: "var(--mut)", fontFamily: "var(--mono)" }}
               tickLine={false}
               axisLine={false}
               tickFormatter={formatTick}
-              width={48}
+              width={52}
               domain={axis ? axis.domain : ["auto", "auto"]}
               ticks={axis ? axis.ticks : undefined}
             />
             <Tooltip
-              contentStyle={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                fontSize: 12,
-                fontFamily: "var(--font-dm-mono)",
-                color: "var(--text-primary)",
-              }}
+              {...cockpitTooltip}
               formatter={(value: number) => [formatCount(value), "Followers"]}
-              labelStyle={{ color: "var(--text-muted)" }}
-              cursor={{ stroke: "var(--border)" }}
+              cursor={{ stroke: "var(--amber-dim)", strokeDasharray: "2 4" }}
             />
             <Area
               type="monotone"
               dataKey="value"
-              stroke="var(--accent-cyan)"
-              strokeWidth={2}
-              fill="url(#followerGrad)"
+              stroke="var(--amber)"
+              strokeWidth={2.2}
+              fill="url(#ckFollowerFill)"
               dot={false}
-              activeDot={{ r: 4, fill: "var(--accent-cyan)" }}
+              activeDot={{ r: 4, fill: "var(--amber-hi)", stroke: "var(--char)", strokeWidth: 2 }}
+              style={{ filter: "url(#ckFollowerGlow)" }}
             />
           </AreaChart>
         </ResponsiveContainer>
       )}
-    </Card>
+    </Panel>
   );
 }
