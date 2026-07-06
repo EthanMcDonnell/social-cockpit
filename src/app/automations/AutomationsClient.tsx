@@ -95,6 +95,28 @@ function useEventIssueCount() {
   });
 }
 
+// ─── Per-flow funnel counters (Phase 2) ─────────────────────────────────────────
+
+interface FlowStats {
+  invited: number;
+  rewarded: number;
+  nudged: number;
+  expired: number;
+}
+
+function useAutomationStats() {
+  return useQuery<Record<string, FlowStats>>({
+    queryKey: ["automation-stats"],
+    queryFn: async () => {
+      const res = await fetch("/api/automation-stats");
+      if (!res.ok) return {};
+      return res.json();
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
 // ─── Icons ─────────────────────────────────────────────────────────────────────
 
 function IconComment() {
@@ -1155,6 +1177,7 @@ function FlowRow({
   onDelete,
   mediaThumbnail,
   mediaCaption,
+  stats,
 }: {
   flow: AutomationFlow;
   isSelected: boolean;
@@ -1163,6 +1186,7 @@ function FlowRow({
   onDelete: () => void;
   mediaThumbnail?: string | null;
   mediaCaption?: string | null;
+  stats?: FlowStats;
 }) {
   const mediaCount = flow.media_ids.length;
   return (
@@ -1245,6 +1269,22 @@ function FlowRow({
           Delete
         </button>
       </div>
+      {flow.template_type === "comment_to_follow_dm" && (
+        <div className="mt-2 pt-2 border-t border-border/50 flex items-center gap-x-3 gap-y-1 flex-wrap text-[10px] font-mono">
+          <span className="text-text-muted/80">
+            <b className="text-text-primary">{stats?.invited ?? 0}</b> invited
+          </span>
+          <span className="text-accent-green/80">
+            <b>{stats?.rewarded ?? 0}</b> rewarded
+          </span>
+          <span className="text-accent-amber/80">
+            <b>{stats?.nudged ?? 0}</b> nudged
+          </span>
+          <span className="text-text-muted/60">
+            <b>{stats?.expired ?? 0}</b> expired
+          </span>
+        </div>
+      )}
     </button>
   );
 }
@@ -1260,6 +1300,7 @@ type EditorState =
 export function AutomationsClient() {
   const { data: flows, isLoading } = useAutomationFlows();
   const { data: mediaData } = useMedia({ all: true });
+  const { data: statsMap } = useAutomationStats();
   const mediaMap = Object.fromEntries(
     (mediaData?.data ?? []).map((m) => [m.id, m])
   );
@@ -1362,6 +1403,7 @@ export function AutomationsClient() {
               onDelete={() => handleDeleteFlow(flow)}
               mediaThumbnail={media?.media_type === "IMAGE" ? media?.media_url : media?.thumbnail_url}
               mediaCaption={media?.caption?.slice(0, 60) ?? null}
+              stats={statsMap?.[flow.id]}
             />
           );
           })}

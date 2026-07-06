@@ -585,13 +585,14 @@ functions) with a manual override (**Opener** / **Not-following message**),
     separate bubble and postback taps aren't pollable). Confirm matches the keyword
     as a **whole word**, not a substring. `MAX_NUDGES = 2`. Openers personalise with
     the commenter's `@handle` via `${name}`.
-- **Phase 2** — analytics counters on the flow card (invited / rewarded /
-  follow-prompted / expired).
-- **Phase 3** — per-flow tunables (TTL, max nudges, cooldown) surfaced in the UI.
-- **Phase 4** — request batching for the read fan-out (see below). Engine-wide
+- **Phase 2 — ✅ COMPLETE** — analytics counters on the flow card (invited /
+  rewarded / nudged / expired), derived from the `automation_events` log via
+  `GET /api/automation-stats`. TTL culls now log an `expired` event so timeouts
+  are countable. Counts reflect the 30-day event-retention window.
+- **Phase 3** — request batching for the read fan-out (see below). Engine-wide
   efficiency pass, not follow-DM-specific, so it comes last.
 
-## Phase 4 — Request batching (efficiency, with caveats)
+## Phase 3 — Request batching (efficiency, with caveats)
 
 The Graph API `POST /` `batch` param bundles up to 50 sub-requests into one HTTP
 call, with optional dependency chaining (`{result=name:$.path}`) to feed one

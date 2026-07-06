@@ -294,7 +294,14 @@ const norm = (s: string) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 export async function runFollowConfirmPoll() {
   const db = getDb();
 
-  // (a) timeout cull — bounds the pending table every cycle
+  // (a) timeout cull — bounds the pending table every cycle. Log each expiry
+  // first (per flow) so it's countable in the analytics counters.
+  const expiring = db
+    .prepare("SELECT flow_id, recipient_id FROM follow_check_pending WHERE created_at < datetime('now', ?)")
+    .all(`-${PENDING_TTL_DAYS} days`) as { flow_id: string; recipient_id: string }[];
+  for (const e of expiring) {
+    logEvent(db, { level: "info", kind: "expired", flow_id: e.flow_id, recipient_id: e.recipient_id });
+  }
   db.prepare("DELETE FROM follow_check_pending WHERE created_at < datetime('now', ?)")
     .run(`-${PENDING_TTL_DAYS} days`);
   // Flow deleted / deactivated → cull its rows.
