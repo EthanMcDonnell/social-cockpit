@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
-import type { AutomationFlow, AutomationConfig, CommentToDmConfig, CommentToReplyConfig, AutomationTemplateType } from "@/lib/db";
+import type { AutomationFlow, AutomationConfig, CommentToDmConfig, CommentToReplyConfig, CommentToFollowDmConfig, AutomationTemplateType } from "@/lib/db";
 import {
   useAutomationFlows,
   useCreateFlow,
@@ -27,6 +28,18 @@ const DEFAULT_REPLY_CONFIG: CommentToReplyConfig = {
   comment_replies: [],
 };
 
+const DEFAULT_FOLLOW_DM_CONFIG: CommentToFollowDmConfig = {
+  comment_reply_fn: "",
+  comment_replies: [],
+  confirm_keyword: "DONE",
+  dm_pack: "casual",
+  opener_message: "",
+  not_following_message: "",
+  follower_message: "Here you go! Here's the link: https://",
+  resource: "resources",
+  on_check_error: "follow_prompt",
+};
+
 // ─── Reply functions hook ──────────────────────────────────────────────────────
 
 interface ReplyFunctionDef {
@@ -43,6 +56,42 @@ function useReplyFunctions() {
       return res.json();
     },
     staleTime: 60_000,
+  });
+}
+
+// ─── DM message packs hook (comment_to_follow_dm) ───────────────────────────────
+
+interface DmPackDef {
+  name: string;
+  opener: string;
+  nudge: string;
+}
+
+function useDmPacks() {
+  return useQuery<DmPackDef[]>({
+    queryKey: ["follow-dm-functions"],
+    queryFn: async () => {
+      const res = await fetch("/api/follow-dm-functions");
+      if (!res.ok) throw new Error("Failed to fetch DM packs");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+}
+
+// ─── Warn+error badge for the logs link ─────────────────────────────────────────
+
+function useEventIssueCount() {
+  return useQuery<number>({
+    queryKey: ["automation-events-issues"],
+    queryFn: async () => {
+      const res = await fetch("/api/automation-events?level=warn,error&limit=1");
+      if (!res.ok) return 0;
+      const data = await res.json();
+      return (data?.counts?.warn ?? 0) + (data?.counts?.error ?? 0);
+    },
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -86,6 +135,25 @@ function IconX() {
     <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" className="w-2.5 h-2.5">
       <path d="M2 2l8 8M10 2l-8 8" />
     </svg>
+  );
+}
+
+// ─── Logs link (with warn+error badge) ──────────────────────────────────────────
+
+function LogsLink() {
+  const { data: issues } = useEventIssueCount();
+  return (
+    <Link
+      href="/automations/logs"
+      className="flex items-center gap-1.5 text-xs font-medium text-text-muted hover:text-text-primary transition-colors"
+    >
+      Logs
+      {issues && issues > 0 ? (
+        <span className="min-w-[16px] h-4 px-1 rounded-full bg-accent-red text-white text-[9px] font-semibold flex items-center justify-center">
+          {issues > 99 ? "99+" : issues}
+        </span>
+      ) : null}
+    </Link>
   );
 }
 
@@ -524,6 +592,236 @@ function VideoSelector({
   );
 }
 
+// ─── Single-line text field ─────────────────────────────────────────────────────
+
+function TextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  hint,
+  mono,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  hint?: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-[10px] text-text-muted uppercase tracking-wider font-medium">
+        {label}
+      </label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={clsx(
+          "w-full text-xs bg-bg-base border border-border rounded-xl px-3 py-2.5 text-text-primary placeholder:text-text-muted/40 focus:outline-none focus:border-accent-cyan/50 transition-colors",
+          mono && "font-mono"
+        )}
+      />
+      {hint && <p className="text-[10px] text-text-muted/55 leading-relaxed">{hint}</p>}
+    </div>
+  );
+}
+
+// ─── DM pack selector (comment_to_follow_dm) ─────────────────────────────────────
+
+function DmPackSelector({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const { data: packs, isLoading } = useDmPacks();
+
+  if (isLoading) return <div className="h-10 rounded-xl bg-border/50 animate-pulse" />;
+
+  if (!packs || packs.length === 0) {
+    return (
+      <p className="text-xs text-text-muted/60 italic">
+        No packs defined. Add them to{" "}
+        <code className="font-mono text-[11px] bg-bg-card border border-border px-1 rounded">
+          src/lib/follow-dm-functions.ts
+        </code>
+      </p>
+    );
+  }
+
+  const selected = packs.find((p) => p.name === value) ?? packs[0];
+
+  return (
+    <div className="space-y-2">
+      <select
+        value={value || packs[0].name}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full text-xs bg-bg-base border border-border rounded-xl px-3 py-2.5 text-text-primary focus:outline-none focus:border-accent-cyan/50 transition-colors appearance-none"
+      >
+        {packs.map((p) => (
+          <option key={p.name} value={p.name}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      {selected && (
+        <div className="space-y-1 pl-0.5">
+          <p className="text-[10px] text-text-muted/60 font-mono leading-relaxed">
+            Opener: &ldquo;{selected.opener}&rdquo;
+          </p>
+          <p className="text-[10px] text-text-muted/60 font-mono leading-relaxed">
+            Nudge: &ldquo;{selected.nudge}&rdquo;
+          </p>
+        </div>
+      )}
+      <p className="text-[10px] text-text-muted/55">
+        Packs generate randomized opener + nudge copy. Use {"{{resource}}"} inside a pack; set the
+        resource name below. Reward stays manual.
+      </p>
+    </div>
+  );
+}
+
+// ─── Follow-DM funnel fields ─────────────────────────────────────────────────────
+
+function FollowDmFields({
+  config,
+  onChange,
+}: {
+  config: CommentToFollowDmConfig;
+  onChange: (patch: Partial<CommentToFollowDmConfig>) => void;
+}) {
+  const [copyMode, setCopyMode] = useState<"pack" | "manual">(
+    () => (config.dm_pack ? "pack" : "manual")
+  );
+
+  function switchCopyMode(mode: "pack" | "manual") {
+    setCopyMode(mode);
+    if (mode === "pack") {
+      onChange({ dm_pack: config.dm_pack || "casual" });
+    } else {
+      onChange({ dm_pack: "" });
+    }
+  }
+
+  return (
+    <>
+      <Connector label="follow gate" />
+
+      {/* Opener DM + confirm keyword */}
+      <StepCard icon={<IconDM />} label="Opener DM + confirm keyword" color="amber">
+        <div className="space-y-4">
+          <TextField
+            label="Confirm keyword — users reply this to unlock the reward"
+            value={config.confirm_keyword ?? ""}
+            onChange={(v) => onChange({ confirm_keyword: v })}
+            placeholder="DONE"
+            mono
+            hint="The opener asks the user to follow, then reply this word. That reply is what confirms them and opens the window for the reward — so keep it in the opener copy below."
+          />
+
+          {/* DM copy: pack vs manual */}
+          <div className="space-y-2">
+            <label className="block text-[10px] text-text-muted uppercase tracking-wider font-medium">
+              Opener &amp; nudge copy
+            </label>
+            <div className="flex gap-1 p-0.5 bg-bg-base border border-border rounded-xl w-fit">
+              <button
+                type="button"
+                onClick={() => switchCopyMode("pack")}
+                className={clsx(
+                  "px-3 py-1.5 rounded-[10px] text-[10px] font-medium transition-all",
+                  copyMode === "pack" ? "bg-bg-card text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"
+                )}
+              >
+                Pack
+              </button>
+              <button
+                type="button"
+                onClick={() => switchCopyMode("manual")}
+                className={clsx(
+                  "px-3 py-1.5 rounded-[10px] text-[10px] font-medium transition-all",
+                  copyMode === "manual" ? "bg-bg-card text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"
+                )}
+              >
+                Manual
+              </button>
+            </div>
+
+            {copyMode === "pack" ? (
+              <DmPackSelector value={config.dm_pack ?? ""} onChange={(v) => onChange({ dm_pack: v })} />
+            ) : (
+              <div className="space-y-3">
+                <MessageField
+                  label="Opener message"
+                  value={config.opener_message ?? ""}
+                  onChange={(v) => onChange({ opener_message: v })}
+                  placeholder="Follow me, then reply DONE and I'll send it 🔗"
+                  hint="The card's text. Tell them to follow then reply the keyword. Use {{username}}, {{resource}} and {{keyword}}."
+                />
+                <MessageField
+                  label="Not-following message (nudge)"
+                  value={config.not_following_message ?? ""}
+                  onChange={(v) => onChange({ not_following_message: v })}
+                  placeholder="Just need you to follow first, then reply DONE again"
+                  hint="Sent when they reply the keyword but aren't following yet. Use {{keyword}}."
+                />
+              </div>
+            )}
+          </div>
+
+          <TextField
+            label="Resource name — {{resource}}"
+            value={config.resource ?? ""}
+            onChange={(v) => onChange({ resource: v })}
+            placeholder="resources"
+            hint="Substituted for {{resource}} in packs and messages, e.g. “guide” or “discount code”."
+          />
+        </div>
+      </StepCard>
+
+      <Connector label="if following" />
+
+      {/* Reward */}
+      <StepCard icon={<IconDM />} label="Reward — sent to followers" color="green">
+        <MessageField
+          label="Follower message"
+          value={config.follower_message ?? ""}
+          onChange={(v) => onChange({ follower_message: v })}
+          placeholder="Here's your link: https://..."
+          hint="Sent once we confirm they follow. This is your actual link/code — kept manual. Use {{username}}."
+          focusColor="green"
+        />
+      </StepCard>
+
+      {/* Error policy */}
+      <StepCard icon={<IconComment />} label="Follow-check policy" color="indigo">
+        <div className="space-y-1.5">
+          <label className="block text-[10px] text-text-muted uppercase tracking-wider font-medium">
+            If follow status can&apos;t be read
+          </label>
+          <select
+            value={config.on_check_error ?? "follow_prompt"}
+            onChange={(e) => onChange({ on_check_error: e.target.value as CommentToFollowDmConfig["on_check_error"] })}
+            className="w-full text-xs bg-bg-base border border-border rounded-xl px-3 py-2.5 text-text-primary focus:outline-none focus:border-accent-cyan/50 transition-colors appearance-none"
+          >
+            <option value="follow_prompt">Nudge to follow (fail-closed, recommended)</option>
+            <option value="reward">Send the reward anyway (fail-open)</option>
+            <option value="skip">Do nothing, wait for a retry</option>
+          </select>
+          <p className="text-[10px] text-text-muted/55 leading-relaxed">
+            Follow status is only readable after the user replies, and can lag. Fail-closed nudges them to
+            follow &amp; reply again.
+          </p>
+        </div>
+      </StepCard>
+    </>
+  );
+}
+
 // ─── Flow editor ───────────────────────────────────────────────────────────────
 
 function FlowEditor({
@@ -541,17 +839,32 @@ function FlowEditor({
   onCancel: () => void;
   isSaving: boolean;
 }) {
-  const defaultName = templateType === "comment_to_reply" ? "Comment to Reply" : "Comment to DM";
+  const defaultName =
+    templateType === "comment_to_reply"
+      ? "Comment to Reply"
+      : templateType === "comment_to_follow_dm"
+        ? "Comment to Follow to DM"
+        : "Comment to DM";
+  const defaultConfig: AutomationConfig =
+    templateType === "comment_to_reply"
+      ? DEFAULT_REPLY_CONFIG
+      : templateType === "comment_to_follow_dm"
+        ? DEFAULT_FOLLOW_DM_CONFIG
+        : DEFAULT_DM_CONFIG;
   const [name, setName] = useState(flow?.name ?? defaultName);
   const [keywords, setKeywords] = useState<string[]>(flow?.trigger_keywords ?? ["LINK"]);
-  const [config, setConfig] = useState<AutomationConfig>(
-    flow?.config ?? (templateType === "comment_to_reply" ? DEFAULT_REPLY_CONFIG : DEFAULT_DM_CONFIG)
-  );
+  const [config, setConfig] = useState<AutomationConfig>(flow?.config ?? defaultConfig);
   const [mediaIds, setMediaIds] = useState<string[]>(flow?.media_ids ?? []);
   const [error, setError] = useState<string | null>(null);
 
   const isDm = templateType === "comment_to_dm";
+  const isFollowDm = templateType === "comment_to_follow_dm";
   const dmConfig = config as CommentToDmConfig;
+  const followConfig = config as CommentToFollowDmConfig;
+
+  function setFollowCfg(patch: Partial<CommentToFollowDmConfig>) {
+    setConfig((prev) => ({ ...prev, ...patch }));
+  }
 
   // Determine initial reply mode from existing config
   const [replyMode, setReplyMode] = useState<"function" | "manual">(
@@ -584,6 +897,11 @@ function FlowEditor({
     if (!name.trim()) { setError("Flow name is required"); return; }
     if (keywords.length === 0) { setError("At least one trigger keyword is required"); return; }
     if (isDm && !dmConfig.initial_message?.trim()) { setError("DM message is required"); return; }
+    if (isFollowDm) {
+      const hasOpener = followConfig.dm_pack?.trim() || followConfig.opener_message?.trim();
+      if (!hasOpener) { setError("An opener message or a message pack is required"); return; }
+      if (!followConfig.follower_message?.trim()) { setError("A follower reward message is required"); return; }
+    }
     onSave({ name: name.trim(), trigger_keywords: keywords, config, media_ids: mediaIds, template_type: templateType });
   }
 
@@ -687,6 +1005,8 @@ function FlowEditor({
         </>
       )}
 
+      {isFollowDm && <FollowDmFields config={followConfig} onChange={setFollowCfg} />}
+
       {error && <p className="text-xs text-accent-red pt-1">{error}</p>}
 
       <div className="flex items-center gap-2 pt-4 pb-2">
@@ -788,6 +1108,37 @@ function TemplatePicker({ onSelect }: { onSelect: (type: AutomationTemplateType)
               </div>
             </div>
           </button>
+
+          {/* Comment to Follow to DM */}
+          <button
+            onClick={() => onSelect("comment_to_follow_dm")}
+            className="w-full text-left p-4 hover:bg-accent-amber/[0.04] transition-all group"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-accent-amber/10 border border-accent-amber/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-accent-amber">
+                  <circle cx="7.5" cy="7" r="3" />
+                  <path d="M2.5 16.5c0-2.8 2.2-4.5 5-4.5s5 1.7 5 4.5" />
+                  <path d="M16 4.5v4M14 6.5h4" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-text-primary group-hover:text-accent-amber transition-colors">
+                  Comment to Follow to DM
+                </p>
+                <p className="text-xs text-text-muted mt-0.5 leading-relaxed">
+                  Keyword → follow to unlock → DM the reward.
+                </p>
+                <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                  {["Keyword trigger", "Follow check", "Reward"].map((tag) => (
+                    <span key={tag} className="text-[10px] px-2 py-0.5 rounded bg-bg-card border border-border text-text-muted">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </button>
         </div>
       </div>
     </div>
@@ -876,9 +1227,15 @@ function FlowRow({
           "text-[9px] font-mono px-1.5 py-0.5 rounded border",
           flow.template_type === "comment_to_reply"
             ? "text-[var(--chart-3)] border-[var(--chart-3)]/30 bg-[var(--chart-3)]/5"
-            : "text-accent-cyan/70 border-accent-cyan/20 bg-accent-cyan/5"
+            : flow.template_type === "comment_to_follow_dm"
+              ? "text-accent-amber border-accent-amber/30 bg-accent-amber/5"
+              : "text-accent-cyan/70 border-accent-cyan/20 bg-accent-cyan/5"
         )}>
-          {flow.template_type === "comment_to_reply" ? "→ reply" : "→ DM"}
+          {flow.template_type === "comment_to_reply"
+            ? "→ reply"
+            : flow.template_type === "comment_to_follow_dm"
+              ? "→ follow → DM"
+              : "→ DM"}
         </span>
         <div className="flex-1" />
         <button
@@ -961,13 +1318,16 @@ export function AutomationsClient() {
       <div className="w-72 flex-shrink-0 border-r border-border flex flex-col overflow-hidden">
         <div className="h-12 px-4 flex items-center justify-between border-b border-border flex-shrink-0">
           <span className="text-xs font-semibold text-text-muted uppercase tracking-widest">Flows</span>
-          <button
-            onClick={() => setEditor({ mode: "pick-template" })}
-            className="flex items-center gap-1.5 text-xs font-medium text-accent-cyan hover:opacity-80 transition-opacity"
-          >
-            <IconPlus />
-            New
-          </button>
+          <div className="flex items-center gap-3">
+            <LogsLink />
+            <button
+              onClick={() => setEditor({ mode: "pick-template" })}
+              className="flex items-center gap-1.5 text-xs font-medium text-accent-cyan hover:opacity-80 transition-opacity"
+            >
+              <IconPlus />
+              New
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -1032,7 +1392,11 @@ export function AutomationsClient() {
             <div className="h-12 px-6 flex items-center gap-3 border-b border-border flex-shrink-0">
               <span className="text-xs font-semibold text-text-muted uppercase tracking-widest">
                 {editor.mode === "new"
-                  ? editor.templateType === "comment_to_reply" ? "New reply flow" : "New DM flow"
+                  ? editor.templateType === "comment_to_reply"
+                    ? "New reply flow"
+                    : editor.templateType === "comment_to_follow_dm"
+                      ? "New follow-DM flow"
+                      : "New DM flow"
                   : "Edit flow"}
               </span>
               {editor.mode === "edit" && (

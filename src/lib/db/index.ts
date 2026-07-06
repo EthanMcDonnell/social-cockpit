@@ -47,15 +47,67 @@ export function getDb(): Database.Database {
       media_id        TEXT PRIMARY KEY,
       last_checked_at TEXT NOT NULL
     )`,
+    // ── comment_to_follow_dm funnel state (Comment → Follow → DM) ──
+    // A pending row exists only while a user is mid-funnel; it is culled the
+    // moment the funnel resolves (reward sent / nudges exhausted / TTL expiry),
+    // so the table stays small and self-draining. Additive only — existing
+    // flows never touch this table.
+    `CREATE TABLE IF NOT EXISTS follow_check_pending (
+      flow_id            TEXT NOT NULL,
+      recipient_id       TEXT NOT NULL,
+      commenter_username TEXT,
+      comment_id         TEXT,
+      nudge_count        INTEGER NOT NULL DEFAULT 0,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (flow_id, recipient_id)
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_pending_created ON follow_check_pending(created_at)",
+    // ── automation event log (observability for the funnel) ──
+    // Every meaningful step and every failure is recorded here so problems are
+    // inspectable after the fact instead of vanishing into stdout. Self-bounds
+    // via a 30-day retention cull on the worker cadence.
+    `CREATE TABLE IF NOT EXISTS automation_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      flow_id      TEXT,
+      recipient_id TEXT,
+      comment_id   TEXT,
+      level        TEXT NOT NULL CHECK(level IN ('info','warn','error')),
+      kind         TEXT NOT NULL,
+      message      TEXT,
+      meta         TEXT,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_events_created ON automation_events(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_events_level   ON automation_events(level)",
   ]) {
     try { _db.exec(sql); } catch { /* already exists */ }
   }
   return _db;
 }
 
+// ─── Cursors ─────────────────────────────────────────────────────────────────
+// Reuses the automation_post_cursors table as a generic key→ISO-timestamp store
+// (the confirm poll stores its incremental message cursor under a reserved key).
+
+export function getCursor(db: Database.Database, key: string): string | undefined {
+  const row = db
+    .prepare("SELECT last_checked_at FROM automation_post_cursors WHERE media_id = ?")
+    .get(key) as { last_checked_at: string } | undefined;
+  return row?.last_checked_at ?? undefined;
+}
+
+export function setCursor(db: Database.Database, key: string, value?: string): void {
+  if (!value) return;
+  db.prepare(
+    `INSERT INTO automation_post_cursors (media_id, last_checked_at) VALUES (?, ?)
+       ON CONFLICT(media_id) DO UPDATE SET last_checked_at = excluded.last_checked_at`
+  ).run(key, value);
+}
+
 // ─── Automation Flows ────────────────────────────────────────────────────────
 
-export type AutomationTemplateType = "comment_to_dm" | "comment_to_reply";
+export type AutomationTemplateType =
+  "comment_to_dm" | "comment_to_reply" | "comment_to_follow_dm";
 
 export interface CommentToDmConfig {
   comment_reply_fn?: string;
@@ -72,7 +124,26 @@ export interface CommentToReplyConfig {
   media_ids?: string[];
 }
 
-export type AutomationConfig = CommentToDmConfig | CommentToReplyConfig;
+// Comment → Follow → DM (reply-to-confirm). DMs a reward only to people who
+// follow, via a confirm-tap flow. Additive — existing configs are untouched.
+export interface CommentToFollowDmConfig {
+  comment_reply_fn?: string;          // reuse public-reply machinery
+  comment_replies?: string[];
+  media_ids?: string[];
+
+  opener_message?: string;            // "Follow me, then reply DONE and I'll send it 🔗"
+  confirm_keyword?: string;           // reply-to-confirm keyword, default "DONE"
+  follower_message?: string;          // reward — sent to followers (manual)
+  not_following_message?: string;     // nudge — sent to non-followers
+  dm_pack?: string;                   // named copy pack — generates opener + nudge
+  resource?: string;                  // {{resource}} value, default "resources"
+  on_check_error?: "reward" | "follow_prompt" | "skip"; // default "follow_prompt"
+}
+
+export type AutomationConfig =
+  | CommentToDmConfig
+  | CommentToReplyConfig
+  | CommentToFollowDmConfig;
 
 export interface AutomationFlowRow {
   id: string;
@@ -111,7 +182,11 @@ export function rowToFlow(row: AutomationFlowRow): AutomationFlow {
     trigger_keywords = row.trigger_keyword ? [row.trigger_keyword] : [];
   }
   const template_type: AutomationTemplateType =
-    row.template_type === "comment_to_reply" ? "comment_to_reply" : "comment_to_dm";
+    row.template_type === "comment_to_reply"
+      ? "comment_to_reply"
+      : row.template_type === "comment_to_follow_dm"
+        ? "comment_to_follow_dm"
+        : "comment_to_dm";
   const config = JSON.parse(row.config) as AutomationConfig;
   // Resolve targeted posts: new flows store the full list in config.media_ids;
   // older flows only have the single media_id column (or none = any post).

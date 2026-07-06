@@ -576,9 +576,15 @@ functions) with a manual override (**Opener** / **Not-following message**),
 
 ## Phasing
 
-- **Phase 1** — the template + pending table + confirm poll + culling, the global
-  send throttle, the `automation_events` log, and the `/automations/logs` page. Error
-  visibility ships *with* the automation, not after it.
+- **Phase 1 — ✅ COMPLETE** — the template + pending table + confirm poll + culling,
+  the global send throttle, the `automation_events` log, and the `/automations/logs`
+  page. Error visibility ships *with* the automation, not after it.
+  - Shipped variations from the original plan: the opener is a **plain text private
+    reply** ("follow me, then reply DONE") with **reply-to-confirm on a keyword** —
+    no quick-reply/button/card (webhook-free, Instagram splits buttons into a
+    separate bubble and postback taps aren't pollable). Confirm matches the keyword
+    as a **whole word**, not a substring. `MAX_NUDGES = 2`. Openers personalise with
+    the commenter's `@handle` via `${name}`.
 - **Phase 2** — analytics counters on the flow card (invited / rewarded /
   follow-prompted / expired).
 - **Phase 3** — per-flow tunables (TTL, max nudges, cooldown) surfaced in the UI.

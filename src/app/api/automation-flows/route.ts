@@ -48,7 +48,11 @@ export async function POST(request: NextRequest) {
     }
 
     const resolvedType: AutomationTemplateType =
-      template_type === "comment_to_reply" ? "comment_to_reply" : "comment_to_dm";
+      template_type === "comment_to_reply"
+        ? "comment_to_reply"
+        : template_type === "comment_to_follow_dm"
+          ? "comment_to_follow_dm"
+          : "comment_to_dm";
 
     // Persist the full target list inside config; keep the media_id column
     // populated with the primary id for backward-compatible list display.

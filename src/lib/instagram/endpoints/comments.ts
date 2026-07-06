@@ -80,4 +80,30 @@ export async function sendPrivateReply(
   );
 }
 
+function requireAccountId(): string {
+  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
+  if (!accountId) {
+    throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
+  }
+  return accountId;
+}
+
+/**
+ * Plain DM to a known messaging-scoped id (reward / nudge), sent as a reply
+ * inside the 24h window the confirm reply opened.
+ */
+export async function sendDirectMessage(
+  recipientId: string,
+  text: string
+): Promise<{ recipient_id: string; message_id: string }> {
+  const accountId = requireAccountId();
+  return instagramFetch<{ recipient_id: string; message_id: string }>(
+    `/${accountId}/messages`,
+    {
+      method: "POST",
+      body: { recipient: { id: recipientId }, message: { text } },
+    }
+  );
+}
+
 export type { InstagramComment };
