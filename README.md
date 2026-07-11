@@ -11,6 +11,10 @@
 [![Instagram Graph API](https://img.shields.io/badge/Instagram-Graph_API_v25.0-E4405F?logo=instagram&logoColor=white)](https://developers.facebook.com/docs/instagram-platform)
 [![Self-hosted](https://img.shields.io/badge/deploy-self--hosted-4C1?logo=serverless&logoColor=white)](#-quick-start)
 
+<br />
+
+<img src="docs/screenshots/dashboard.png" alt="Social Cockpit dashboard — follower growth, video views, best time to post, and posts per day" width="100%" />
+
 </div>
 
 ---
