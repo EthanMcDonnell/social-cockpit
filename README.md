@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛰️ Social Cockpit
+# 🎛️ Social Cockpit
 
 **A self-hosted command center for your Instagram presence — analytics, publishing, inbox, and hands-off engagement automations, all running on your own machine.**
 
@@ -67,7 +67,7 @@ Social Cockpit uses the **[Instagram API with Instagram Login](https://developer
 2. **Create a new app** → choose the **Business** type.
 3. **Add the "Instagram" product** to the app and configure **Instagram API setup with Instagram Login**.
 4. **Connect your Instagram Professional account** to the app (as an app tester/role while in Development mode).
-5. **Request the permissions** the app uses:
+5. **Grant the permissions** the app uses. Because you run this only against **your own** connected account while the app is in Development mode, these scopes are available to you immediately — **no permission request, App Review, or submission to Meta is required.** Just select them when generating your token in the Graph API Explorer:
    - `instagram_business_basic` — read your profile, media, and insights
    - `instagram_business_manage_comments` — read and reply to comments
    - `instagram_business_manage_messages` — send direct messages (for automations)
