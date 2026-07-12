@@ -2,7 +2,7 @@
 
 # Social Cockpit
 
-**A self-hosted command center for your Instagram presence — analytics, publishing, inbox, and hands-off engagement automations, all running on your own machine.**
+**A self-hosted command center for your Instagram presence: analytics, publishing, inbox, and hands-off engagement automations, all running on your own machine.**
 
 [![Next.js](https://img.shields.io/badge/Next.js-14-000000?logo=next.js&logoColor=white)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
@@ -13,7 +13,7 @@
 
 <br />
 
-<img src="docs/screenshots/dashboard.png" alt="Social Cockpit dashboard — follower growth, video views, best time to post, and posts per day" width="100%" />
+<img src="docs/screenshots/dashboard.png" alt="Social Cockpit dashboard: follower growth, video views, best time to post, and posts per day" width="100%" />
 
 </div>
 
@@ -21,10 +21,10 @@
 
 ## What is this?
 
-**Social Cockpit** is a locally-run web app that puts a professional-grade dashboard on top of the Instagram Graph API. It's built for creators and social managers who want to **own their tooling and their data** — you run it yourself, it talks directly to Meta with your own credentials, and everything is stored in local SQLite files on your machine. Nothing is sent to a third-party service.
+**Social Cockpit** is a locally-run web app that puts a professional-grade dashboard on top of the Instagram Graph API. It's built for creators and social managers who want to **own their tooling and their data**: you run it yourself, it talks directly to Meta with your own credentials, and everything is stored in local SQLite files on your machine. Nothing is sent to a third-party service.
 
 > [!IMPORTANT]
-> This is a **self-managed** application. You bring your own Meta developer app and Instagram access token, and you host the app yourself (locally or on your own server). There is no hosted/SaaS version — you are in full control of your credentials and data.
+> This is a **self-managed** application. You bring your own Meta developer app and Instagram access token, and you host the app yourself (locally or on your own server). There is no hosted/SaaS version; you are in full control of your credentials and data.
 
 ### Platform support
 
@@ -43,15 +43,15 @@ Today, Social Cockpit targets **Instagram only**. The architecture is provider-a
 
 **The big three:**
 
-- **🤖 Engagement Automations** — A **comment → follow → DM** funnel: when someone comments a trigger keyword, the app replies, checks whether they follow you, and sends a direct message (with nudges), all tracked with per-flow funnel counters. Built-in send throttling and an API usage meter keep you inside Meta's rate limits.
-- **📝 Compose Studio** — Drag and drop a Reel, photo, carousel, or Story straight from your computer and publish it — caption editor, tagging, distribution options, and a live preview before you post. (Publishing local files uploads through [Cloudflare R2](docs/r2-setup.md) — see [Requirements](#-requirements).)
-- **📊 Dashboard & Posts Explorer** — Follower growth and video-views charts, at-a-glance account health, and a cursor-paginated post browser with per-post insights, side-by-side comparison, and top-post ranking by any metric.
+- **🤖 Engagement Automations:** A **comment → follow → DM** funnel: when someone comments a trigger keyword, the app replies, checks whether they follow you, and sends a direct message (with nudges), all tracked with per-flow funnel counters. Built-in send throttling and an API usage meter keep you inside Meta's rate limits.
+- **📝 Compose Studio:** Drag and drop a Reel, photo, carousel, or Story straight from your computer and publish it, with a caption editor, tagging, distribution options, and a live preview before you post. (Publishing local files uploads through [Cloudflare R2](docs/r2-setup.md); see [Requirements](#-requirements).)
+- **📊 Dashboard & Posts Explorer:** Follower growth and video-views charts, at-a-glance account health, and a cursor-paginated post browser with per-post insights, side-by-side comparison, and top-post ranking by any metric.
 
 **Also included:**
 
-- **💬 Inbox** — Read and reply to comments in threaded view.
-- **🎙️ Video Transcription (optional)** — A background worker transcribes your Reels/videos locally with [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) so you can search and rank by script content.
-- **⚡ Smart local caching & token management** — Media and insights are cached in local SQLite with stale-while-revalidate reads; short-lived tokens exchange for long-lived ones in the UI with automatic background refresh before expiry.
+- **💬 Inbox:** Read and reply to comments in threaded view.
+- **🎙️ Video Transcription (optional):** A background worker transcribes your Reels/videos locally with [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) so you can search and rank by script content.
+- **⚡ Smart local caching & token management:** Media and insights are cached in local SQLite with stale-while-revalidate reads; short-lived tokens exchange for long-lived ones in the UI with automatic background refresh before expiry.
 
 ---
 
@@ -60,18 +60,18 @@ Today, Social Cockpit targets **Instagram only**. The architecture is provider-a
 Before you start, you'll need:
 
 1. **Node.js 18.17+** and **npm** (this is a Next.js 14 app).
-2. **An Instagram Professional account** — a **Business** or **Creator** account (personal accounts are not supported by the API).
-3. **A Meta Developer account and app** — see [Setting up Instagram](docs/instagram-setup.md).
-4. **A Cloudflare account** (free tier is enough) — required to publish anything from **Compose Studio**, which uploads local files rather than accepting pasted URLs. See [Setting up Cloudflare R2](docs/r2-setup.md). Skip this only if you'll never use Compose Studio and instead call `/api/publish` directly with your own hosted URLs.
-5. *(Optional)* **Python 3.9+** — only if you want the local video-transcription feature.
+2. **An Instagram Professional account**: a **Business** or **Creator** account (personal accounts are not supported by the API).
+3. **A Meta Developer account and app**: see [Setting up Instagram](docs/instagram-setup.md).
+4. **A Cloudflare account** (free tier is enough): required to publish anything from **Compose Studio**, which uploads local files rather than accepting pasted URLs. See [Setting up Cloudflare R2](docs/r2-setup.md). Skip this only if you'll never use Compose Studio and instead call `/api/publish` directly with your own hosted URLs.
+5. *(Optional)* **Python 3.9+**: only if you want the local video-transcription feature.
 
 ---
 
 ## 🔧 Setting up Instagram
 
-Social Cockpit uses the **[Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login)** (Graph API `v25.0`, `graph.instagram.com`). You create your own Meta app and generate your own access token — no App Review or Meta submission is needed to run this against your own account.
+Social Cockpit uses the **[Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login)** (Graph API `v25.0`, `graph.instagram.com`). You create your own Meta app and generate your own access token; no App Review or Meta submission is needed to run this against your own account.
 
-**→ Full walkthrough: [docs/instagram-setup.md](docs/instagram-setup.md)** — creating the Meta app, connecting your Instagram account, picking permission scopes, and grabbing your credentials.
+**→ Full walkthrough: [docs/instagram-setup.md](docs/instagram-setup.md)** covers creating the Meta app, connecting your Instagram account, picking permission scopes, and grabbing your credentials.
 
 > [!WARNING]
 > This project is **not affiliated with, endorsed by, or sponsored by Meta or Instagram**. You are responsible for complying with the [Meta Platform Terms](https://developers.facebook.com/terms/) and Instagram's policies when using your own app and tokens.
@@ -109,16 +109,16 @@ npm start   # serves on port 3000
 
 Configuration lives in `.env.local` (git-ignored).
 
-### Required — Instagram API access
+### Required: Instagram API access
 
 ```bash
 # .env.local
 INSTAGRAM_ACCESS_TOKEN=EAA...        # your long-lived Instagram token
 INSTAGRAM_ACCOUNT_ID=17841400000000  # your Instagram (app-scoped) user ID
-INSTAGRAM_APP_SECRET=abc123...       # Meta App Secret — enables auto token refresh
+INSTAGRAM_APP_SECRET=abc123...       # Meta App Secret: enables auto token refresh
 ```
 
-### Required for Compose Studio — Cloudflare R2
+### Required for Compose Studio: Cloudflare R2
 
 Compose Studio publishes by uploading local files, so these are needed to publish anything from the UI. See [docs/r2-setup.md](docs/r2-setup.md). Skip this block only if you're driving `/api/publish` directly with your own hosted URLs instead of using Compose Studio.
 
@@ -175,18 +175,18 @@ TRANSCRIPTION_PYTHON=/absolute/path/to/social-cockpit/.venv/bin/python
 # TRANSCRIPTION_MODEL=medium   # default is "small"
 ```
 
-Restart the server, then enable the feature from the **Settings** page. Both the toggle and `TRANSCRIPTION_PYTHON` are required — if either is missing, transcription simply stays off and the rest of the app is unaffected.
+Restart the server, then enable the feature from the **Settings** page. Both the toggle and `TRANSCRIPTION_PYTHON` are required; if either is missing, transcription simply stays off and the rest of the app is unaffected.
 
 ---
 
-## ☁️ Cloudflare R2 — publishing from Compose Studio
+## ☁️ Cloudflare R2: publishing from Compose Studio
 
-Compose Studio publishes by **uploading local files** — a reel, photo, carousel, or Story straight off your computer. There's no pasted-URL field in the UI, so R2 is required to publish anything from Compose Studio (not optional).
+Compose Studio publishes by **uploading local files**: a reel, photo, carousel, or Story straight off your computer. There's no pasted-URL field in the UI, so R2 is required to publish anything from Compose Studio (not optional).
 
-**Why local files need R2 at all:** this app uses the Instagram API *with Instagram Login* (`graph.instagram.com`), which has no local/resumable upload — Meta's servers `cURL` a **publicly reachable HTTPS URL** for every media type. A file sitting on your laptop isn't reachable by Instagram's servers, so it needs a brief public home. [Cloudflare R2](https://developers.cloudflare.com/r2/) is that home — uploaded privately, published via a short-lived signed URL, then deleted.
+**Why local files need R2 at all:** this app uses the Instagram API *with Instagram Login* (`graph.instagram.com`), which has no local/resumable upload: Meta's servers `cURL` a **publicly reachable HTTPS URL** for every media type. A file sitting on your laptop isn't reachable by Instagram's servers, so it needs a brief public home. [Cloudflare R2](https://developers.cloudflare.com/r2/) is that home: uploaded privately, published via a short-lived signed URL, then deleted.
 
-**→ Full setup guide: [docs/r2-setup.md](docs/r2-setup.md)** — step-by-step Terraform provisioning and configuration.
-**→ Design & security rationale: [docs/r2-integration.md](docs/r2-integration.md)** — why it's required, the private-bucket security posture, and how the storage cap is enforced.
+**→ Full setup guide: [docs/r2-setup.md](docs/r2-setup.md)** walks through step-by-step Terraform provisioning and configuration.
+**→ Design & security rationale: [docs/r2-integration.md](docs/r2-integration.md)** covers why it's required, the private-bucket security posture, and how the storage cap is enforced.
 
 > [!NOTE]
 > R2 is only skippable if you never use Compose Studio and instead call `POST /api/publish` directly with your own already-hosted URLs.
@@ -243,7 +243,7 @@ scripts/transcribe.py   # Python transcription entrypoint
 
 ## 🤝 Contributing
 
-Contributions are welcome! Whether it's a bug fix, a new platform integration, or docs improvements — open an issue to discuss, or send a PR. Please keep changes focused and match the existing code style.
+Contributions are welcome! Whether it's a bug fix, a new platform integration, or docs improvements: open an issue to discuss, or send a PR. Please keep changes focused and match the existing code style.
 
 ---
 
