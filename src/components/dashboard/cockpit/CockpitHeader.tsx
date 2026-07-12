@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Suspense } from "react";
 import { RadarScope } from "./RadarScope";
 import { usePeriod, type PeriodDays } from "@/hooks/usePeriod";
+import { usePlatform } from "@/hooks/usePlatform";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
@@ -47,6 +48,7 @@ function WindowSelector() {
 
 export function CockpitHeader() {
   const pathname = usePathname();
+  const [platform] = usePlatform();
   const active = NAV.find(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
   );
@@ -70,7 +72,7 @@ export function CockpitHeader() {
         ))}
       </nav>
       <div className="ck-hud">
-        IG/MAIN · <b>{formatToday()}</b>
+        {platform.toUpperCase()}/MAIN · <b>{formatToday()}</b>
         {isDashboard && (
           <>
             {" "}
@@ -82,7 +84,13 @@ export function CockpitHeader() {
         )}
         <br />
         {isDashboard ? (
-          <span className="warn">▲ INSIGHTS DELAYED ≤48H — LAST 2 DAYS OMITTED</span>
+          platform === "yt" ? (
+            <span>
+              SOURCE <b>YOUTUBE DATA API v3</b> · PUBLIC METRICS
+            </span>
+          ) : (
+            <span className="warn">▲ INSIGHTS DELAYED ≤48H — LAST 2 DAYS OMITTED</span>
+          )
         ) : (
           <span>
             SECTION <b>{(active?.label ?? "SYSTEM").toUpperCase()}</b> · STATUS{" "}

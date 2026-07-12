@@ -14,6 +14,8 @@ import { ErrorState, RateLimitError, isRateLimitError } from "@/components/ui/Er
 import { useUserInsights } from "@/hooks/useUserInsights";
 import { useProfile } from "@/hooks/useProfile";
 import { usePeriod } from "@/hooks/usePeriod";
+import { usePlatform } from "@/hooks/usePlatform";
+import { useYoutubeChannel } from "@/hooks/useYoutubeChannel";
 import { userInsightsToTimeSeries, type TimeSeriesPoint } from "@/lib/data/transforms";
 import { formatCount } from "@/lib/utils/format";
 import { Panel } from "./Panel";
@@ -55,8 +57,49 @@ function buildAxis(values: number[]): { domain: [number, number]; ticks: number[
 
 export function FollowerLineChart() {
   const [period] = usePeriod();
+  const [platform] = usePlatform();
+  const isIg = platform === "ig";
+
   const insightsQuery = useUserInsights(period);
   const profileQuery = useProfile();
+  const channelQuery = useYoutubeChannel({ enabled: !isIg });
+
+  // ── YouTube: the Data API key exposes only the current subscriber total, no
+  //    history — so we show the standing figure rather than a fabricated line. ──
+  if (!isIg) {
+    const subs = channelQuery.data?.subscriberCount;
+    return (
+      <Panel tag="01" title="Subscribers" rhs="current total">
+        {channelQuery.isLoading && <ChartSkeleton height={264} />}
+        {channelQuery.isError && (
+          <ErrorState
+            message={(channelQuery.error as Error)?.message}
+            onRetry={() => channelQuery.refetch()}
+          />
+        )}
+        {!channelQuery.isLoading && !channelQuery.isError && (
+          <div className="flex flex-col items-center justify-center h-[264px] gap-3 text-center">
+            <div
+              style={{
+                fontFamily: "var(--cond)",
+                fontWeight: 700,
+                fontSize: 68,
+                lineHeight: 1,
+                color: "var(--amber-hi)",
+                textShadow: "0 0 26px rgba(255,179,36,.3)",
+              }}
+            >
+              {subs != null ? subs.toLocaleString() : "—"}
+            </div>
+            <div className="text-[10px] text-[var(--mut)] font-mono tracking-wide max-w-[300px] leading-relaxed">
+              Subscriber history isn&rsquo;t available from the YouTube Data API key — only the
+              current total.
+            </div>
+          </div>
+        )}
+      </Panel>
+    );
+  }
 
   const isLoading = insightsQuery.isLoading || profileQuery.isLoading;
   const isError = insightsQuery.isError || profileQuery.isError;

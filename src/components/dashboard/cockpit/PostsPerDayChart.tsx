@@ -12,6 +12,8 @@ import {
 import { ChartSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState, isRateLimitError, RateLimitError } from "@/components/ui/ErrorState";
 import { useMedia } from "@/hooks/useMedia";
+import { usePlatform } from "@/hooks/usePlatform";
+import { useYoutubeVideos } from "@/hooks/useYoutubeVideos";
 import { usePeriod, type PeriodDays } from "@/hooks/usePeriod";
 import { Panel } from "./Panel";
 import { cockpitTooltip } from "./chartTheme";
@@ -56,15 +58,27 @@ const TICK_INTERVAL: Record<PeriodDays, number> = { 7: 0, 30: 1, 90: 6 };
 
 export function PostsPerDayChart() {
   const [period] = usePeriod();
-  const { data, isLoading, isError, error, refetch } = useMedia({ all: true });
+  const [platform] = usePlatform();
+  const isIg = platform === "ig";
 
-  const timestamps = data?.data.map((m) => m.timestamp) ?? [];
+  const mediaQuery = useMedia({ all: true });
+  const videosQuery = useYoutubeVideos(50, { enabled: !isIg });
+
+  const timestamps = isIg
+    ? mediaQuery.data?.data.map((m) => m.timestamp) ?? []
+    : (videosQuery.data ?? []).map((v) => v.publishedAt);
+
+  const isLoading = isIg ? mediaQuery.isLoading : videosQuery.isLoading;
+  const isError = isIg ? mediaQuery.isError : videosQuery.isError;
+  const error = isIg ? mediaQuery.error : videosQuery.error;
+  const refetch = () => (isIg ? mediaQuery.refetch() : videosQuery.refetch());
+
   const buckets = buildBuckets(timestamps, period);
   const rangeLabel =
     buckets.length > 0 ? `${buckets[0].label} → ${buckets[buckets.length - 1].label}` : "";
 
   return (
-    <Panel tag="04" title="Posts Per Day" rhs={rangeLabel}>
+    <Panel tag="04" title={isIg ? "Posts Per Day" : "Uploads Per Day"} rhs={rangeLabel}>
       {isLoading && <ChartSkeleton height={150} />}
       {isError && isRateLimitError(error) ? (
         <RateLimitError onRetry={() => refetch()} />
@@ -93,7 +107,7 @@ export function PostsPerDayChart() {
             />
             <Tooltip
               {...cockpitTooltip}
-              formatter={(value: number) => [value, "Posts"]}
+              formatter={(value: number) => [value, isIg ? "Posts" : "Uploads"]}
               cursor={{ fill: "var(--amber)", opacity: 0.08 }}
             />
             <Bar dataKey="count" fill="var(--amber-dim)" maxBarSize={20} />

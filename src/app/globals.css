@@ -367,6 +367,44 @@ body {
   font-weight: 400;
 }
 
+/* ── platform switch (readout rail) ── */
+.cockpit .ck-pswitch {
+  display: inline-flex;
+  border: 1px solid var(--hair-2);
+  margin: 2px 0 16px;
+  align-self: flex-start;
+}
+.cockpit .ck-pswitch button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--hair-2);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--mut);
+  padding: 7px 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.cockpit .ck-pswitch button:last-child {
+  border-right: 0;
+}
+.cockpit .ck-pswitch button svg {
+  display: block;
+}
+.cockpit .ck-pswitch button.on {
+  background: rgba(255, 179, 36, 0.12);
+  color: var(--amber-hi);
+}
+.cockpit .ck-pswitch button:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
 /* ── instruments ── */
 .cockpit .instruments {
   min-width: 0;

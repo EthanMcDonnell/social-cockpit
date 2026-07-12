@@ -4,7 +4,12 @@ import { useProfile } from "@/hooks/useProfile";
 import { useUserInsights } from "@/hooks/useUserInsights";
 import { useMedia } from "@/hooks/useMedia";
 import { usePeriod } from "@/hooks/usePeriod";
+import { usePlatform } from "@/hooks/usePlatform";
+import { useYoutubeChannel } from "@/hooks/useYoutubeChannel";
+import { useYoutubeVideos } from "@/hooks/useYoutubeVideos";
 import { extractLatestValue, calcPeriodDelta } from "@/lib/data/transforms";
+import { formatCount } from "@/lib/utils/format";
+import { PlatformSwitch } from "./PlatformSwitch";
 
 const DASH = "—";
 
@@ -46,6 +51,19 @@ function Readout({ k, code, value, detail, barPct, hero }: ReadoutProps) {
 }
 
 export function Readouts() {
+  const [platform] = usePlatform();
+
+  return (
+    <div className="readouts">
+      <PlatformSwitch />
+      {platform === "yt" ? <YoutubeReadouts /> : <InstagramReadouts />}
+    </div>
+  );
+}
+
+// ── Instagram ────────────────────────────────────────────────────────────────
+
+function InstagramReadouts() {
   const [period] = usePeriod();
   const profileQuery = useProfile();
   const insightsQuery = useUserInsights(period);
@@ -70,26 +88,27 @@ export function Readouts() {
     ? extractLatestValue(insightsQuery.data, "reach")
     : undefined;
 
-  // ── Engagement (mirror of StatCardGrid derivation) ───────────────────────────
-  const avgEngagement = insightsQuery.data
-    ? (() => {
-        const metric = insightsQuery.data.data.find((m) => m.name === "engagement_rate");
-        if (metric?.values?.length) {
-          const vals = metric.values.map((v) => v.value);
-          return vals.reduce((s, v) => s + v, 0) / vals.length;
-        }
-        const interactions = extractLatestValue(insightsQuery.data, "total_interactions");
-        const reachVal = extractLatestValue(insightsQuery.data, "reach");
-        if (interactions && reachVal && reachVal > 0) return interactions / reachVal;
-        return undefined;
-      })()
+  // ── Avg likes / comments per post (basic media fields, not Insights —
+  //    Insights is unavailable beyond reach/follower_count for this account) ──
+  const postsInPeriod = mediaQuery.data
+    ? allMedia.filter((m) => new Date(m.timestamp).getTime() >= cutoff)
     : undefined;
+  const avgLikes =
+    postsInPeriod && postsInPeriod.length > 0
+      ? postsInPeriod.reduce((sum, m) => sum + (m.like_count ?? 0), 0) /
+        postsInPeriod.length
+      : undefined;
+  const avgComments =
+    postsInPeriod && postsInPeriod.length > 0
+      ? postsInPeriod.reduce((sum, m) => sum + (m.comments_count ?? 0), 0) /
+        postsInPeriod.length
+      : undefined;
 
   const up = (followerDelta?.ratio ?? 0) >= 0;
   const arrow = up ? "▲" : "▼";
 
   return (
-    <div className="readouts">
+    <>
       <Readout
         hero
         k="Followers"
@@ -119,7 +138,7 @@ export function Readouts() {
         detail={
           publishedThisPeriod != null
             ? `${publishedThisPeriod} published this period`
-            : " "
+            : " "
         }
         barPct={
           publishedThisPeriod != null && totalPosts
@@ -129,16 +148,24 @@ export function Readouts() {
       />
 
       <Readout
-        k="Engagement"
+        k="Avg Likes"
         code="R-03"
-        value={avgEngagement != null ? `${(avgEngagement * 100).toFixed(1)}%` : DASH}
+        value={avgLikes != null ? avgLikes.toFixed(1) : DASH}
         detail={`mean per post · ${period}d`}
-        barPct={avgEngagement != null ? avgEngagement * 100 * 10 : 0}
+        barPct={avgLikes != null ? avgLikes : 0}
+      />
+
+      <Readout
+        k="Avg Comments"
+        code="R-04"
+        value={avgComments != null ? avgComments.toFixed(1) : DASH}
+        detail={`mean per post · ${period}d`}
+        barPct={avgComments != null ? avgComments * 10 : 0}
       />
 
       <Readout
         k="Reach"
-        code="R-04"
+        code="R-05"
         value={reach != null ? reach.toLocaleString() : DASH}
         detail="unique accounts"
         barPct={reach != null && followers ? (reach / followers) * 100 : 0}
@@ -149,6 +176,79 @@ export function Readouts() {
         <br />
         SOURCE <b>META GRAPH API</b>
       </div>
-    </div>
+    </>
+  );
+}
+
+// ── YouTube ──────────────────────────────────────────────────────────────────
+
+function YoutubeReadouts() {
+  const channelQuery = useYoutubeChannel();
+  const videosQuery = useYoutubeVideos(30);
+
+  const ch = channelQuery.data;
+  const videos = videosQuery.data ?? [];
+  const withViews = videos.filter((v) => v.viewCount > 0);
+
+  // Averages over the recent-video sample the API key gives us.
+  const avgViews = withViews.length
+    ? Math.round(withViews.reduce((s, v) => s + v.viewCount, 0) / withViews.length)
+    : undefined;
+  const maxViews = withViews.reduce((m, v) => Math.max(m, v.viewCount), 0);
+
+  const engRates = withViews.map((v) => (v.likeCount + v.commentCount) / v.viewCount);
+  const engagement = engRates.length
+    ? engRates.reduce((s, r) => s + r, 0) / engRates.length
+    : undefined;
+
+  const shorts = videos.filter((v) => v.isLikelyShort).length;
+  // How far a typical recent video's reach runs past the subscriber base.
+  const reachRatio = ch && avgViews ? avgViews / Math.max(ch.subscriberCount, 1) : undefined;
+
+  return (
+    <>
+      <Readout
+        hero
+        k="Subscribers"
+        code="R-01"
+        value={ch ? ch.subscriberCount.toLocaleString() : DASH}
+        detail="channel total"
+        barPct={reachRatio != null ? reachRatio * 100 : 0}
+      />
+
+      <Readout
+        k="Total Views"
+        code="R-02"
+        value={ch ? formatCount(ch.viewCount) : DASH}
+        detail={avgViews != null ? `avg ${formatCount(avgViews)} / video` : "lifetime"}
+        barPct={maxViews > 0 && avgViews ? (avgViews / maxViews) * 100 : 0}
+      />
+
+      <Readout
+        k="Engagement"
+        code="R-03"
+        value={engagement != null ? `${(engagement * 100).toFixed(1)}%` : DASH}
+        detail={
+          withViews.length
+            ? `likes+comments / views · last ${withViews.length}`
+            : "no recent videos"
+        }
+        barPct={engagement != null ? engagement * 100 * 10 : 0}
+      />
+
+      <Readout
+        k="Videos"
+        code="R-04"
+        value={ch ? ch.videoCount.toLocaleString() : DASH}
+        detail={videos.length ? `${shorts} shorts · last ${videos.length}` : "uploads"}
+        barPct={videos.length ? (shorts / videos.length) * 100 : 0}
+      />
+
+      <div className="syncnote">
+        CACHE <b>WARM · {agoLabel(channelQuery.dataUpdatedAt)}</b>
+        <br />
+        SOURCE <b>YOUTUBE DATA API v3</b>
+      </div>
+    </>
   );
 }

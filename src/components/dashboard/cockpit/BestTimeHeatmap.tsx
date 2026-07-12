@@ -4,15 +4,22 @@ import { useQueries } from "@tanstack/react-query";
 import { ChartSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState, isRateLimitError, RateLimitError } from "@/components/ui/ErrorState";
 import { useMedia } from "@/hooks/useMedia";
-import { useProfile } from "@/hooks/useProfile";
-import { calcEngagementRate } from "@/lib/data/calculations";
+import { usePlatform } from "@/hooks/usePlatform";
+import { useYoutubeVideos } from "@/hooks/useYoutubeVideos";
 import type { MediaInsights } from "@/lib/instagram/types";
+import { formatCount } from "@/lib/utils/format";
 import { Panel } from "./Panel";
 
 const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 // Amber intensity ramp (low → high), matching the COCKPIT v2 style guide.
 const RAMP = ["#6B4E14", "#8F6A18", "#B3871C", "#D9A621", "#FFC72E"];
+
+// A post reduced to when it went out and how many views it drew.
+interface TimedPost {
+  timestamp: string;
+  views: number;
+}
 
 async function fetchInsights(mediaId: string): Promise<MediaInsights> {
   const res = await fetch(`/api/instagram/media/${mediaId}/insights?flat=true`);
@@ -28,7 +35,7 @@ interface Cell {
   count: number;
 }
 
-function buildGrid(posts: Array<{ timestamp: string; engagementRate: number }>): {
+function buildGrid(posts: TimedPost[]): {
   grid: number[][];
   postCounts: number[][];
 } {
@@ -39,9 +46,10 @@ function buildGrid(posts: Array<{ timestamp: string; engagementRate: number }>):
     const d = new Date(post.timestamp);
     const day = (d.getDay() + 6) % 7; // 0=Mon … 6=Sun
     const hour = d.getHours();
-    cells[day][hour].sum += post.engagementRate;
+    cells[day][hour].sum += post.views;
     cells[day][hour].count++;
   }
+  // Cell value = mean views for posts published in that weekday × hour slot.
   const grid = cells.map((row) => row.map((c) => (c.count > 0 ? c.sum / c.count : 0)));
   const postCounts = cells.map((row) => row.map((c) => c.count));
   return { grid, postCounts };
@@ -58,37 +66,50 @@ function formatHour12(h: number): string {
 }
 
 export function BestTimeHeatmap() {
-  const mediaQuery = useMedia({ all: true });
-  const profileQuery = useProfile();
-  const mediaList = mediaQuery.data?.data ?? [];
+  const [platform] = usePlatform();
+  const isIg = platform === "ig";
 
+  // ── Instagram: per-post views come from each media's insights ──
+  const mediaQuery = useMedia({ all: true });
+  const mediaList = isIg ? mediaQuery.data?.data ?? [] : [];
   const insightQueries = useQueries({
     queries: mediaList.map((m) => ({
       queryKey: ["instagram", "media", m.id, "insights"],
       queryFn: () => fetchInsights(m.id),
       staleTime: 15 * 60 * 1000,
-      enabled: mediaList.length > 0,
+      enabled: isIg && mediaList.length > 0,
     })),
   });
 
-  const isLoading = mediaQuery.isLoading || insightQueries.some((q) => q.isLoading);
-  const isError = mediaQuery.isError || insightQueries.some((q) => q.isError);
-  const error = mediaQuery.error ?? insightQueries.find((q) => q.isError)?.error;
+  // ── YouTube: per-video view counts come straight off the videos list ──
+  const videosQuery = useYoutubeVideos(50, { enabled: !isIg });
 
-  const followerCount = profileQuery.data?.followers_count;
-
-  const postsWithEngagement = mediaList
+  const igPosts: TimedPost[] = mediaList
     .map((media, i) => {
-      const insights = insightQueries[i]?.data;
-      if (!insights) return null;
-      return {
-        timestamp: media.timestamp,
-        engagementRate: calcEngagementRate(insights, followerCount),
-      };
+      const views = insightQueries[i]?.data?.views;
+      if (views == null) return null;
+      return { timestamp: media.timestamp, views };
     })
-    .filter((p): p is { timestamp: string; engagementRate: number } => p !== null);
+    .filter((p): p is TimedPost => p !== null && p.views > 0);
 
-  const { grid, postCounts } = buildGrid(postsWithEngagement);
+  const ytPosts: TimedPost[] = (videosQuery.data ?? [])
+    .filter((v) => v.viewCount > 0)
+    .map((v) => ({ timestamp: v.publishedAt, views: v.viewCount }));
+
+  const posts = isIg ? igPosts : ytPosts;
+
+  const isLoading = isIg
+    ? mediaQuery.isLoading || insightQueries.some((q) => q.isLoading)
+    : videosQuery.isLoading;
+  const isError = isIg
+    ? mediaQuery.isError || insightQueries.some((q) => q.isError)
+    : videosQuery.isError;
+  const error = isIg
+    ? mediaQuery.error ?? insightQueries.find((q) => q.isError)?.error
+    : videosQuery.error;
+  const refetch = () => (isIg ? mediaQuery.refetch() : videosQuery.refetch());
+
+  const { grid, postCounts } = buildGrid(posts);
   const maxVal = Math.max(...grid.flat(), 0);
 
   function cellFill(value: number): string | undefined {
@@ -98,15 +119,15 @@ export function BestTimeHeatmap() {
     return RAMP[idx];
   }
 
-  const hasData = postsWithEngagement.length >= 3;
+  const hasData = posts.length >= 3;
 
   return (
-    <Panel tag="03" title="Best Time to Post" rhs="avg engagement · weekday × hour">
+    <Panel tag="03" title="Best Time to Post" rhs="avg views · weekday × hour">
       {isLoading && <ChartSkeleton height={200} />}
       {isError && isRateLimitError(error) ? (
-        <RateLimitError onRetry={() => mediaQuery.refetch()} />
+        <RateLimitError onRetry={() => refetch()} />
       ) : isError ? (
-        <ErrorState message={(error as Error)?.message} onRetry={() => mediaQuery.refetch()} />
+        <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
       ) : null}
       {!isLoading && !isError && !hasData && (
         <div className="flex items-center justify-center h-[200px] text-xs text-[var(--mut)] font-mono">
@@ -138,10 +159,10 @@ export function BestTimeHeatmap() {
                   const value = grid[dayIdx][hour];
                   const count = postCounts[dayIdx][hour];
                   const fill = cellFill(value);
-                  const pct = value > 0 ? `${(value * 100).toFixed(1)}%` : "—";
+                  const label = value > 0 ? formatCount(Math.round(value)) : "—";
                   const title =
                     count > 0
-                      ? `${day} ${formatHour12(hour)}: ${pct} avg engagement (${count} post${count !== 1 ? "s" : ""})`
+                      ? `${day} ${formatHour12(hour)}: ${label} avg views (${count} post${count !== 1 ? "s" : ""})`
                       : `${day} ${formatHour12(hour)}: no posts`;
                   return (
                     <div
