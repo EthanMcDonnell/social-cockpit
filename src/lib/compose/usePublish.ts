@@ -35,33 +35,79 @@ async function pollUntilFinished(containerId: string): Promise<void> {
   );
 }
 
-export interface PublishArgs {
-  input: PublishInput;
-  /** When present, publishes via resumable local-file upload (Reels/Stories). */
-  file?: File;
+function extOf(file: File): string {
+  const dot = file.name.lastIndexOf(".");
+  return dot >= 0 ? file.name.slice(dot + 1) : "";
 }
 
 /**
- * Runs the full publish flow from the client. With a file it POSTs multipart to
- * /api/publish/upload (resumable); otherwise JSON to /api/publish. On a 202
- * (still processing) it polls status then POSTs /api/publish/finalize.
+ * Upload a local file straight to R2 (sign, then PUT the bytes directly — this
+ * server never sees them) and return the object key. See docs/r2-integration.md.
+ */
+async function uploadToR2(file: File): Promise<string> {
+  const contentType = file.type || "application/octet-stream";
+  const { res, data } = await postJSON("/api/publish/r2-sign", {
+    contentType,
+    size: file.size,
+    ext: extOf(file),
+  });
+  if (!res.ok) throw new Error((data.message as string) ?? "Could not start upload");
+
+  const { key, uploadUrl } = data as { key: string; uploadUrl: string };
+  const put = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": contentType },
+    body: file,
+  });
+  if (!put.ok) throw new Error(`Upload to storage failed (${put.status})`);
+  return key;
+}
+
+/** Local files from the Compose Studio UI, uploaded straight to R2 before publish. */
+export interface PublishFiles {
+  /** Reel video, or a Story video. */
+  video?: File;
+  /** Story image (photo story). */
+  image?: File;
+  /** Reel cover image. */
+  cover?: File;
+  /** Photo tab — index-aligned with the slots `draftToPublishInput` used to build children/image_url. */
+  photos?: (File | null)[];
+}
+
+export interface PublishArgs {
+  input: PublishInput;
+  files?: PublishFiles;
+}
+
+/**
+ * Runs the full publish flow from the client. Local files are uploaded straight to
+ * R2 and referenced by object key in an `r2` map on the /api/publish body; pasted
+ * URLs go through unchanged. On a 202 (still processing) it polls status then
+ * POSTs /api/publish/finalize.
  */
 export function usePublish() {
   return useMutation<PublishOutcome, Error, PublishArgs>({
-    mutationFn: async ({ input, file }) => {
-      let res: Response;
-      let data: Record<string, unknown>;
+    mutationFn: async ({ input, files }) => {
+      const r2: { video_url?: string; image_url?: string; cover_url?: string; children?: (string | null)[] } = {};
 
-      if (file) {
-        const form = new FormData();
-        form.append("file", file);
-        form.append("payload", JSON.stringify(input));
-        // No Content-Type header — the browser sets the multipart boundary.
-        res = await fetch("/api/publish/upload", { method: "POST", body: form });
-        data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-      } else {
-        ({ res, data } = await postJSON("/api/publish", input));
+      if (files?.video) r2.video_url = await uploadToR2(files.video);
+      if (files?.image) r2.image_url = await uploadToR2(files.image);
+      if (files?.cover) r2.cover_url = await uploadToR2(files.cover);
+
+      const photoFiles = files?.photos ?? [];
+      if (photoFiles.some(Boolean)) {
+        const keys = await Promise.all(photoFiles.map((f) => (f ? uploadToR2(f) : Promise.resolve(null))));
+        if (input.media_type === "CAROUSEL") {
+          r2.children = keys;
+        } else {
+          const key = keys.find((k): k is string => !!k);
+          if (key) r2.image_url = key;
+        }
       }
+
+      const body = Object.keys(r2).length ? { ...input, r2 } : input;
+      const { res, data } = await postJSON("/api/publish", body);
 
       // Hard failure (not the 202 "still processing" case).
       if (!res.ok && res.status !== 202) {
@@ -74,7 +120,16 @@ export function usePublish() {
       const containerId = data.container_id as string;
       await pollUntilFinished(containerId);
 
-      const fin = await postJSON("/api/publish/finalize", { creation_id: containerId });
+      // On a 202, /api/publish left our uploaded R2 objects in place (Instagram
+      // may still have been fetching them). Hand their keys to finalize so it
+      // reclaims them now that the container is FINISHED.
+      const r2Keys = [r2.video_url, r2.cover_url, r2.image_url, ...(r2.children ?? [])].filter(
+        (k): k is string => !!k
+      );
+      const fin = await postJSON("/api/publish/finalize", {
+        creation_id: containerId,
+        r2_keys: r2Keys,
+      });
       if (!fin.res.ok) throw new Error((fin.data.message as string) ?? "Finalize failed");
       return fin.data as unknown as PublishOutcome;
     },

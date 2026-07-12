@@ -25,11 +25,8 @@ export const MAX_CAROUSEL = 10;
 
 export interface ComposeDraft {
   tab: ComposeTab;
-  videoUrl: string; // reel / video story (or supplied via a local file)
-  imageUrl: string; // photo story
-  photos: string[]; // Photo tab: 1 URL = image, 2–10 = carousel
+  photos: string[]; // Photo tab: per-slot structure; 1 filled = image, 2–10 = carousel
   caption: string;
-  coverUrl: string;
   thumbOffset: string; // kept as a string for the input; parsed on submit
   shareToFeed: boolean;
   audioName: string;
@@ -46,11 +43,8 @@ export interface ComposeDraft {
 
 export const initialDraft: ComposeDraft = {
   tab: "REEL",
-  videoUrl: "",
-  imageUrl: "",
   photos: [""],
   caption: "",
-  coverUrl: "",
   thumbOffset: "",
   shareToFeed: true,
   audioName: "",
@@ -65,9 +59,22 @@ export const initialDraft: ComposeDraft = {
   productTags: "",
 };
 
-/** Non-empty, trimmed photo URLs from the Photo tab. */
-export function photoUrls(d: ComposeDraft): string[] {
-  return d.photos.map((s) => s.trim()).filter(Boolean);
+/**
+ * Photo-tab slots that have content — a local file pending upload to R2 — in
+ * slot order. `photoFiles` is index-aligned with
+ * `d.photos`; files live outside ComposeDraft (same pattern as the Reel/Story
+ * `file` state) since they aren't serializable. The caller (ComposeStudio /
+ * usePublish) should derive both `draftToPublishInput`'s children/image_url
+ * *and* the parallel R2 key list from this single function, so the two stay
+ * aligned by construction instead of by two independent filters.
+ */
+export function filledPhotoSlots(
+  d: ComposeDraft,
+  photoFiles: (File | null)[] = []
+): { url: string; file: File | null }[] {
+  return d.photos
+    .map((raw, i) => ({ url: raw.trim(), file: photoFiles[i] ?? null }))
+    .filter((slot) => slot.url || slot.file);
 }
 
 /** Split a comma/space/newline separated list, trim, drop leading @ and blanks. */
@@ -92,19 +99,23 @@ export function captionStats(caption: string) {
  * Client-side gate mirroring the server's `validate()`. Returns an error string
  * to show / disable Transmit, or null when the draft is submittable.
  */
-export function validateDraft(d: ComposeDraft, hasFile = false): string | null {
+export function validateDraft(
+  d: ComposeDraft,
+  hasFile = false,
+  photoFiles: (File | null)[] = []
+): string | null {
   switch (d.tab) {
     case "REEL":
-      if (!hasFile && !d.videoUrl.trim()) return "Drag a video file or paste a reel URL";
+      if (!hasFile) return "Drop a video file";
       break;
     case "PHOTO": {
-      const n = photoUrls(d).length;
-      if (n === 0) return "Add at least one image URL";
+      const n = filledPhotoSlots(d, photoFiles).length;
+      if (n === 0) return "Add at least one image";
       if (n > MAX_CAROUSEL) return `Up to ${MAX_CAROUSEL} images`;
       break;
     }
     case "STORY":
-      if (!hasFile && !d.imageUrl.trim() && !d.videoUrl.trim()) return "Drag a video file or add a URL";
+      if (!hasFile) return "Drop an image or video file";
       break;
   }
   if (d.caption.length > CAPTION_MAX) return `Caption exceeds ${CAPTION_MAX} characters`;
@@ -134,20 +145,27 @@ function sharedFields(d: ComposeDraft): Partial<PublishInput> {
 }
 
 /** The API media_type a draft resolves to (1 photo = IMAGE, 2+ = CAROUSEL). */
-export function resolvedMediaType(d: ComposeDraft): PublishInput["media_type"] {
+export function resolvedMediaType(
+  d: ComposeDraft,
+  photoFiles: (File | null)[] = []
+): PublishInput["media_type"] {
   if (d.tab === "REEL") return "REELS";
   if (d.tab === "STORY") return "STORIES";
-  return photoUrls(d).length >= 2 ? "CAROUSEL" : "IMAGE";
+  return filledPhotoSlots(d, photoFiles).length >= 2 ? "CAROUSEL" : "IMAGE";
 }
 
-/** Map the flat draft to the exact POST body. */
-export function draftToPublishInput(d: ComposeDraft): PublishInput {
+/**
+ * Map the flat draft to the exact POST body. `photoFiles` slots (Photo tab, local
+ * files pending R2 upload) are left with no `image_url` — the caller (usePublish)
+ * fills those via the parallel `r2` key map after uploading, using the same
+ * `filledPhotoSlots` order so the two line up by construction.
+ */
+export function draftToPublishInput(d: ComposeDraft, photoFiles: (File | null)[] = []): PublishInput {
   const shared = sharedFields(d);
 
   if (d.tab === "REEL") {
     const input: PublishInput = { media_type: "REELS", ...shared };
-    if (d.videoUrl.trim()) input.video_url = d.videoUrl.trim();
-    if (d.coverUrl.trim()) input.cover_url = d.coverUrl.trim();
+    // video_url and cover_url are filled by usePublish from the R2 uploads.
     const offset = parseInt(d.thumbOffset, 10);
     if (Number.isFinite(offset) && offset > 0) input.thumb_offset = offset;
     if (d.audioName.trim()) input.audio_name = d.audioName.trim();
@@ -157,19 +175,24 @@ export function draftToPublishInput(d: ComposeDraft): PublishInput {
   }
 
   if (d.tab === "STORY") {
-    const input: PublishInput = { media_type: "STORIES", ...shared };
-    if (d.videoUrl.trim()) input.video_url = d.videoUrl.trim();
-    else if (d.imageUrl.trim()) input.image_url = d.imageUrl.trim();
-    return input;
+    // image_url or video_url is filled by usePublish from the R2 upload,
+    // depending on whether the dropped file is an image or a video.
+    return { media_type: "STORIES", ...shared };
   }
 
-  // PHOTO — carousel at 2+, single image otherwise.
-  const urls = photoUrls(d);
-  if (urls.length >= 2) {
-    return { media_type: "CAROUSEL", children: urls.map((image_url) => ({ image_url })), ...shared };
+  // PHOTO — carousel at 2+ filled slots, single image otherwise. A slot backed by
+  // a local file gets no image_url here; usePublish fills it via r2.children /
+  // r2.image_url after uploading, in this same slot order.
+  const slots = filledPhotoSlots(d, photoFiles);
+  if (slots.length >= 2) {
+    return {
+      media_type: "CAROUSEL",
+      children: slots.map((s) => (s.file ? {} : { image_url: s.url })),
+      ...shared,
+    };
   }
   const input: PublishInput = { media_type: "IMAGE", ...shared };
-  if (urls[0]) input.image_url = urls[0];
+  if (slots[0] && !slots[0].file) input.image_url = slots[0].url;
   if (d.altText.trim()) input.alt_text = d.altText.trim();
   return input;
 }

@@ -759,24 +759,23 @@ body {
   text-transform: uppercase;
 }
 
-/* disabled "upload from computer" placeholder (photos need a public host) */
-.compose .cs-drop.is-soon {
-  cursor: default;
-  opacity: 0.5;
+/* compact variant — inline drop targets (e.g. Reel cover) instead of a full block */
+.compose .cs-drop.compact {
+  min-height: 0;
+  flex-direction: row;
+  gap: 8px;
+  padding: 8px 12px;
 }
-.compose .cs-drop.is-soon:hover {
-  border-color: var(--hair-2);
-  background: var(--char);
-  box-shadow: none;
+.compose .cs-drop.compact .cs-dropring {
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
 }
-.compose .cs-note {
-  margin-top: 12px;
-  font-size: 9px;
-  line-height: 1.7;
-  letter-spacing: 0.04em;
-  color: var(--faint);
-  border-left: 1px solid var(--hair-2);
-  padding-left: 10px;
+.compose .cs-drop.compact .cs-dropt {
+  line-height: 1.3;
+}
+.compose .cs-drop.compact .cs-drops {
+  display: none;
 }
 
 /* photo url rows (single image → carousel) */
@@ -815,6 +814,46 @@ body {
 .compose .cs-addrow:hover {
   color: var(--amber);
   border-color: var(--amber-dim);
+}
+
+/* per-slot "upload from computer" icon button, next to a photo URL input */
+.compose .cs-photoupload {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hair-2);
+  color: var(--mut);
+  cursor: pointer;
+  font-size: 12px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.compose .cs-photoupload:hover {
+  color: var(--amber);
+  border-color: var(--amber-dim);
+}
+
+/* a photo-list slot filled with a local file (replaces the URL input for that row) */
+.compose .cs-photofile {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--amber-dim);
+  background: rgba(255, 179, 36, 0.05);
+  padding: 6px 10px;
+}
+.compose .cs-photofile span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--txt);
 }
 
 /* selected file */

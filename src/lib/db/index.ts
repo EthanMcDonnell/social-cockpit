@@ -79,6 +79,15 @@ export function getDb(): Database.Database {
     )`,
     "CREATE INDEX IF NOT EXISTS idx_events_created ON automation_events(created_at)",
     "CREATE INDEX IF NOT EXISTS idx_events_level   ON automation_events(level)",
+    // ── R2 storage usage gate (see docs/r2-integration.md) ──
+    // One row per live object reserved/uploaded under publish/. Rows are removed
+    // the moment the object is deleted, so steady-state is ~empty; SUM(size_bytes)
+    // is the authoritative "reserved" figure the sign route gates against.
+    `CREATE TABLE IF NOT EXISTS r2_reservations (
+      key         TEXT PRIMARY KEY,
+      size_bytes  INTEGER NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
   ]) {
     try { _db.exec(sql); } catch { /* already exists */ }
   }

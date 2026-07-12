@@ -83,8 +83,6 @@ export interface CreateContainerInput {
   is_carousel_item?: boolean;
   /** Carousel: child container ids (comma-joined for the API). */
   children?: string[];
-  /** Set "resumable" to upload the binary via the resumable protocol. */
-  upload_type?: "resumable";
   /**
    * Escape hatch for any parameter this client doesn't model yet (e.g. a new
    * Graph API field). Merged last — values are sent verbatim.
@@ -170,7 +168,6 @@ function marshalContainer(input: CreateContainerInput): Params {
   if (input.location_id) p.location_id = input.location_id;
   if (input.alt_text) p.alt_text = input.alt_text;
   if (input.is_carousel_item != null) p.is_carousel_item = input.is_carousel_item;
-  if (input.upload_type) p.upload_type = input.upload_type;
   if (input.is_paid_partnership != null) p.is_paid_partnership = input.is_paid_partnership;
   if (input.is_ai_generated != null) p.is_ai_generated = input.is_ai_generated;
 
@@ -185,72 +182,17 @@ function marshalContainer(input: CreateContainerInput): Params {
   return p;
 }
 
-// ─── Primitive steps (composable for advanced / resumable flows) ──────────────
+// ─── Primitive steps (composable for advanced flows) ──────────────────────────
 
-/**
- * Step 1 — create a media container. Returns its id, plus `uri` (the resumable
- * upload target) when created with `upload_type: "resumable"`.
- */
+/** Step 1 — create a media container. Returns its id. */
 export async function createMediaContainer(
   input: CreateContainerInput
-): Promise<{ id: string; uri?: string }> {
+): Promise<{ id: string }> {
   const accountId = requireAccountId();
-  return instagramFetch<{ id: string; uri?: string }>(`/${accountId}/media`, {
+  return instagramFetch<{ id: string }>(`/${accountId}/media`, {
     method: "POST",
     params: marshalContainer(input),
   });
-}
-
-/** Raw bytes for a local upload. */
-export interface LocalFile {
-  data: Uint8Array;
-  size: number;
-}
-
-// rupload host is shared across Graph/Instagram Login; the returned `uri` is
-// preferred, this is the fallback. Version matches the client's Graph version.
-const RUPLOAD_BASE = "https://rupload.facebook.com/ig-api-upload/v25.0";
-
-/**
- * Step 1b (resumable only) — upload the file bytes to a container created with
- * `upload_type: "resumable"`. Video/reels/stories only; images aren't supported.
- */
-export async function uploadResumableBinary(
-  container: { id: string; uri?: string },
-  file: LocalFile
-): Promise<void> {
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
-  if (!token) {
-    throw new Error("INSTAGRAM_ACCESS_TOKEN is not set. Add it to .env.local.");
-  }
-
-  const url = container.uri ?? `${RUPLOAD_BASE}/${container.id}`;
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `OAuth ${token}`,
-      offset: "0",
-      file_size: String(file.size),
-    },
-    // Node/undici accepts a typed array; cast past the DOM BodyInit typing.
-    body: file.data as unknown as BodyInit,
-    cache: "no-store",
-  });
-
-  const text = await res.text().catch(() => "");
-  let parsed: { success?: boolean; error?: unknown } = {};
-  try {
-    parsed = text ? JSON.parse(text) : {};
-  } catch {
-    /* non-JSON body — fall through to status check */
-  }
-
-  if (!res.ok || parsed.success === false) {
-    throw new Error(
-      `Resumable upload failed (${res.status} ${res.statusText})${text ? ` — ${text}` : ""}`
-    );
-  }
 }
 
 /** Step 2 — read a container's processing status. */
@@ -347,20 +289,6 @@ async function completeContainer(
     status_code: "PUBLISHED",
     published: true,
   };
-}
-
-/**
- * Publish a local file (Reels or video Stories) via the resumable upload flow:
- * create a resumable container, upload the bytes, then wait + publish.
- */
-export async function publishLocalMedia(
-  input: Omit<CreateContainerInput, "children">,
-  file: LocalFile,
-  opts: PublishOptions = {}
-): Promise<PublishResult> {
-  const container = await createMediaContainer({ ...input, upload_type: "resumable" });
-  await uploadResumableBinary(container, file);
-  return completeContainer(container.id, opts);
 }
 
 export async function publishMedia(

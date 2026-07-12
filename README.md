@@ -150,6 +150,13 @@ INSTAGRAM_APP_SECRET=abc123...       # Meta App Secret — enables auto token re
 # ── Video transcription (see below) ───────────────────────────────────
 # TRANSCRIPTION_PYTHON=/abs/path/to/.venv/bin/python
 # TRANSCRIPTION_MODEL=small            # whisper model; larger = slower/more accurate
+
+# ── Cloudflare R2 — publishing local files (see below) ────────────────
+# R2_ACCOUNT_ID=
+# R2_ACCESS_KEY_ID=
+# R2_SECRET_ACCESS_KEY=
+# R2_BUCKET=social-cockpit-media
+# R2_CAP_BYTES=8589934592
 ```
 
 > All application data (cache, transcripts, tokens, automation state) is stored locally in the git-ignored `data/` directory. Nothing leaves your machine except direct calls to the Instagram API.
@@ -176,6 +183,48 @@ TRANSCRIPTION_PYTHON=/absolute/path/to/social-cockpit/.venv/bin/python
 ```
 
 Restart the server, then enable the feature from the **Settings** page. Both the toggle and `TRANSCRIPTION_PYTHON` are required — if either is missing, transcription simply stays off and the rest of the app is unaffected.
+
+---
+
+## ☁️ Cloudflare R2 (optional) — publishing local files
+
+By default, Compose Studio publishes from **pasted URLs** — paste a hosted video/image link and it publishes directly, no extra setup needed.
+
+**Do you need this?** Only if you want to **drag and drop a local file** (a reel, photo, or reel cover straight off your computer) instead of pasting a URL. If you're always publishing from hosted links, skip this section entirely — nothing else in the app depends on it.
+
+**Why it's required for local files specifically:** this app uses the Instagram API *with Instagram Login* (`graph.instagram.com`), which has no local/resumable upload — Meta's servers `cURL` a **publicly reachable HTTPS URL** for every media type. A file sitting on your laptop isn't reachable by Instagram's servers, so it needs a brief public home. [Cloudflare R2](https://developers.cloudflare.com/r2/) is that home:
+
+```
+Drag a file → browser uploads straight to a PRIVATE R2 bucket → server hands
+Instagram a short-lived signed URL → Instagram fetches + publishes → the
+object is deleted
+```
+
+The bucket is never made public — every URL Instagram ever sees is a single-object, self-expiring signed link (~2 hours), and the object is deleted right after publish (with a 1-day lifecycle rule as a backstop). See [`docs/r2-integration.md`](docs/r2-integration.md) for the full design.
+
+### Setup
+
+Infra is defined as Terraform in `infra/`. One-time setup:
+
+1. **Enable R2** on your Cloudflare account — Dashboard → R2 Object Storage → Enable/Purchase R2.
+2. **Create a temporary bootstrap token** — My Profile → API Tokens → Create Token → Custom Token → **Account → Workers R2 Storage: Edit** + **Account → API Tokens: Edit**. This token only exists to let Terraform provision the bucket *and* the app's own scoped, **account-owned** R2 token in one step — create it right before the next step, and revoke it right after. It's never used by the running app. (The app's token is account-owned rather than tied to your personal login, so it keeps working even if you later lose access to the account.)
+3. **Provision the bucket:**
+   ```bash
+   export CLOUDFLARE_API_TOKEN=<the bootstrap token>
+   cd infra
+   cp terraform.tfvars.example terraform.tfvars   # fill in your account_id
+   ./setup.sh
+   ```
+4. **Reveal the app's credentials** (printed by `setup.sh`, or run manually):
+   ```bash
+   terraform output -raw access_key_id
+   terraform output -raw secret_access_key
+   ```
+5. **Fill in `.env`** with those two values plus `R2_ACCOUNT_ID`/`R2_BUCKET` (see the Configuration block above).
+6. **Revoke the bootstrap token** in the dashboard — it's done its job.
+7. **Set a Budget Alert** — Dashboard → Billing → Budget Alerts, a ~$0.01 tripwire. No Terraform resource covers this; it's a one-time manual click.
+
+Restart the server, then drag a file into Compose Studio's Reel/Photo/Story tab.
 
 ---
 

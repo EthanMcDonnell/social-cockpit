@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { MAX_CAROUSEL, photoUrls, type ComposeDraft } from "@/lib/compose/draft";
+import { MAX_CAROUSEL, filledPhotoSlots, type ComposeDraft } from "@/lib/compose/draft";
 
 type Update = (patch: Partial<ComposeDraft>) => void;
 
@@ -11,7 +11,21 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function FileDrop({ file, onFile }: { file: File | null; onFile: (f: File | null) => void }) {
+function FileDrop({
+  file,
+  onFile,
+  accept = "video/*",
+  label = "video file",
+  hint = "MP4 / MOV · uploads straight to R2",
+  compact = false,
+}: {
+  file: File | null;
+  onFile: (f: File | null) => void;
+  accept?: string;
+  label?: string;
+  hint?: string;
+  compact?: boolean;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -23,10 +37,10 @@ function FileDrop({ file, onFile }: { file: File | null; onFile: (f: File | null
   if (file) {
     return (
       <div className="cs-file">
-        <div className="cs-file-ic">▶</div>
+        <div className="cs-file-ic">{accept.startsWith("image") ? "🖼" : "▶"}</div>
         <div className="cs-file-meta">
           <b>{file.name}</b>
-          <span>{formatBytes(file.size)} · {file.type || "video"}</span>
+          <span>{formatBytes(file.size)} · {file.type || label}</span>
         </div>
         <button type="button" className="cs-file-x" onClick={() => onFile(null)} aria-label="Remove file">
           ✕
@@ -37,7 +51,7 @@ function FileDrop({ file, onFile }: { file: File | null; onFile: (f: File | null
 
   return (
     <div
-      className={`cs-drop${dragging ? " drag" : ""}`}
+      className={`cs-drop${dragging ? " drag" : ""}${compact ? " compact" : ""}`}
       role="button"
       tabIndex={0}
       onClick={() => inputRef.current?.click()}
@@ -57,47 +71,70 @@ function FileDrop({ file, onFile }: { file: File | null; onFile: (f: File | null
     >
       <div className="cs-dropring">＋</div>
       <div className="cs-dropt">
-        Drop a <b>video file</b><br />or click to browse
+        Drop a <b>{label}</b><br />or click to browse
       </div>
-      <div className="cs-drops">MP4 / MOV · resumable upload</div>
-      <input ref={inputRef} type="file" accept="video/*" hidden onChange={(e) => pick(e.target.files)} />
+      <div className="cs-drops">{hint}</div>
+      <input ref={inputRef} type="file" accept={accept} hidden onChange={(e) => pick(e.target.files)} />
     </div>
   );
 }
 
-function PhotoList({ draft, update }: { draft: ComposeDraft; update: Update }) {
+function PhotoList({
+  draft,
+  update,
+  photoFiles,
+  setPhotoFiles,
+}: {
+  draft: ComposeDraft;
+  update: Update;
+  photoFiles: (File | null)[];
+  setPhotoFiles: (files: (File | null)[]) => void;
+}) {
   const photos = draft.photos.length ? draft.photos : [""];
-  const count = photoUrls(draft).length;
+  const files = photos.map((_, i) => photoFiles[i] ?? null);
+  const count = filledPhotoSlots(draft, photoFiles).length;
 
   function setAt(i: number, value: string) {
     const next = [...photos];
     next[i] = value;
     update({ photos: next });
   }
+  function setFileAt(i: number, f: File | null) {
+    const next = [...files];
+    next[i] = f;
+    setPhotoFiles(next);
+    if (f) setAt(i, ""); // a local file replaces any pasted URL for this slot
+  }
   function removeAt(i: number) {
     const next = photos.filter((_, idx) => idx !== i);
+    const nextFiles = files.filter((_, idx) => idx !== i);
     update({ photos: next.length ? next : [""] });
+    setPhotoFiles(nextFiles.length ? nextFiles : [null]);
   }
   function add() {
-    if (photos.length < MAX_CAROUSEL) update({ photos: [...photos, ""] });
+    if (photos.length < MAX_CAROUSEL) {
+      update({ photos: [...photos, ""] });
+      setPhotoFiles([...files, null]);
+    }
   }
 
   return (
     <>
       <div className="cs-field">
         <div className="cs-flabel">
-          <span>Image URLs</span>
+          <span>Images</span>
           <b>{count <= 1 ? "1 = photo" : `${count} = carousel`} · ≤{MAX_CAROUSEL}</b>
         </div>
-        {photos.map((url, i) => (
+        {photos.map((_, i) => (
           <div className="cs-photorow" key={i}>
             <span className="cs-photonum">{i + 1}</span>
-            <input
-              className="cs-input"
-              type="text"
-              placeholder="https://…/image.jpg"
-              value={url}
-              onChange={(e) => setAt(i, e.target.value)}
+            <FileDrop
+              file={files[i]}
+              onFile={(f) => setFileAt(i, f)}
+              accept="image/*"
+              label={`image ${i + 1}`}
+              hint="JPG / PNG · uploads straight to R2"
+              compact
             />
             {photos.length > 1 && (
               <button type="button" className="cs-file-x" onClick={() => removeAt(i)} aria-label={`Remove image ${i + 1}`}>
@@ -121,17 +158,25 @@ export function SourcePanel({
   update,
   file,
   onFile,
+  photoFiles,
+  setPhotoFiles,
+  coverFile,
+  setCoverFile,
 }: {
   draft: ComposeDraft;
   update: Update;
   file: File | null;
   onFile: (f: File | null) => void;
+  photoFiles: (File | null)[];
+  setPhotoFiles: (files: (File | null)[]) => void;
+  coverFile: File | null;
+  setCoverFile: (f: File | null) => void;
 }) {
   const isReel = draft.tab === "REEL";
   const isPhoto = draft.tab === "PHOTO";
   const isStory = draft.tab === "STORY";
-  const canUpload = isReel || isStory; // resumable = video only
-  const singlePhoto = isPhoto && photoUrls(draft).length <= 1;
+  const canUpload = isReel || isStory; // local file → R2, or a pasted URL
+  const singlePhoto = isPhoto && filledPhotoSlots(draft, photoFiles).length <= 1;
 
   return (
     <section className="cs-sec">
@@ -139,60 +184,26 @@ export function SourcePanel({
         <span className="n">01</span>
         <h2>Source</h2>
         <span className="hint">
-          {isReel && "upload_type=resumable · or video_url"}
-          {isPhoto && "image_url · 2+ → CAROUSEL"}
-          {isStory && "video upload · or image_url"}
+          {isReel && "video file → R2 → video_url"}
+          {isPhoto && "image file(s) → R2 · 1 = photo · 2+ = carousel"}
+          {isStory && "image or video file → R2"}
         </span>
       </div>
 
       {canUpload && (
-        <>
-          <FileDrop file={file} onFile={onFile} />
-          {!file && (
-            <div className="cs-field" style={{ marginTop: 14 }}>
-              <div className="cs-flabel"><span>…or paste a hosted video URL</span></div>
-              <input
-                className="cs-input"
-                type="text"
-                placeholder="https://…/video.mp4"
-                value={draft.videoUrl}
-                onChange={(e) => update({ videoUrl: e.target.value })}
-              />
-            </div>
-          )}
-          {isStory && !file && (
-            <div className="cs-field">
-              <div className="cs-flabel"><span>…or an image URL (photo story)</span></div>
-              <input
-                className="cs-input"
-                type="text"
-                placeholder="https://…/image.jpg"
-                value={draft.imageUrl}
-                onChange={(e) => update({ imageUrl: e.target.value })}
-              />
-            </div>
-          )}
-        </>
+        <FileDrop
+          file={file}
+          onFile={onFile}
+          accept={isStory ? "image/*,video/*" : "video/*"}
+          label={isStory ? "image or video file" : "video file"}
+          hint={isStory ? "JPG / PNG / MP4 / MOV · uploads straight to R2" : "MP4 / MOV · uploads straight to R2"}
+        />
       )}
 
       {isPhoto && (
-        <>
-          <div className="cs-drop is-soon" aria-disabled="true" title="Local photo upload needs a public host">
-            <div className="cs-dropring">🖼</div>
-            <div className="cs-dropt">
-              Upload from computer<br />
-              <b>needs a public host</b>
-            </div>
-            <div className="cs-drops">Placeholder · pending ngrok / Tailscale Funnel</div>
-          </div>
-          <div className="cs-note">
-            Instagram fetches photos from a public URL, so local files need a publicly-served
-            link. Paste hosted image URLs for now.
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <PhotoList draft={draft} update={update} />
-          </div>
-        </>
+        <div style={{ marginTop: 14 }}>
+          <PhotoList draft={draft} update={update} photoFiles={photoFiles} setPhotoFiles={setPhotoFiles} />
+        </div>
       )}
 
       {singlePhoto && (
@@ -212,13 +223,14 @@ export function SourcePanel({
         <>
           <div className="cs-two">
             <div className="cs-field">
-              <div className="cs-flabel"><span>Cover URL</span></div>
-              <input
-                className="cs-input"
-                type="text"
-                placeholder="optional · cover_url"
-                value={draft.coverUrl}
-                onChange={(e) => update({ coverUrl: e.target.value })}
+              <div className="cs-flabel"><span>Cover</span><b>optional · cover_url</b></div>
+              <FileDrop
+                file={coverFile}
+                onFile={setCoverFile}
+                accept="image/*"
+                label="cover image"
+                hint="JPG / PNG · uploads straight to R2"
+                compact
               />
             </div>
             <div className="cs-field">

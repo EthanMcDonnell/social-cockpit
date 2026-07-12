@@ -1,19 +1,45 @@
 "use client";
 
-import { useState } from "react";
-import { resolvedMediaType, photoUrls, type ComposeDraft } from "@/lib/compose/draft";
+import { useEffect, useState } from "react";
+import { resolvedMediaType, filledPhotoSlots, type ComposeDraft } from "@/lib/compose/draft";
 
-export function ReelPreview({ draft }: { draft: ComposeDraft }) {
+/** Object URL for a local file preview, revoked on change/unmount. */
+function useObjectUrl(file: File | null | undefined): string | undefined {
+  const [url, setUrl] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!file) {
+      setUrl(undefined);
+      return;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
+  return url;
+}
+
+export function ReelPreview({
+  draft,
+  photoFiles = [],
+  coverFile,
+}: {
+  draft: ComposeDraft;
+  photoFiles?: (File | null)[];
+  coverFile?: File | null;
+}) {
   const [view, setView] = useState<"reels" | "feed">("reels");
   const caption = draft.caption.trim() || "Your caption previews here as you type…";
 
   const isReel = draft.tab === "REEL";
-  const mediaType = resolvedMediaType(draft);
-  const photoCount = photoUrls(draft).length;
-  const firstPhoto = photoUrls(draft)[0];
+  const mediaType = resolvedMediaType(draft, photoFiles);
+  const slots = filledPhotoSlots(draft, photoFiles);
+  const photoCount = slots.length;
+  const firstPhotoFileUrl = useObjectUrl(slots[0]?.file);
+  const firstPhoto = slots[0]?.file ? firstPhotoFileUrl : slots[0]?.url;
+  const coverFileUrl = useObjectUrl(coverFile);
 
   const topLabel = isReel ? (view === "reels" ? "REELS" : "FEED") : mediaType;
-  const coverImage = draft.tab === "PHOTO" ? firstPhoto : draft.coverUrl || undefined;
+  const coverImage = draft.tab === "PHOTO" ? firstPhoto : coverFileUrl || undefined;
 
   return (
     <>
