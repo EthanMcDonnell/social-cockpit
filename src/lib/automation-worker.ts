@@ -33,6 +33,12 @@ const MAX_NUDGES = 2;         // nudge messages per non-follower; the next reply
 const EVENTS_RETENTION_DAYS = 30;
 const CONFIRM_CURSOR_KEY = "follow_confirm_messages";
 
+// Keyword-match guard: only treat a comment as a trigger if it's short enough
+// that the keyword is plausibly the intent, not an incidental word in a longer
+// sentence. Comments with more than this many words are skipped, cutting down
+// misfires when someone happens to mention the keyword in normal conversation.
+const MAX_KEYWORD_COMMENT_WORDS = 10;
+
 // Resolve funnel DM copy: a named pack takes priority over static config text.
 function resolveDmCopy(
   cfg: CommentToFollowDmConfig,
@@ -98,6 +104,9 @@ export async function processFlows(postId: string, comments: InstagramComment[])
       if (new Date(comment.timestamp) < new Date(flow.activated_at)) continue;
 
       const commentText = comment.text.toLowerCase();
+      // Skip long comments: the keyword is more likely incidental than intentional.
+      const wordCount = commentText.trim().split(/\s+/).filter(Boolean).length;
+      if (wordCount > MAX_KEYWORD_COMMENT_WORDS) continue;
       const matchesKeyword = flow.trigger_keywords.some((kw) => commentText.includes(kw.toLowerCase()));
       if (!matchesKeyword) continue;
 

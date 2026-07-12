@@ -67,6 +67,29 @@ export async function presignPut(
   return getSignedUrl(client(), command, { expiresIn: PUT_TTL_SECONDS });
 }
 
+/**
+ * Server-side upload straight into the bucket. Used by the local-file publish
+ * path (POST /api/publish/local), where the server reads a filesystem path and
+ * pushes the bytes itself rather than handing the browser a presigned PUT. The
+ * body is an in-memory Buffer, so `size` is authoritative for the Content-Length.
+ */
+export async function putObject(
+  key: string,
+  body: Buffer,
+  contentType: string,
+  size: number
+): Promise<void> {
+  await client().send(
+    new PutObjectCommand({
+      Bucket: bucket(),
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      ContentLength: size,
+    })
+  );
+}
+
 /** Presigned GET for Instagram to fetch the object from. ~2h TTL. */
 export async function presignGet(key: string): Promise<string> {
   const command = new GetObjectCommand({ Bucket: bucket(), Key: key });
