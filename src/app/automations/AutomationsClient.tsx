@@ -539,6 +539,13 @@ function VideoSelector({
 
   const count = selectedIds.length;
 
+  // Selected posts float to the front so they stay visible even when they're
+  // older than the current scroll window. Order within each group is stable.
+  const orderedItems = [
+    ...items.filter((m) => selectedIds.includes(m.id)),
+    ...items.filter((m) => !selectedIds.includes(m.id)),
+  ];
+
   return (
     <div className="space-y-1.5 mb-5">
       <label className="block text-[10px] text-text-muted uppercase tracking-wider font-medium">
@@ -564,7 +571,7 @@ function VideoSelector({
           >
             Any post
           </button>
-          {items.map((m) => {
+          {orderedItems.map((m) => {
             const isSelected = selectedIds.includes(m.id);
             return (
             <div key={m.id} className="flex-shrink-0 flex flex-col items-center gap-1 w-16">

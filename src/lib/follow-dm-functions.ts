@@ -36,9 +36,9 @@ export const followDmPacks: Record<string, DmPack> = {
   casual: {
     opener: ({ resource, keyword, name }) =>
       pick([
-        `Thanks for commenting ${name}!\n\nReply here with "${keyword}" after you have ensured you are following me :).\n\nI'll then send the ${resource} your way.`,
-        `Appreciate the comment ${name}.\n\nEnsure you are following me and then reply here with "${keyword}". I'll then get the ${resource} to you ASAP.`,
-        `Cheers for the comment ${name}.\n\nFollow me then reply here with "${keyword}". I'll then send the ${resource} your way.`,
+        `Thanks for commenting${name}!\n\nReply "${keyword}" to get the ${resource} — just make sure you're following.`,
+        `Appreciate the comment${name}.\n\nReply "${keyword}" for the ${resource} once you're following.`,
+        `Cheers for the comment${name}.\n\nFollow, then reply "${keyword}" to get the ${resource}.`,
       ]),
     nudge: ({ resource, keyword }) =>
       pick([
