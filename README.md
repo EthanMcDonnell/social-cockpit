@@ -24,7 +24,7 @@
 **Social Cockpit** is a locally-run web app that puts a professional-grade dashboard on top of the Instagram Graph API. It's built for creators and social managers who want to **own their tooling and their data**: you run it yourself, it talks directly to Meta with your own credentials, and everything is stored in local SQLite files on your machine. Nothing is sent to a third-party service.
 
 > [!IMPORTANT]
-> This is a **self-managed** application. You bring your own Meta developer app and Instagram access token, and you host the app yourself (locally or on your own server). There is no hosted/SaaS version; you are in full control of your credentials and data.
+> This is a **self-managed** application. You bring your own Meta developer app and Instagram access token, and you host the app yourself (locally or on your own server).
 
 ### Platform support
 
