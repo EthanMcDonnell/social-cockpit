@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎛️ Social Cockpit
+# Social Cockpit
 
 **A self-hosted command center for your Instagram presence — analytics, publishing, inbox, and hands-off engagement automations, all running on your own machine.**
 
@@ -41,14 +41,17 @@ Today, Social Cockpit targets **Instagram only**. The architecture is provider-a
 
 ## ✨ Features
 
-- **📊 Dashboard ("Cockpit")** — Follower growth and video-views charts, headline readouts, and at-a-glance account health.
-- **🗂️ Posts Explorer** — Cursor-paginated media browser with per-post insights, side-by-side post comparison, and top-post ranking by any metric.
-- **📝 Compose Studio** — Draft and publish Reels/media: caption editor, tagging, distribution options, and a live Reel preview before you publish.
+**The big three:**
+
+- **🤖 Engagement Automations** — A **comment → follow → DM** funnel: when someone comments a trigger keyword, the app replies, checks whether they follow you, and sends a direct message (with nudges), all tracked with per-flow funnel counters. Built-in send throttling and an API usage meter keep you inside Meta's rate limits.
+- **📝 Compose Studio** — Drag and drop a Reel, photo, carousel, or Story straight from your computer and publish it — caption editor, tagging, distribution options, and a live preview before you post. (Publishing local files uploads through [Cloudflare R2](docs/r2-setup.md) — see [Requirements](#-requirements).)
+- **📊 Dashboard & Posts Explorer** — Follower growth and video-views charts, at-a-glance account health, and a cursor-paginated post browser with per-post insights, side-by-side comparison, and top-post ranking by any metric.
+
+**Also included:**
+
 - **💬 Inbox** — Read and reply to comments in threaded view.
-- **🤖 Engagement Automations** — A **comment → follow → DM** funnel: when someone comments a trigger keyword, the app can reply, check whether they follow you, and send a direct message (with nudges), all tracked with per-flow funnel counters. Built-in send throttling and an API usage meter keep you inside Meta's rate limits.
 - **🎙️ Video Transcription (optional)** — A background worker transcribes your Reels/videos locally with [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) so you can search and rank by script content.
-- **⚡ Smart local caching** — Media and insights are cached in local SQLite with stale-while-revalidate reads and background re-sync, minimizing API calls and rate-limit risk.
-- **🔑 Token management** — Exchange short-lived tokens for long-lived ones in the UI, with automatic background refresh before expiry.
+- **⚡ Smart local caching & token management** — Media and insights are cached in local SQLite with stale-while-revalidate reads; short-lived tokens exchange for long-lived ones in the UI with automatic background refresh before expiry.
 
 ---
 
@@ -58,32 +61,17 @@ Before you start, you'll need:
 
 1. **Node.js 18.17+** and **npm** (this is a Next.js 14 app).
 2. **An Instagram Professional account** — a **Business** or **Creator** account (personal accounts are not supported by the API).
-3. **A Meta Developer account and app** — see [Setting up your Meta app](#-setting-up-your-meta-app) below.
-4. *(Optional)* **Python 3.9+** — only if you want the local video-transcription feature.
+3. **A Meta Developer account and app** — see [Setting up Instagram](docs/instagram-setup.md).
+4. **A Cloudflare account** (free tier is enough) — required to publish anything from **Compose Studio**, which uploads local files rather than accepting pasted URLs. See [Setting up Cloudflare R2](docs/r2-setup.md). Skip this only if you'll never use Compose Studio and instead call `/api/publish` directly with your own hosted URLs.
+5. *(Optional)* **Python 3.9+** — only if you want the local video-transcription feature.
 
 ---
 
-## 🔧 Setting up your Meta app
+## 🔧 Setting up Instagram
 
-Social Cockpit uses the **[Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login)** (Graph API `v25.0`, `graph.instagram.com`). You'll create your own Meta app and generate an access token for it.
+Social Cockpit uses the **[Instagram API with Instagram Login](https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login)** (Graph API `v25.0`, `graph.instagram.com`). You create your own Meta app and generate your own access token — no App Review or Meta submission is needed to run this against your own account.
 
-1. **Create a Meta developer account** at [developers.facebook.com](https://developers.facebook.com/) and verify it.
-2. **Create a new app** → choose the **Business** type.
-3. **Add the "Instagram" product** to the app and configure **Instagram API setup with Instagram Login**.
-4. **Connect your Instagram Professional account** to the app (as an app tester/role while in Development mode).
-5. **Grant the permissions** the app uses. Because you run this only against **your own** connected account while the app is in Development mode, these scopes are available to you immediately — **no permission request, App Review, or submission to Meta is required.** Just select them when generating your token in the Graph API Explorer:
-   - `instagram_business_basic` — read your profile, media, and insights
-   - `instagram_business_manage_comments` — read and reply to comments
-   - `instagram_business_manage_messages` — send direct messages (for automations)
-   - `instagram_business_content_publish` — publish Reels/media from Compose
-   - `instagram_business_manage_insights` — read post and account insights
-6. **Grab your credentials:**
-   - **Instagram account ID** — your app-scoped Instagram user ID.
-   - **App Secret** — from **App settings → Basic** (used for automatic long-lived-token refresh).
-   - **A short-lived access token** — generate one from the [Graph API Explorer](https://developers.facebook.com/tools/explorer/), then exchange it inside the app (**Settings → Exchange Short-Lived Token**) for a 60-day long-lived token.
-
-> [!NOTE]
-> While your app is in **Development mode** it works only for accounts with a role on the app — perfect for running your own cockpit. Going through Meta **App Review** is only necessary if you want to operate on accounts you don't control.
+**→ Full walkthrough: [docs/instagram-setup.md](docs/instagram-setup.md)** — creating the Meta app, connecting your Instagram account, picking permission scopes, and grabbing your credentials.
 
 > [!WARNING]
 > This project is **not affiliated with, endorsed by, or sponsored by Meta or Instagram**. You are responsible for complying with the [Meta Platform Terms](https://developers.facebook.com/terms/) and Instagram's policies when using your own app and tokens.
@@ -119,15 +107,27 @@ npm start   # serves on port 3000
 
 ## ⚙️ Configuration
 
-Configuration lives in `.env.local` (git-ignored). Only the first three are required to get running.
+Configuration lives in `.env.local` (git-ignored).
 
-### Required
+### Required — Instagram API access
 
 ```bash
 # .env.local
 INSTAGRAM_ACCESS_TOKEN=EAA...        # your long-lived Instagram token
 INSTAGRAM_ACCOUNT_ID=17841400000000  # your Instagram (app-scoped) user ID
 INSTAGRAM_APP_SECRET=abc123...       # Meta App Secret — enables auto token refresh
+```
+
+### Required for Compose Studio — Cloudflare R2
+
+Compose Studio publishes by uploading local files, so these are needed to publish anything from the UI. See [docs/r2-setup.md](docs/r2-setup.md). Skip this block only if you're driving `/api/publish` directly with your own hosted URLs instead of using Compose Studio.
+
+```bash
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET=social-cockpit-media
+# R2_CAP_BYTES=8589934592              # optional; 8 GiB default cap
 ```
 
 ### Optional
@@ -150,13 +150,6 @@ INSTAGRAM_APP_SECRET=abc123...       # Meta App Secret — enables auto token re
 # ── Video transcription (see below) ───────────────────────────────────
 # TRANSCRIPTION_PYTHON=/abs/path/to/.venv/bin/python
 # TRANSCRIPTION_MODEL=small            # whisper model; larger = slower/more accurate
-
-# ── Cloudflare R2 — publishing local files (see below) ────────────────
-# R2_ACCOUNT_ID=
-# R2_ACCESS_KEY_ID=
-# R2_SECRET_ACCESS_KEY=
-# R2_BUCKET=social-cockpit-media
-# R2_CAP_BYTES=8589934592
 ```
 
 > All application data (cache, transcripts, tokens, automation state) is stored locally in the git-ignored `data/` directory. Nothing leaves your machine except direct calls to the Instagram API.
@@ -186,45 +179,17 @@ Restart the server, then enable the feature from the **Settings** page. Both the
 
 ---
 
-## ☁️ Cloudflare R2 (optional) — publishing local files
+## ☁️ Cloudflare R2 — publishing from Compose Studio
 
-By default, Compose Studio publishes from **pasted URLs** — paste a hosted video/image link and it publishes directly, no extra setup needed.
+Compose Studio publishes by **uploading local files** — a reel, photo, carousel, or Story straight off your computer. There's no pasted-URL field in the UI, so R2 is required to publish anything from Compose Studio (not optional).
 
-**Do you need this?** Only if you want to **drag and drop a local file** (a reel, photo, or reel cover straight off your computer) instead of pasting a URL. If you're always publishing from hosted links, skip this section entirely — nothing else in the app depends on it.
+**Why local files need R2 at all:** this app uses the Instagram API *with Instagram Login* (`graph.instagram.com`), which has no local/resumable upload — Meta's servers `cURL` a **publicly reachable HTTPS URL** for every media type. A file sitting on your laptop isn't reachable by Instagram's servers, so it needs a brief public home. [Cloudflare R2](https://developers.cloudflare.com/r2/) is that home — uploaded privately, published via a short-lived signed URL, then deleted.
 
-**Why it's required for local files specifically:** this app uses the Instagram API *with Instagram Login* (`graph.instagram.com`), which has no local/resumable upload — Meta's servers `cURL` a **publicly reachable HTTPS URL** for every media type. A file sitting on your laptop isn't reachable by Instagram's servers, so it needs a brief public home. [Cloudflare R2](https://developers.cloudflare.com/r2/) is that home:
+**→ Full setup guide: [docs/r2-setup.md](docs/r2-setup.md)** — step-by-step Terraform provisioning and configuration.
+**→ Design & security rationale: [docs/r2-integration.md](docs/r2-integration.md)** — why it's required, the private-bucket security posture, and how the storage cap is enforced.
 
-```
-Drag a file → browser uploads straight to a PRIVATE R2 bucket → server hands
-Instagram a short-lived signed URL → Instagram fetches + publishes → the
-object is deleted
-```
-
-The bucket is never made public — every URL Instagram ever sees is a single-object, self-expiring signed link (~2 hours), and the object is deleted right after publish (with a 1-day lifecycle rule as a backstop). See [`docs/r2-integration.md`](docs/r2-integration.md) for the full design.
-
-### Setup
-
-Infra is defined as Terraform in `infra/`. One-time setup:
-
-1. **Enable R2** on your Cloudflare account — Dashboard → R2 Object Storage → Enable/Purchase R2.
-2. **Create a temporary bootstrap token** — My Profile → API Tokens → Create Token → Custom Token → **Account → Workers R2 Storage: Edit** + **Account → API Tokens: Edit**. This token only exists to let Terraform provision the bucket *and* the app's own scoped, **account-owned** R2 token in one step — create it right before the next step, and revoke it right after. It's never used by the running app. (The app's token is account-owned rather than tied to your personal login, so it keeps working even if you later lose access to the account.)
-3. **Provision the bucket:**
-   ```bash
-   export CLOUDFLARE_API_TOKEN=<the bootstrap token>
-   cd infra
-   cp terraform.tfvars.example terraform.tfvars   # fill in your account_id
-   ./setup.sh
-   ```
-4. **Reveal the app's credentials** (printed by `setup.sh`, or run manually):
-   ```bash
-   terraform output -raw access_key_id
-   terraform output -raw secret_access_key
-   ```
-5. **Fill in `.env`** with those two values plus `R2_ACCOUNT_ID`/`R2_BUCKET` (see the Configuration block above).
-6. **Revoke the bootstrap token** in the dashboard — it's done its job.
-7. **Set a Budget Alert** — Dashboard → Billing → Budget Alerts, a ~$0.01 tripwire. No Terraform resource covers this; it's a one-time manual click.
-
-Restart the server, then drag a file into Compose Studio's Reel/Photo/Story tab.
+> [!NOTE]
+> R2 is only skippable if you never use Compose Studio and instead call `POST /api/publish` directly with your own already-hosted URLs.
 
 ---
 
