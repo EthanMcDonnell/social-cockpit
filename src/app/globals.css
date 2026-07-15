@@ -222,6 +222,28 @@ body {
 .cockpit .ck-hud .warn {
   color: var(--amber-hi);
 }
+.cockpit .ck-settings {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 14px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--mut);
+  flex-shrink: 0;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.cockpit .ck-settings:hover {
+  color: var(--txt);
+  border-color: var(--hair-2);
+}
+.cockpit .ck-settings.on {
+  color: var(--amber-hi);
+  border-color: var(--amber-dim);
+  background: rgba(255, 179, 36, 0.06);
+}
 .cockpit .ck-window {
   display: inline-flex;
   gap: 2px;
