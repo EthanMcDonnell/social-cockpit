@@ -2,6 +2,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 import type { PublishInput } from "@/lib/instagram/endpoints/publish";
+import { uploadToR2 } from "./r2-upload";
 
 export interface PublishOutcome {
   container_id: string;
@@ -33,34 +34,6 @@ async function pollUntilFinished(containerId: string): Promise<void> {
   throw new Error(
     "Still processing after 2 minutes — the container was created; try finalizing it shortly."
   );
-}
-
-function extOf(file: File): string {
-  const dot = file.name.lastIndexOf(".");
-  return dot >= 0 ? file.name.slice(dot + 1) : "";
-}
-
-/**
- * Upload a local file straight to R2 (sign, then PUT the bytes directly — this
- * server never sees them) and return the object key. See docs/r2-integration.md.
- */
-async function uploadToR2(file: File): Promise<string> {
-  const contentType = file.type || "application/octet-stream";
-  const { res, data } = await postJSON("/api/publish/r2-sign", {
-    contentType,
-    size: file.size,
-    ext: extOf(file),
-  });
-  if (!res.ok) throw new Error((data.message as string) ?? "Could not start upload");
-
-  const { key, uploadUrl } = data as { key: string; uploadUrl: string };
-  const put = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: file,
-  });
-  if (!put.ok) throw new Error(`Upload to storage failed (${put.status})`);
-  return key;
 }
 
 /** Local files from the Compose Studio UI, uploaded straight to R2 before publish. */

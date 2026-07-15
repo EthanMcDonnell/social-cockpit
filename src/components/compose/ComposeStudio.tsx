@@ -4,17 +4,25 @@ import { useCallback, useState } from "react";
 import {
   initialDraft,
   validateDraft,
+  validateYoutubeDraft,
   draftToPublishInput,
+  defaultTabFor,
   type ComposeDraft,
 } from "@/lib/compose/draft";
+import type { Platform } from "@/hooks/usePlatform";
 import { usePublish } from "@/lib/compose/usePublish";
+import { useYoutubePublish } from "@/lib/compose/useYoutubePublish";
+import { useVideoProbe } from "@/lib/compose/useVideoProbe";
+import { PlatformSwitch } from "@/components/dashboard/cockpit/PlatformSwitch";
 import { MediaTypeStrip } from "./MediaTypeStrip";
 import { SourcePanel } from "./SourcePanel";
 import { CaptionPanel } from "./CaptionPanel";
 import { TrialPanel } from "./TrialPanel";
 import { DistributionPanel } from "./DistributionPanel";
 import { TaggingPanel } from "./TaggingPanel";
+import { YoutubeSourcePanel } from "./YoutubeSourcePanel";
 import { ReelPreview } from "./ReelPreview";
+import { YoutubePreview } from "./YoutubePreview";
 
 export function ComposeStudio() {
   const [draft, setDraft] = useState<ComposeDraft>(initialDraft);
@@ -22,59 +30,105 @@ export function ComposeStudio() {
   const [photoFiles, setPhotoFiles] = useState<(File | null)[]>([null]);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const publish = usePublish();
+  const ytPublish = useYoutubePublish();
 
-  const update = useCallback((patch: Partial<ComposeDraft>) => {
-    setDraft((prev) => ({ ...prev, ...patch }));
-    // A file only applies to its own tab — drop stale ones when switching away.
-    if (patch.tab && patch.tab !== "REEL") setCoverFile(null);
-    // A Story file may be an image and a Reel file must be a video, so a file
-    // never carries over between tabs — drop it on any tab switch.
-    if (patch.tab) setFile(null);
-    if (patch.tab && patch.tab !== "PHOTO") setPhotoFiles([null]);
-    // Clear any prior result once the draft changes again.
+  const platform = draft.platform;
+  const isYoutube = platform === "yt";
+
+  const resetPublishState = useCallback(() => {
     publish.reset();
-  }, [publish]);
+    ytPublish.reset();
+  }, [publish, ytPublish]);
+
+  const update = useCallback(
+    (patch: Partial<ComposeDraft>) => {
+      setDraft((prev) => ({ ...prev, ...patch }));
+      // A file only applies to its own tab — drop stale ones when switching away.
+      if (patch.tab && patch.tab !== "REEL") setCoverFile(null);
+      // A Story file may be an image and a Reel/Short file must be a video, so a
+      // file never carries over between tabs — drop it on any tab switch.
+      if (patch.tab) setFile(null);
+      if (patch.tab && patch.tab !== "PHOTO") setPhotoFiles([null]);
+      resetPublishState();
+    },
+    [resetPublishState]
+  );
+
+  // Switching platform swaps the whole studio: field set, media-type strip,
+  // preview chrome, endpoint. Land on the platform's default tab and drop any
+  // media/state carried from the other platform.
+  const changePlatform = useCallback(
+    (p: Platform) => {
+      if (p === platform) return;
+      setDraft((prev) => ({ ...prev, platform: p, tab: defaultTabFor(p) }));
+      setFile(null);
+      setPhotoFiles([null]);
+      setCoverFile(null);
+      resetPublishState();
+    },
+    [platform, resetPublishState]
+  );
 
   const onFile = useCallback((f: File | null) => {
     setFile(f);
-    publish.reset();
-  }, [publish]);
+    resetPublishState();
+  }, [resetPublishState]);
 
   const onPhotoFiles = useCallback((files: (File | null)[]) => {
     setPhotoFiles(files);
-    publish.reset();
-  }, [publish]);
+    resetPublishState();
+  }, [resetPublishState]);
 
   const onCoverFile = useCallback((f: File | null) => {
     setCoverFile(f);
-    publish.reset();
-  }, [publish]);
+    resetPublishState();
+  }, [resetPublishState]);
 
-  const canUpload = draft.tab === "REEL" || draft.tab === "STORY";
-  const activeFile = canUpload ? file : null;
-  const activePhotoFiles = draft.tab === "PHOTO" ? photoFiles : [];
-  const activeCoverFile = draft.tab === "REEL" ? coverFile : null;
-  const invalid = validateDraft(draft, !!activeFile, activePhotoFiles);
+  // ── Instagram derived state ──
+  const igCanUpload = draft.tab === "REEL" || draft.tab === "STORY";
+  const igActiveFile = !isYoutube && igCanUpload ? file : null;
+  const activePhotoFiles = !isYoutube && draft.tab === "PHOTO" ? photoFiles : [];
+  const activeCoverFile = !isYoutube && draft.tab === "REEL" ? coverFile : null;
   const isReel = draft.tab === "REEL";
+
+  // ── YouTube derived state ──
+  const ytFile = isYoutube ? file : null;
+  const probe = useVideoProbe(ytFile);
+
+  const invalid = isYoutube
+    ? validateYoutubeDraft(draft, !!ytFile, probe)
+    : validateDraft(draft, !!igActiveFile, activePhotoFiles);
+
+  const pending = isYoutube ? ytPublish.isPending : publish.isPending;
 
   function transmit() {
     if (invalid) return;
+    if (isYoutube) {
+      if (!ytFile) return;
+      ytPublish.mutate({
+        file: ytFile,
+        title: draft.title,
+        description: draft.caption,
+        isShort: draft.tab === "SHORT",
+      });
+      return;
+    }
     const input = draftToPublishInput(draft, activePhotoFiles);
-    // A Story file can be an image or a video; route it by MIME type. Reel and
-    // cover are always their fixed kinds. Every source uploads to R2 in usePublish.
-    const fileIsImage = !!activeFile && activeFile.type.startsWith("image/");
+    const fileIsImage = !!igActiveFile && igActiveFile.type.startsWith("image/");
     publish.mutate({
       input,
       files: {
-        video: activeFile && !fileIsImage ? activeFile : undefined,
-        image: activeFile && fileIsImage ? activeFile : undefined,
+        video: igActiveFile && !fileIsImage ? igActiveFile : undefined,
+        image: igActiveFile && fileIsImage ? igActiveFile : undefined,
         cover: activeCoverFile ?? undefined,
         photos: activePhotoFiles,
       },
     });
   }
 
-  const result = publish.data;
+  const igResult = publish.data;
+  const ytResult = ytPublish.data;
+  const endpoint = isYoutube ? "POST /api/youtube/publish" : "POST /api/publish";
 
   return (
     <div className="cs-stage">
@@ -83,43 +137,66 @@ export function ComposeStudio() {
         <div className="cs-title">
           <span className="cs-tag">05</span>
           <h1>Compose</h1>
-          <span className="cs-endpoint">POST /api/publish</span>
+          <span className="cs-endpoint">{endpoint}</span>
         </div>
 
-        <MediaTypeStrip value={draft.tab} onChange={(tab) => update({ tab })} />
+        <PlatformSwitch value={platform} onChange={changePlatform} />
 
-        <SourcePanel
-          draft={draft}
-          update={update}
-          file={activeFile}
-          onFile={onFile}
-          photoFiles={activePhotoFiles}
-          setPhotoFiles={onPhotoFiles}
-          coverFile={activeCoverFile}
-          setCoverFile={onCoverFile}
-        />
-        <CaptionPanel draft={draft} update={update} />
-        {isReel && <TrialPanel draft={draft} update={update} />}
-        <DistributionPanel draft={draft} update={update} />
-        <TaggingPanel draft={draft} update={update} />
+        <MediaTypeStrip platform={platform} value={draft.tab} onChange={(tab) => update({ tab })} />
+
+        {isYoutube ? (
+          <YoutubeSourcePanel draft={draft} update={update} file={ytFile} onFile={onFile} probe={probe} />
+        ) : (
+          <>
+            <SourcePanel
+              draft={draft}
+              update={update}
+              file={igActiveFile}
+              onFile={onFile}
+              photoFiles={activePhotoFiles}
+              setPhotoFiles={onPhotoFiles}
+              coverFile={activeCoverFile}
+              setCoverFile={onCoverFile}
+            />
+            <CaptionPanel draft={draft} update={update} />
+            {isReel && <TrialPanel draft={draft} update={update} />}
+            <DistributionPanel draft={draft} update={update} />
+            <TaggingPanel draft={draft} update={update} />
+          </>
+        )}
       </div>
 
       {/* PREVIEW + ACTIONS */}
       <aside className="cs-preview">
-        <ReelPreview draft={draft} photoFiles={activePhotoFiles} coverFile={activeCoverFile} />
+        {isYoutube ? (
+          <YoutubePreview draft={draft} file={ytFile} probe={probe} />
+        ) : (
+          <ReelPreview draft={draft} photoFiles={activePhotoFiles} coverFile={activeCoverFile} />
+        )}
 
-        {publish.isError && <div className="cs-msg err">{publish.error.message}</div>}
-        {result?.published && (
+        {!isYoutube && publish.isError && <div className="cs-msg err">{publish.error.message}</div>}
+        {!isYoutube && igResult?.published && (
           <div className="cs-msg ok">
             Published ✓{" "}
-            {result.permalink && (
-              <a href={result.permalink} target="_blank" rel="noopener noreferrer">
+            {igResult.permalink && (
+              <a href={igResult.permalink} target="_blank" rel="noopener noreferrer">
                 View on Instagram →
               </a>
             )}
           </div>
         )}
-        {invalid && !publish.isPending && <div className="cs-msg warn">{invalid}</div>}
+
+        {isYoutube && ytPublish.isError && <div className="cs-msg err">{ytPublish.error.message}</div>}
+        {isYoutube && ytResult && (
+          <div className="cs-msg ok">
+            Uploaded as private draft ✓{" "}
+            <a href={ytResult.studioUrl} target="_blank" rel="noopener noreferrer">
+              Open in YouTube Studio →
+            </a>
+          </div>
+        )}
+
+        {invalid && !pending && <div className="cs-msg warn">{invalid}</div>}
 
         <div className="cs-actions">
           <button type="button" className="cs-ghost" disabled title="Scheduling ships in a later phase">
@@ -127,11 +204,11 @@ export function ComposeStudio() {
           </button>
           <button
             type="button"
-            className="cs-transmit"
-            disabled={!!invalid || publish.isPending}
+            className={`cs-transmit${isYoutube ? " yt" : ""}`}
+            disabled={!!invalid || pending}
             onClick={transmit}
           >
-            {publish.isPending ? "Transmitting…" : "▸ Transmit"}
+            {pending ? "Transmitting…" : isYoutube ? "▸ Upload draft" : "▸ Transmit"}
           </button>
         </div>
       </aside>

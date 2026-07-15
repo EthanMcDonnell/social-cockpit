@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import { CockpitShell } from "@/components/dashboard/cockpit/CockpitShell";
 import { TokenStatusPanel } from "@/components/settings/TokenStatusPanel";
 import { ExchangeTokenForm } from "@/components/settings/ExchangeTokenForm";
 import { TranscriptionSettingsPanel } from "@/components/settings/TranscriptionSettingsPanel";
+import { YouTubeConnectPanel } from "@/components/settings/YouTubeConnectPanel";
 
 export const metadata = {
   title: "Settings",
@@ -12,6 +14,11 @@ const ENV_VARS = [
   "INSTAGRAM_ACCESS_TOKEN",
   "INSTAGRAM_APP_SECRET",
   "TOKEN_EXPIRES_AT",
+  "YOUTUBE_API_KEY",
+  "YOUTUBE_CHANNEL_ID",
+  "YOUTUBE_OAUTH_CLIENT_ID",
+  "YOUTUBE_OAUTH_CLIENT_SECRET",
+  "YOUTUBE_OAUTH_REFRESH_TOKEN",
 ];
 
 function SectionLabel({ tag, children }: { tag: string; children: React.ReactNode }) {
@@ -38,12 +45,19 @@ export default function SettingsPage() {
         </section>
 
         <section className="space-y-3">
-          <SectionLabel tag="S3">Features</SectionLabel>
+          <SectionLabel tag="S3">YouTube</SectionLabel>
+          <Suspense fallback={null}>
+            <YouTubeConnectPanel />
+          </Suspense>
+        </section>
+
+        <section className="space-y-3">
+          <SectionLabel tag="S4">Features</SectionLabel>
           <TranscriptionSettingsPanel />
         </section>
 
         <section className="space-y-3">
-          <SectionLabel tag="S4">Environment Variables</SectionLabel>
+          <SectionLabel tag="S5">Environment Variables</SectionLabel>
           <div className="panel">
             <p className="text-xs text-[var(--text-muted)] leading-relaxed mb-3">
               The following variables must be set in{" "}

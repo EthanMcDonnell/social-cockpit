@@ -15,16 +15,50 @@ import type {
   UserTag,
   ProductTag,
 } from "@/lib/instagram/endpoints/publish";
+import type { Platform } from "@/hooks/usePlatform";
 
 export type { GraduationStrategy };
 
-export type ComposeTab = "REEL" | "PHOTO" | "STORY";
+// The media-type strip is platform-scoped: Instagram shows Reel / Photo / Story;
+// YouTube shows Short / Video. A single union keeps `draft.tab` one field, and
+// the platform decides which subset is offered (see tabsForPlatform).
+export type ComposeTab = "REEL" | "PHOTO" | "STORY" | "SHORT" | "VIDEO";
 
 export const CAPTION_MAX = 2200;
 export const MAX_CAROUSEL = 10;
 
+// YouTube snippet limits (Data API v3): title ≤ 100 chars, description ≤ 5000.
+export const YT_TITLE_MAX = 100;
+export const YT_DESCRIPTION_MAX = 5000;
+// A Short is classified by signal, not a flag: vertical + short + the #Shorts tag.
+// Duration ceiling was raised from 60s to 3 min in late 2024.
+export const YT_SHORT_MAX_SECONDS = 180;
+
+const TABS_BY_PLATFORM: Record<Platform, { value: ComposeTab; label: string }[]> = {
+  ig: [
+    { value: "REEL", label: "Reel" },
+    { value: "PHOTO", label: "Photo" },
+    { value: "STORY", label: "Story" },
+  ],
+  yt: [
+    { value: "SHORT", label: "Short" },
+    { value: "VIDEO", label: "Video" },
+  ],
+};
+
+export function tabsForPlatform(platform: Platform): { value: ComposeTab; label: string }[] {
+  return TABS_BY_PLATFORM[platform];
+}
+
+/** The tab a platform lands on when it becomes active. */
+export function defaultTabFor(platform: Platform): ComposeTab {
+  return TABS_BY_PLATFORM[platform][0].value;
+}
+
 export interface ComposeDraft {
+  platform: Platform;
   tab: ComposeTab;
+  title: string; // YouTube video title (Instagram uses caption only)
   photos: string[]; // Photo tab: per-slot structure; 1 filled = image, 2–10 = carousel
   caption: string;
   thumbOffset: string; // kept as a string for the input; parsed on submit
@@ -42,7 +76,9 @@ export interface ComposeDraft {
 }
 
 export const initialDraft: ComposeDraft = {
+  platform: "ig",
   tab: "REEL",
+  title: "",
   photos: [""],
   caption: "",
   thumbOffset: "",
@@ -121,6 +157,42 @@ export function validateDraft(
   if (d.caption.length > CAPTION_MAX) return `Caption exceeds ${CAPTION_MAX} characters`;
   if (parseList(d.collaborators).length > 3) return "Up to 3 collaborators";
   if (parseList(d.productTags).length > 5) return "Up to 5 product tags";
+  return null;
+}
+
+/** Probed properties of the dropped YouTube video, read client-side from a
+ *  <video> element. Null until metadata has loaded. */
+export interface VideoProbe {
+  width: number;
+  height: number;
+  durationSeconds: number;
+}
+
+/**
+ * Client-side gate for a YouTube draft, mirroring what the upload endpoint needs.
+ * A title and a video file are always required. The "Short" tab additionally
+ * enforces the Shorts signals — vertical aspect and ≤ 3 min — before enabling
+ * Publish, since a non-vertical or long clip silently uploads as a normal video.
+ * `probe` is null until the browser has read the file's metadata; we don't block
+ * Publish on a not-yet-probed file, we only reject one we've measured and know is
+ * out of spec.
+ */
+export function validateYoutubeDraft(
+  d: ComposeDraft,
+  hasFile = false,
+  probe: VideoProbe | null = null
+): string | null {
+  if (!d.title.trim()) return "Add a title";
+  if (d.title.length > YT_TITLE_MAX) return `Title exceeds ${YT_TITLE_MAX} characters`;
+  if (!hasFile) return "Drop a video file";
+  if (d.caption.length > YT_DESCRIPTION_MAX)
+    return `Description exceeds ${YT_DESCRIPTION_MAX} characters`;
+
+  if (d.tab === "SHORT" && probe) {
+    if (probe.height <= probe.width) return "A Short must be vertical (9:16)";
+    if (probe.durationSeconds > YT_SHORT_MAX_SECONDS)
+      return `A Short must be ${YT_SHORT_MAX_SECONDS}s or shorter`;
+  }
   return null;
 }
 

@@ -1295,6 +1295,49 @@ body {
   box-shadow: 0 0 22px rgba(255, 179, 36, 0.4);
 }
 
+/* ── YouTube studio: the one place the compose UI forks from amber to red.
+   Scoped by a .yt modifier so the Instagram path is byte-for-byte unchanged. ── */
+.compose .cs-transmit.yt {
+  background: #ff3d31;
+  color: #fff;
+}
+.compose .cs-transmit.yt:disabled {
+  background: var(--hair-2);
+  color: var(--faint);
+}
+.compose .cs-transmit.yt:not(:disabled):hover {
+  background: #ff5347;
+  box-shadow: 0 0 22px rgba(255, 61, 49, 0.4);
+}
+.compose .cs-pvhead button.yt.on {
+  color: #ff6b60;
+  background: rgba(255, 61, 49, 0.1);
+}
+/* Short preview keeps the vertical phone; Video preview goes 16:9. */
+.compose .cs-phone.yt.wide {
+  aspect-ratio: 16 / 9;
+}
+/* Neutral dark stage — the real video fills it via .cs-ytvid. */
+.compose .cs-reel.yt {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 30%, transparent 60%, rgba(0, 0, 0, 0.75)),
+    #141210;
+}
+.compose .cs-ytvid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.compose .cs-badge.yt {
+  color: #ff6b60;
+  border-color: #6b2824;
+}
+.compose .cs-av.yt {
+  background: linear-gradient(135deg, #ff3d31, #7a1c17);
+}
+
 @media (max-width: 960px) {
   .compose .cs-stage {
     grid-template-columns: 1fr;

@@ -1,23 +1,21 @@
 "use client";
 
-import type { ComposeTab } from "@/lib/compose/draft";
-
-const TABS: { value: ComposeTab; label: string }[] = [
-  { value: "REEL", label: "Reel" },
-  { value: "PHOTO", label: "Photo" },
-  { value: "STORY", label: "Story" },
-];
+import { tabsForPlatform, type ComposeTab } from "@/lib/compose/draft";
+import type { Platform } from "@/hooks/usePlatform";
 
 export function MediaTypeStrip({
+  platform,
   value,
   onChange,
 }: {
+  platform: Platform;
   value: ComposeTab;
   onChange: (value: ComposeTab) => void;
 }) {
+  const tabs = tabsForPlatform(platform);
   return (
     <div className="cs-seg" role="tablist" aria-label="Media type">
-      {TABS.map((t) => (
+      {tabs.map((t) => (
         <button
           key={t.value}
           type="button"
