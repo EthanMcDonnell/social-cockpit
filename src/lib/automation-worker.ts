@@ -4,6 +4,7 @@ import {
   resolveTemplate,
   getCursor,
   setCursor,
+  pruneMediaFromFlows,
   type AutomationFlow,
   type AutomationFlowRow,
   type CommentToDmConfig,
@@ -22,7 +23,7 @@ import {
 } from "@/lib/instagram/endpoints/comments";
 import { getFollowStatus } from "@/lib/instagram/endpoints/user";
 import { listInboundMessagesSince, type InboundMessage } from "@/lib/instagram/endpoints/messages";
-import type { InstagramComment, PaginatedResponse } from "@/lib/instagram/types";
+import { InstagramError, type InstagramComment, type PaginatedResponse } from "@/lib/instagram/types";
 import { instagramFetch } from "@/lib/instagram/client";
 import { throttledSend, hasSendBudget, logEvent } from "@/lib/automation-sender";
 
@@ -441,7 +442,30 @@ export async function runAutomationCycle() {
       const comments = await listAllComments(postId);
       await processFlows(postId, comments);
     } catch (err) {
-      console.error(`[automation] failed to process post ${postId}:`, err);
+      // Terminal "media gone" (deleted post / lost access): retrying can never
+      // succeed, so prune the ID from every flow instead of erroring each cycle.
+      if (err instanceof InstagramError && err.code === 100 && err.subcode === 33) {
+        const changed = pruneMediaFromFlows(db, postId);
+        const deactivated = changed.filter((f) => f.deactivated);
+        const tail = deactivated.length
+          ? `; deactivated ${deactivated.length} flow(s) left with no targets: ${deactivated
+              .map((f) => f.name)
+              .join(", ")}`
+          : "";
+        // A flow left with no targets stops running entirely — surface that as an
+        // error on the logs screen; a routine target-trim is a benign self-heal.
+        const msg = `[automation] pruned deleted/inaccessible post ${postId} from ${changed.length} flow(s)${tail}`;
+        if (deactivated.length) console.error(msg);
+        else console.warn(msg);
+        logEvent(db, {
+          level: deactivated.length ? "error" : "warn",
+          kind: "media_pruned",
+          message: `Post ${postId} unavailable (code 100/33); pruned from ${changed.length} flow(s)${tail}`,
+          meta: { postId, changed },
+        });
+      } else {
+        console.error(`[automation] failed to process post ${postId}:`, err);
+      }
     }
   }
 }

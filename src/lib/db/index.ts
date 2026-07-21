@@ -217,6 +217,48 @@ export function rowToFlow(row: AutomationFlowRow): AutomationFlow {
   };
 }
 
+/**
+ * Remove a media ID from every flow that targets it. Used when Instagram reports
+ * the media is gone (error code 100 / subcode 33 — deleted post or lost access),
+ * so the worker stops hammering the API every cycle for a post that will never
+ * come back.
+ *
+ * A flow whose target list becomes empty is DEACTIVATED rather than left empty:
+ * an empty media_ids reads as "any post", so blanking it would silently widen the
+ * flow to every post instead of retiring it.
+ *
+ * Returns the flows that were changed, for logging.
+ */
+export function pruneMediaFromFlows(
+  db: Database.Database,
+  mediaId: string
+): Array<{ id: string; name: string; deactivated: boolean }> {
+  const rows = db
+    .prepare("SELECT * FROM automation_flows")
+    .all() as AutomationFlowRow[];
+  const changed: Array<{ id: string; name: string; deactivated: boolean }> = [];
+
+  for (const row of rows) {
+    const flow = rowToFlow(row);
+    if (!flow.media_ids.includes(mediaId)) continue;
+
+    const remaining = flow.media_ids.filter((id) => id !== mediaId);
+    const config = JSON.stringify({ ...flow.config, media_ids: remaining });
+    const newMediaId = remaining[0] ?? null;
+    // Empty target list would read as "any post" — retire the flow instead.
+    const deactivated = remaining.length === 0;
+    const isActive = deactivated ? 0 : row.is_active;
+
+    db.prepare(
+      "UPDATE automation_flows SET config=?, media_id=?, is_active=? WHERE id=?"
+    ).run(config, newMediaId, isActive, row.id);
+
+    changed.push({ id: row.id, name: row.name, deactivated });
+  }
+
+  return changed;
+}
+
 export function resolveTemplate(
   template: string,
   placeholders: Record<string, string>
