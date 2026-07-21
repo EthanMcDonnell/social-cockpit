@@ -57,6 +57,15 @@ export function getCacheDb(): Database.Database {
       last_status    TEXT,
       detail         TEXT
     );
+    -- Media the Graph API has reported as gone (code 100 / subcode 33: deleted
+    -- post or lost access). Instagram's media list is eventually-consistent and
+    -- keeps re-listing such objects for a while, so we record them here and skip
+    -- every per-media call for them rather than 100/33-failing each cycle.
+    CREATE TABLE IF NOT EXISTS media_tombstones (
+      media_id   TEXT PRIMARY KEY,
+      reason     TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE INDEX IF NOT EXISTS idx_media_timestamp ON media(timestamp DESC);
   `);
   return _db;

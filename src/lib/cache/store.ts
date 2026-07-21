@@ -78,6 +78,39 @@ export function upsertMediaInsights(mediaId: string, ins: MediaInsights): void {
     );
 }
 
+// ─── Tombstones (media reported gone by the Graph API) ────────────────────────
+
+/**
+ * Record a media as gone and evict it from the cache. Idempotent. Called when a
+ * per-media Graph call returns code 100 / subcode 33 (deleted post or lost
+ * access); afterwards both the cache sync and the automation worker skip it.
+ */
+export function tombstoneMedia(mediaId: string, reason: string): void {
+  const db = getCacheDb();
+  const tx = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO media_tombstones (media_id, reason) VALUES (?, ?)
+         ON CONFLICT(media_id) DO UPDATE SET reason = excluded.reason`
+    ).run(mediaId, reason);
+    db.prepare("DELETE FROM media WHERE media_id = ?").run(mediaId);
+    db.prepare("DELETE FROM media_insights WHERE media_id = ?").run(mediaId);
+  });
+  tx();
+}
+
+export function isMediaTombstoned(mediaId: string): boolean {
+  return !!getCacheDb()
+    .prepare("SELECT 1 FROM media_tombstones WHERE media_id = ?")
+    .get(mediaId);
+}
+
+export function getTombstonedIds(): Set<string> {
+  const rows = getCacheDb()
+    .prepare("SELECT media_id FROM media_tombstones")
+    .all() as { media_id: string }[];
+  return new Set(rows.map((r) => r.media_id));
+}
+
 // ─── Sync state ───────────────────────────────────────────────────────────────
 
 export type SyncKey = "media" | "insights";

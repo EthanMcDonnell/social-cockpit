@@ -23,8 +23,9 @@ import {
 } from "@/lib/instagram/endpoints/comments";
 import { getFollowStatus } from "@/lib/instagram/endpoints/user";
 import { listInboundMessagesSince, type InboundMessage } from "@/lib/instagram/endpoints/messages";
-import { InstagramError, type InstagramComment, type PaginatedResponse } from "@/lib/instagram/types";
+import { isMediaGoneError, type InstagramComment, type PaginatedResponse } from "@/lib/instagram/types";
 import { instagramFetch } from "@/lib/instagram/client";
+import { getTombstonedIds, tombstoneMedia } from "@/lib/cache/store";
 import { throttledSend, hasSendBudget, logEvent } from "@/lib/automation-sender";
 
 // ─── comment_to_follow_dm tunables (top of module, easy to tune) ─────────────
@@ -437,14 +438,22 @@ export async function runAutomationCycle() {
     }
   }
 
-  for (const postId of Array.from(postIds)) {
+  // Never call the API for media the Graph has already told us is gone — its
+  // list is eventually-consistent and keeps re-listing deleted posts for a
+  // while, which would otherwise 100/33-fail here every cycle.
+  const tombstoned = getTombstonedIds();
+  const targets = Array.from(postIds).filter((id) => !tombstoned.has(id));
+
+  for (const postId of targets) {
     try {
       const comments = await listAllComments(postId);
       await processFlows(postId, comments);
     } catch (err) {
       // Terminal "media gone" (deleted post / lost access): retrying can never
-      // succeed, so prune the ID from every flow instead of erroring each cycle.
-      if (err instanceof InstagramError && err.code === 100 && err.subcode === 33) {
+      // succeed, so tombstone it (skipped from here on) and prune it from every
+      // flow instead of erroring each cycle.
+      if (isMediaGoneError(err)) {
+        tombstoneMedia(postId, "automation listAllComments 100/33");
         const changed = pruneMediaFromFlows(db, postId);
         const deactivated = changed.filter((f) => f.deactivated);
         const tail = deactivated.length
@@ -454,13 +463,13 @@ export async function runAutomationCycle() {
           : "";
         // A flow left with no targets stops running entirely — surface that as an
         // error on the logs screen; a routine target-trim is a benign self-heal.
-        const msg = `[automation] pruned deleted/inaccessible post ${postId} from ${changed.length} flow(s)${tail}`;
+        const msg = `[automation] tombstoned gone post ${postId}; pruned from ${changed.length} flow(s)${tail}`;
         if (deactivated.length) console.error(msg);
         else console.warn(msg);
         logEvent(db, {
           level: deactivated.length ? "error" : "warn",
           kind: "media_pruned",
-          message: `Post ${postId} unavailable (code 100/33); pruned from ${changed.length} flow(s)${tail}`,
+          message: `Post ${postId} unavailable (code 100/33); tombstoned and pruned from ${changed.length} flow(s)${tail}`,
           meta: { postId, changed },
         });
       } else {

@@ -179,6 +179,16 @@ export class InstagramError extends Error {
   }
 }
 
+/**
+ * True for the terminal "media no longer exists / not accessible" error
+ * (Graph code 100, subcode 33) — a deleted post or lost access. Retrying can
+ * never succeed, so callers should stop hitting the API for this object and
+ * tombstone it instead.
+ */
+export function isMediaGoneError(err: unknown): err is InstagramError {
+  return err instanceof InstagramError && err.code === 100 && err.subcode === 33;
+}
+
 export class RateLimitError extends Error {
   readonly usage: AppUsage;
 

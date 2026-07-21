@@ -2,6 +2,7 @@ import { getAllMedia } from "@/lib/instagram/endpoints/media";
 import { getMediaInsightsFlat } from "@/lib/instagram/endpoints/insights";
 import {
   RateLimitError,
+  isMediaGoneError,
   type InstagramMedia,
   type MediaInsightMetric,
 } from "@/lib/instagram/types";
@@ -39,14 +40,37 @@ function metricsFor(media: InstagramMedia): MediaInsightMetric[] {
 
 export async function refreshMedia(): Promise<InstagramMedia[]> {
   const media = await getAllMedia();
-  store.upsertMedia(media);
-  store.setSyncState("media", "ok", `${media.length} media`);
-  return media;
+  // Drop anything we've tombstoned — Instagram's list is eventually-consistent
+  // and keeps re-listing deleted posts for a while; never re-cache them.
+  const tombstoned = store.getTombstonedIds();
+  const live = tombstoned.size ? media.filter((m) => !tombstoned.has(m.id)) : media;
+  store.upsertMedia(live);
+  store.setSyncState("media", "ok", `${live.length} media`);
+  return live;
 }
 
 export async function refreshInsightsFor(media: InstagramMedia): Promise<void> {
   const insights = await getMediaInsightsFlat(media.id, metricsFor(media));
   store.upsertMediaInsights(media.id, insights);
+}
+
+/**
+ * Refresh insights, but treat a terminal "media gone" (100/33) as a tombstone
+ * rather than an error: the post is deleted/inaccessible, so evict it and stop
+ * refreshing. Returns false when tombstoned, true on success; other errors throw.
+ */
+async function refreshInsightsOrTombstone(media: InstagramMedia): Promise<boolean> {
+  try {
+    await refreshInsightsFor(media);
+    return true;
+  } catch (err) {
+    if (isMediaGoneError(err)) {
+      store.tombstoneMedia(media.id, "cache insights 100/33");
+      console.warn(`[cache] tombstoned gone media ${media.id} (insights 100/33)`);
+      return false;
+    }
+    throw err;
+  }
 }
 
 // ─── Full sync cycle (background worker) ──────────────────────────────────────
@@ -68,8 +92,7 @@ export async function runCacheSync(): Promise<void> {
   let ok = 0;
   for (const m of media) {
     try {
-      await refreshInsightsFor(m);
-      ok++;
+      if (await refreshInsightsOrTombstone(m)) ok++;
     } catch (err) {
       if (err instanceof RateLimitError) {
         store.setSyncState("insights", "throttled", `stopped after ${ok}`);
@@ -113,11 +136,12 @@ export async function ensureMediaFresh(): Promise<void> {
 
 // Ensure a single media's insights are present and reasonably fresh.
 export async function ensureInsightsFresh(media: InstagramMedia): Promise<void> {
+  if (store.isMediaTombstoned(media.id)) return;
   if (!store.hasInsights(media.id)) {
-    await refreshInsightsFor(media);
+    await refreshInsightsOrTombstone(media);
     return;
   }
   if (store.insightsStale(media.id, CACHE_TTL_MS)) {
-    background(`insights:${media.id}`, () => refreshInsightsFor(media));
+    background(`insights:${media.id}`, () => refreshInsightsOrTombstone(media));
   }
 }
