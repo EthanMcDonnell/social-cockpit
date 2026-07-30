@@ -1,7 +1,8 @@
 import type { Database } from "better-sqlite3";
 
 /**
- * The single send choke point for the comment_to_follow_dm funnel.
+ * The single send choke point for every automation that DMs — comment_to_dm's
+ * initial message as well as the comment_to_follow_dm opener / reward / nudge.
  *
  * Two distinct caps, easy to conflate:
  *  - MAX_NUDGES (per user) lives in follow_check_pending.nudge_count.
@@ -9,14 +10,23 @@ import type { Database } from "better-sqlite3";
  *    a rolling window, so a viral-post burst of openers can't fire hundreds of
  *    near-identical DMs at machine speed and trip Instagram's abuse heuristics.
  *
- * Every outbound DM (opener, reward, nudge) routes through throttledSend so the
- * global cap, the jitter, and the opener_sent/reward_sent/nudge_sent + cap_hit
- * logging all live in exactly one place.
+ * Every outbound DM routes through throttledSend so the global cap, the jitter,
+ * and the sent/cap_hit/send_error logging all live in exactly one place. The cap
+ * is deliberately account-wide rather than per-flow: Instagram's abuse
+ * heuristics see one account, not ten flows.
  */
 
 const MAX_SENDS_PER_WINDOW = 12;
 const WINDOW_SECONDS = 60;
 const SEND_JITTER_MS: [number, number] = [1000, 4000];
+
+/**
+ * Event kinds that represent a DM actually on the wire — the rolling window is
+ * counted from these, so the type and the SQL below are driven off this one list
+ * and can't drift apart.
+ */
+export const SEND_KINDS = ["opener_sent", "reward_sent", "nudge_sent"] as const;
+export type SendKind = (typeof SEND_KINDS)[number];
 
 export type EventLevel = "info" | "warn" | "error";
 
@@ -63,10 +73,10 @@ function sendsInWindow(db: Database): number {
     db
       .prepare(
         `SELECT COUNT(*) AS c FROM automation_events
-           WHERE kind IN ('opener_sent','reward_sent','nudge_sent')
+           WHERE kind IN (${SEND_KINDS.map(() => "?").join(",")})
              AND created_at > datetime('now', ?)`
       )
-      .get(`-${WINDOW_SECONDS} seconds`) as { c: number }
+      .get(...SEND_KINDS, `-${WINDOW_SECONDS} seconds`) as { c: number }
   ).c;
 }
 
@@ -86,7 +96,7 @@ export function hasSendBudget(db: Database): boolean {
  */
 export async function throttledSend(
   db: Database,
-  kind: "opener_sent" | "reward_sent" | "nudge_sent",
+  kind: SendKind,
   meta: { flow_id?: string; recipient_id?: string; comment_id?: string },
   doSend: () => Promise<void>
 ): Promise<boolean> {

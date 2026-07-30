@@ -12,6 +12,22 @@ const DEFAULT_COMMENT_FIELDS = [
   "replies{id,text,timestamp,username,like_count,from{id,username}}",
 ];
 
+/**
+ * Trimmed field set for the automation worker, which only needs the keyword text,
+ * who wrote it, when, and whether *we* already replied (replies[].from.id). The
+ * default set's nested reply expansion (text/timestamp/username/like_count per
+ * reply) makes each page several times heavier for no gain — heavy enough to hit
+ * the 30s request timeout on posts with thousands of comments.
+ */
+export const AUTOMATION_COMMENT_FIELDS = [
+  "id",
+  "text",
+  "timestamp",
+  "username",
+  "from{id,username}",
+  "replies{id,from{id}}",
+];
+
 export async function listComments(
   mediaId: string,
   fields: string[] = DEFAULT_COMMENT_FIELDS

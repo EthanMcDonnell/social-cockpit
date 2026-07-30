@@ -16,6 +16,7 @@ import { callReplyFunction } from "@/lib/comment-reply-functions";
 import { callDmPack, type FollowDmContext } from "@/lib/follow-dm-functions";
 import { listMedia } from "@/lib/instagram/endpoints/media";
 import {
+  AUTOMATION_COMMENT_FIELDS,
   listComments,
   replyToComment,
   sendPrivateReply,
@@ -41,6 +42,19 @@ const CONFIRM_CURSOR_KEY = "follow_confirm_messages";
 // misfires when someone happens to mention the keyword in normal conversation.
 const MAX_KEYWORD_COMMENT_WORDS = 10;
 
+/**
+ * Whether firing this flow puts an outbound DM on the wire — i.e. whether it's
+ * subject to the shared send budget. comment_to_reply posts a public reply only,
+ * so gating it on the DM window would throttle it for no reason.
+ */
+function willSendDm(flow: AutomationFlow): boolean {
+  if (flow.template_type === "comment_to_follow_dm") return true;
+  if (flow.template_type === "comment_to_dm") {
+    return Boolean((flow.config as CommentToDmConfig).initial_message?.trim());
+  }
+  return false;
+}
+
 // Resolve funnel DM copy: a named pack takes priority over static config text.
 function resolveDmCopy(
   cfg: CommentToFollowDmConfig,
@@ -59,19 +73,90 @@ function resolveDmCopy(
   return resolveTemplate(fallback ?? "", { username: ctx.username, resource, keyword });
 }
 
-async function listAllComments(postId: string): Promise<InstagramComment[]> {
+// Hard cap on comment pages walked per post per cycle. Only ever reached on the
+// first pass over a post with a long backlog (a stale cursor, or a flow activated
+// months ago); the cursor advances each cycle, so it converges to one page.
+const MAX_COMMENT_PAGES = 10;
+
+/**
+ * Comments on a post, newest-first, stopping once we've paged back past `floorIso`.
+ *
+ * Nothing older than the floor can fire — it either predates every applicable
+ * flow's activation or was already handled in an earlier cycle — so walking
+ * further is pure cost. It used to walk *every* page of *every* targeted post
+ * every 60s; on a 3k-comment post that's ~120 sequential requests per cycle,
+ * which blew the 30s per-request timeout (AbortError) and discarded the whole
+ * post's comments, including the first page that had actually come back fine.
+ *
+ * Assumes the comments edge is ordered newest-first (it is): once a page's oldest
+ * comment predates the floor, the boundary lies inside that page and everything
+ * beyond is older still.
+ */
+async function listRecentComments(
+  postId: string,
+  floorIso: string
+): Promise<InstagramComment[]> {
+  const floorMs = Date.parse(floorIso);
   const all: InstagramComment[] = [];
-  let result: PaginatedResponse<InstagramComment> = await listComments(postId);
-  all.push(...result.data);
-  while (result.paging?.next) {
-    result = await instagramFetch<PaginatedResponse<InstagramComment>>(result.paging.next);
+  let result: PaginatedResponse<InstagramComment> = await listComments(
+    postId,
+    AUTOMATION_COMMENT_FIELDS
+  );
+
+  for (let page = 1; ; page += 1) {
     all.push(...result.data);
+    const oldest = result.data[result.data.length - 1];
+    const crossedFloor = !oldest || Date.parse(oldest.timestamp) < floorMs;
+    if (crossedFloor || page >= MAX_COMMENT_PAGES || !result.paging?.next) break;
+    result = await instagramFetch<PaginatedResponse<InstagramComment>>(result.paging.next);
   }
+
   return all;
 }
 
-export async function processFlows(postId: string, comments: InstagramComment[]) {
+/**
+ * How far back to page for a post: the oldest activation among the flows that
+ * could still act on it, or the last successful check, whichever is later.
+ */
+function commentFloorFor(
+  db: ReturnType<typeof getDb>,
+  postId: string,
+  flows: AutomationFlow[]
+): string {
+  const candidates = flows
+    .filter((f) => f.media_ids.length === 0 || f.media_ids.includes(postId))
+    .map((f) => f.activated_at ?? f.created_at)
+    .filter(Boolean);
+  // Oldest activation wins among the applicable flows; a later cursor then trims
+  // it further. No candidates shouldn't happen (targets come from flows), but an
+  // epoch floor degrades to the old walk-everything behaviour rather than
+  // silently skipping comments.
+  const floor = candidates.length
+    ? candidates.reduce((a, b) => (Date.parse(b) < Date.parse(a) ? b : a))
+    : new Date(0).toISOString();
+  const cursor = getCursor(db, postId);
+  return cursor && Date.parse(cursor) > Date.parse(floor) ? cursor : floor;
+}
+
+/**
+ * `deferredOldest` is the timestamp of the oldest comment this pass intentionally
+ * left unhandled (send budget spent) and expects to re-see next cycle. The caller
+ * must not advance its comment cursor past it, or the retry never happens.
+ */
+export interface ProcessFlowsResult {
+  deferredOldest: string | null;
+}
+
+export async function processFlows(
+  postId: string,
+  comments: InstagramComment[]
+): Promise<ProcessFlowsResult> {
   const db = getDb();
+  let deferredOldest: string | null = null;
+  const noteDeferred = (ts?: string) => {
+    if (!ts) return;
+    if (!deferredOldest || Date.parse(ts) < Date.parse(deferredOldest)) deferredOldest = ts;
+  };
   const flows = (
     db
       .prepare("SELECT * FROM automation_flows WHERE is_active = 1")
@@ -82,7 +167,7 @@ export async function processFlows(postId: string, comments: InstagramComment[])
     // or if this post is one of its targeted posts.
     .filter((flow) => flow.media_ids.length === 0 || flow.media_ids.includes(postId));
 
-  if (flows.length === 0) return;
+  if (flows.length === 0) return { deferredOldest: null };
 
   const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
   if (!accountId) throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
@@ -112,12 +197,10 @@ export async function processFlows(postId: string, comments: InstagramComment[])
       const matchesKeyword = flow.trigger_keywords.some((kw) => commentText.includes(kw.toLowerCase()));
       if (!matchesKeyword) continue;
 
-      // ── comment_to_follow_dm pre-claim gate ──
-      // The opener funnel withholds BOTH the public reply and the opener when it
-      // can't send, so its gates run before the shared claim/public-reply below.
+      // ── comment_to_follow_dm entry dedupe (pre-claim) ──
+      // One funnel per user per flow → no opener spam.
       if (flow.template_type === "comment_to_follow_dm") {
         const username = comment.username ?? comment.from?.username ?? "";
-        // Entry dedupe: one funnel per user per flow → no opener spam.
         const already = db
           .prepare("SELECT 1 FROM follow_check_pending WHERE flow_id = ? AND commenter_username = ?")
           .get(flow.id, username);
@@ -127,19 +210,24 @@ export async function processFlows(postId: string, comments: InstagramComment[])
             .run(flow.id, comment.id);
           continue;
         }
-        // Global send budget: if the window is spent, leave the comment
-        // unclaimed so it (and its public reply) retry next cycle — nothing is
-        // posted now. throttledSend re-checks and jitters at actual send time.
-        if (!hasSendBudget(db)) {
-          logEvent(db, {
-            level: "warn",
-            kind: "cap_hit",
-            flow_id: flow.id,
-            comment_id: comment.id,
-            message: "deferred opener: per-window send cap (pre-claim)",
-          });
-          continue;
-        }
+      }
+
+      // ── shared pre-claim send-budget gate ──
+      // Any flow that will DM withholds BOTH its public reply and the DM when the
+      // window is spent: leave the comment unclaimed so the whole thing retries
+      // next cycle rather than posting a reply we can't follow up on. Runs before
+      // the claim/public-reply below. throttledSend re-checks and jitters at
+      // actual send time.
+      if (willSendDm(flow) && !hasSendBudget(db)) {
+        logEvent(db, {
+          level: "warn",
+          kind: "cap_hit",
+          flow_id: flow.id,
+          comment_id: comment.id,
+          message: `deferred ${flow.template_type}: per-window send cap (pre-claim)`,
+        });
+        noteDeferred(comment.timestamp);
+        continue;
       }
 
       // Claim atomically before sending — prevents double-fire when two cycles overlap
@@ -179,11 +267,31 @@ export async function processFlows(postId: string, comments: InstagramComment[])
       if (flow.template_type === "comment_to_dm") {
         const dmCfg = flow.config as CommentToDmConfig;
         if (dmCfg.initial_message?.trim()) {
+          const text = resolveTemplate(dmCfg.initial_message, placeholders);
           console.log(`[automation] sending DM to @${placeholders.username}`);
           try {
-            await sendPrivateReply(comment.id, resolveTemplate(dmCfg.initial_message, placeholders));
-            console.log(`[automation] DM sent OK`);
+            // Same choke point as the funnel: shared window cap, jitter, and
+            // sent/cap_hit/send_error logging. Logged as opener_sent — it is this
+            // flow's opener, and it must count against the same account-wide
+            // budget the funnel draws from.
+            const sent = await throttledSend(
+              db,
+              "opener_sent",
+              { flow_id: flow.id, comment_id: comment.id },
+              async () => {
+                await sendPrivateReply(comment.id, text);
+              }
+            );
+            if (!sent) {
+              // Deferred by the window cap (rare — the pre-claim check passed).
+              // Roll back the claim so the comment retries next cycle.
+              db.prepare("DELETE FROM fired_automations WHERE automation_id = ? AND comment_id = ?")
+                .run(flow.id, comment.id);
+              noteDeferred(comment.timestamp);
+            }
           } catch (err) {
+            // send_error already logged by throttledSend. Leave the claim in
+            // place so a poison comment can't loop forever.
             console.error(`[automation] DM FAILED:`, err);
           }
         }
@@ -213,6 +321,7 @@ export async function processFlows(postId: string, comments: InstagramComment[])
               // Roll back the claim so the comment retries next cycle.
               db.prepare("DELETE FROM fired_automations WHERE automation_id = ? AND comment_id = ?")
                 .run(flow.id, comment.id);
+              noteDeferred(comment.timestamp);
             } else if (recipientId) {
               db.prepare(
                 `INSERT OR IGNORE INTO follow_check_pending
@@ -229,6 +338,8 @@ export async function processFlows(postId: string, comments: InstagramComment[])
       }
     }
   }
+
+  return { deferredOldest };
 }
 
 // ─── comment_to_follow_dm confirm poll ───────────────────────────────────────
@@ -326,7 +437,27 @@ export async function runFollowConfirmPoll() {
   // (b) skip all message I/O when idle
   const pending = db.prepare("SELECT * FROM follow_check_pending").all() as PendingRow[];
   if (pending.length === 0) return;
-  const byId = new Map(pending.map((p) => [p.recipient_id, p]));
+
+  // One person can be pending in several flows at once (two funnels on the same
+  // post, say), so index a *list* per recipient. Keying by recipient_id alone
+  // silently kept only the last row, so their confirm resolved one funnel and the
+  // others sat unresolved until the TTL swept them.
+  const byId = new Map<string, PendingRow[]>();
+  for (const p of pending) {
+    const list = byId.get(p.recipient_id);
+    if (list) list.push(p);
+    else byId.set(p.recipient_id, [p]);
+  }
+
+  // Cull + forget. Dropping the row from the in-memory index too means a second
+  // confirm from the same person in the same batch can't send against a funnel
+  // that's already resolved.
+  const resolvePending = (row: PendingRow) => {
+    deletePending(db, row);
+    const list = byId.get(row.recipient_id);
+    const i = list?.indexOf(row) ?? -1;
+    if (list && i !== -1) list.splice(i, 1);
+  };
 
   // (c) incremental inbound messages, oldest-first
   const since = getCursor(db, CONFIRM_CURSOR_KEY);
@@ -339,70 +470,96 @@ export async function runFollowConfirmPoll() {
   }
 
   let cursor = since;
+  let deferred = false;
   for (const msg of inbound) {
-    const row = byId.get(msg.from_id);
+    const rows = byId.get(msg.from_id);
     // Not one of ours (organic message) → ignore, but let the cursor advance.
-    if (!row) { cursor = msg.created_time; continue; }
-
-    const flow = getActiveFlow(db, row.flow_id);
-    if (!flow) { deletePending(db, row); cursor = msg.created_time; continue; }
-    const cfg = flow.config as CommentToFollowDmConfig;
+    if (!rows || rows.length === 0) { cursor = msg.created_time; continue; }
 
     // The confirm is the user replying the keyword. Match it as a standalone
     // word (case/emoji/punctuation-insensitive), NOT a substring — so "Done!"
     // and 'reply "DONE"' confirm, but "I'm done waiting" or "abandoned" don't.
-    const word = norm(cfg.confirm_keyword ?? "DONE");
     const tokens = (msg.text ?? "").split(/[^a-zA-Z0-9]+/).map((t) => norm(t)).filter(Boolean);
-    const isConfirm = word !== "" && tokens.includes(word);
-    if (!isConfirm) { cursor = msg.created_time; continue; }
 
-    logEvent(db, { level: "info", kind: "confirm_tap", flow_id: row.flow_id, recipient_id: msg.from_id });
-
-    let following: boolean;
-    try {
-      following = (await getFollowStatus(msg.from_id)).is_user_follow_business;
-    } catch (err) {
-      // Consent-missing here usually means follow lag or a non-messaging tap —
-      // record it, then apply the configured policy (fail-closed by default).
-      const errStr = String(err);
-      logEvent(db, {
-        level: "warn",
-        kind: /consent/i.test(errStr) ? "consent_missing" : "follow_check_error",
-        flow_id: row.flow_id,
-        recipient_id: msg.from_id,
-        message: errStr,
-      });
-      if (cfg.on_check_error === "skip") { cursor = msg.created_time; continue; }
-      following = cfg.on_check_error === "reward"; // else fail-closed (follow_prompt)
-    }
-
-    const ph = {
-      username: row.commenter_username ?? "",
-      keyword: cfg.confirm_keyword?.trim() || "DONE",
-      resource: cfg.resource ?? "resources",
+    // One follow check per message, shared by every funnel this person is in —
+    // it's the same account either way. Resolved lazily so a message that
+    // confirms nothing costs no API call, and kept raw because `on_check_error`
+    // is per-flow policy.
+    let follow: { ok: true; following: boolean } | { ok: false; error: string } | undefined;
+    const checkFollow = async () => {
+      if (!follow) {
+        try {
+          follow = { ok: true, following: (await getFollowStatus(msg.from_id)).is_user_follow_business };
+        } catch (err) {
+          follow = { ok: false, error: String(err) };
+        }
+      }
+      return follow;
     };
 
-    if (following) {
-      const reward = cfg.follower_message?.trim() ? resolveTemplate(cfg.follower_message, ph) : "";
-      if (reward) {
-        const ok = await sendFunnelDm(db, "reward_sent", row, msg.from_id, reward);
-        if (!ok) break; // deferred — hold cursor + row, retry next cycle
-      }
-      deletePending(db, row); // final ✓ → cull
-    } else {
-      // Every nudge — including the last — is the same pack copy. The only
-      // difference is that after MAX_NUDGES we cull instead of bumping. (An
-      // empty message is skipped safely inside sendFunnelDm.)
-      const nudge = resolveDmCopy(cfg, "nudge", ph); // pack > not_following_message
-      const ok = await sendFunnelDm(db, "nudge_sent", row, msg.from_id, nudge);
-      if (!ok) break;
-      if (row.nudge_count + 1 >= MAX_NUDGES) {
-        deletePending(db, row); // nudges exhausted → cull
+    // Snapshot: resolvePending mutates the underlying list as funnels resolve.
+    for (const row of [...rows]) {
+      const flow = getActiveFlow(db, row.flow_id);
+      if (!flow) { resolvePending(row); continue; }
+      const cfg = flow.config as CommentToFollowDmConfig;
+
+      // Each flow has its own confirm keyword — a message that confirms one
+      // funnel may say nothing about another, so match per row.
+      const word = norm(cfg.confirm_keyword ?? "DONE");
+      if (word === "" || !tokens.includes(word)) continue;
+
+      logEvent(db, { level: "info", kind: "confirm_tap", flow_id: row.flow_id, recipient_id: msg.from_id });
+
+      const status = await checkFollow();
+      let following: boolean;
+      if (status.ok) {
+        following = status.following;
       } else {
-        bumpNudge(db, row);
+        // Consent-missing here usually means follow lag or a non-messaging tap —
+        // record it, then apply the configured policy (fail-closed by default).
+        logEvent(db, {
+          level: "warn",
+          kind: /consent/i.test(status.error) ? "consent_missing" : "follow_check_error",
+          flow_id: row.flow_id,
+          recipient_id: msg.from_id,
+          message: status.error,
+        });
+        if (cfg.on_check_error === "skip") continue;
+        following = cfg.on_check_error === "reward"; // else fail-closed (follow_prompt)
+      }
+
+      const ph = {
+        username: row.commenter_username ?? "",
+        keyword: cfg.confirm_keyword?.trim() || "DONE",
+        resource: cfg.resource ?? "resources",
+      };
+
+      if (following) {
+        const reward = cfg.follower_message?.trim() ? resolveTemplate(cfg.follower_message, ph) : "";
+        if (reward) {
+          const ok = await sendFunnelDm(db, "reward_sent", row, msg.from_id, reward);
+          if (!ok) { deferred = true; break; } // hold cursor + row, retry next cycle
+        }
+        resolvePending(row); // final ✓ → cull
+      } else {
+        // Every nudge — including the last — is the same pack copy. The only
+        // difference is that after MAX_NUDGES we cull instead of bumping. (An
+        // empty message is skipped safely inside sendFunnelDm.)
+        const nudge = resolveDmCopy(cfg, "nudge", ph); // pack > not_following_message
+        const ok = await sendFunnelDm(db, "nudge_sent", row, msg.from_id, nudge);
+        if (!ok) { deferred = true; break; }
+        if (row.nudge_count + 1 >= MAX_NUDGES) {
+          resolvePending(row); // nudges exhausted → cull
+        } else {
+          bumpNudge(db, row);
+          row.nudge_count += 1; // keep the snapshot honest within this batch
+        }
       }
     }
 
+    // A deferred send means this message isn't fully handled — hold the cursor on
+    // it so the unresolved funnels are re-seen next cycle.
+    if (deferred) break;
     cursor = msg.created_time;
   }
 
@@ -446,8 +603,17 @@ export async function runAutomationCycle() {
 
   for (const postId of targets) {
     try {
-      const comments = await listAllComments(postId);
-      await processFlows(postId, comments);
+      const floor = commentFloorFor(db, postId, activeFlows);
+      const comments = await listRecentComments(postId, floor);
+      const { deferredOldest } = await processFlows(postId, comments);
+      // Advance the cursor only over what this cycle actually handled: a comment
+      // held back by the send budget has to be re-fetched next cycle, so the
+      // cursor parks on it. Only moves on success — a throw below leaves it put.
+      const newest = comments.reduce<string | undefined>(
+        (max, c) => (!max || Date.parse(c.timestamp) > Date.parse(max) ? c.timestamp : max),
+        undefined
+      );
+      setCursor(db, postId, deferredOldest ?? newest);
     } catch (err) {
       // Terminal "media gone" (deleted post / lost access): retrying can never
       // succeed, so tombstone it (skipped from here on) and prune it from every
