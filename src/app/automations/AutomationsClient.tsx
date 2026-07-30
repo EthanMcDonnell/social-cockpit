@@ -98,6 +98,9 @@ function useEventIssueCount() {
 // ─── Per-flow funnel counters (Phase 2) ─────────────────────────────────────────
 
 interface FlowStats {
+  // Count of DMs sent (opener_sent). Reads as "invited" for a follow funnel,
+  // where the opener is an invitation to follow, and plainly as "sent" for
+  // comment_to_dm — same underlying number, different domain meaning.
   invited: number;
   rewarded: number;
   nudged: number;
@@ -1289,6 +1292,15 @@ function FlowRow({
           </span>
           <span className="text-text-muted/60">
             <b>{stats?.expired ?? 0}</b> expired
+          </span>
+        </div>
+      )}
+      {/* comment_to_dm has no follow check and no pending row, so `sent` is the
+          only counter that means anything — the other three are always 0. */}
+      {flow.template_type === "comment_to_dm" && (
+        <div className="mt-2 pt-2 border-t border-border/50 flex items-center gap-x-3 gap-y-1 flex-wrap text-[10px] font-mono">
+          <span className="text-text-muted/80">
+            <b className="text-text-primary">{stats?.invited ?? 0}</b> sent
           </span>
         </div>
       )}
