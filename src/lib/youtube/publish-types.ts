@@ -16,6 +16,13 @@ export interface YoutubePublishRequest {
   /** Short intent: appends the #Shorts signal when absent from title/description. */
   isShort: boolean;
   tags?: string[];
+  /**
+   * RFC-3339 instant to make the video public at, handed to YouTube's own
+   * `status.publishAt`. Only meaningful once the compliance audit has passed —
+   * pre-audit Google forces every API upload to private, so the scheduler holds
+   * the schedule itself instead. See docs/youtube-shorts-integration.md.
+   */
+  publishAt?: string;
 }
 
 export interface YoutubePublishResult {

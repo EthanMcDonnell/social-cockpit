@@ -43,6 +43,13 @@ export function getDb(): Database.Database {
   for (const sql of [
     "ALTER TABLE automation_flows ADD COLUMN media_id TEXT",
     "ALTER TABLE automation_flows ADD COLUMN activated_at TEXT",
+    // ── stable dedup slug for API-driven publish+automate ──
+    // Lets a publish call target an existing flow by key instead of creating a
+    // duplicate: re-posting a variation of the same video with the same
+    // automation_key appends the new media_id to the matching flow. Additive;
+    // non-unique index (oldest match wins on lookup). Legacy flows have NULL.
+    "ALTER TABLE automation_flows ADD COLUMN automation_key TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_flows_automation_key ON automation_flows(automation_key)",
     `CREATE TABLE IF NOT EXISTS automation_post_cursors (
       media_id        TEXT PRIMARY KEY,
       last_checked_at TEXT NOT NULL
@@ -87,6 +94,71 @@ export function getDb(): Database.Database {
       key         TEXT PRIMARY KEY,
       size_bytes  INTEGER NOT NULL,
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // ── scheduling (see docs/scheduling.md) ──────────────────────────────────
+    // The scheduler is entirely DB-driven: this table IS the state machine, and
+    // the worker is a stateless 30s poll over it. Nothing lives in memory, so a
+    // restart loses nothing and the calendar can edit a job by writing a row.
+    //
+    // scheduled_at is epoch MILLISECONDS, not a datetime('now') string. The rest
+    // of this schema uses text timestamps, which are fine for "when did this
+    // happen" but ambiguous for "is this due yet" — an integer makes the claim
+    // query trivially correct and indexable.
+    `CREATE TABLE IF NOT EXISTS scheduled_posts (
+      id              TEXT    PRIMARY KEY,
+      platform        TEXT    NOT NULL CHECK(platform IN ('ig','yt')),
+      status          TEXT    NOT NULL CHECK(status IN
+                        ('pending','publishing','finalizing','published',
+                         'failed','missed','cancelled','paused')),
+      scheduled_at    INTEGER NOT NULL,
+      payload         TEXT    NOT NULL DEFAULT '{}',
+      media           TEXT    NOT NULL DEFAULT '[]',
+      automation      TEXT,
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      max_attempts    INTEGER NOT NULL DEFAULT 3,
+      next_attempt_at INTEGER,
+      lease_until     INTEGER,
+      grace_minutes   INTEGER NOT NULL DEFAULT 60,
+      container_id    TEXT,
+      result          TEXT,
+      created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_sched_due ON scheduled_posts(status, scheduled_at)",
+    "CREATE INDEX IF NOT EXISTS idx_sched_window ON scheduled_posts(scheduled_at)",
+    // Media staged for a scheduled post. `path` is always an absolute path on
+    // this machine — media deliberately never reaches R2 until publish time, so
+    // there is nothing here but a pointer to local bytes.
+    //   owned=0 → the caller's own file, referenced in place, never touched.
+    //   owned=1 → a browser upload we copied into data/staged, ours to delete.
+    `CREATE TABLE IF NOT EXISTS scheduled_media (
+      id           TEXT    PRIMARY KEY,
+      path         TEXT    NOT NULL,
+      owned        INTEGER NOT NULL DEFAULT 0,
+      size_bytes   INTEGER NOT NULL,
+      content_type TEXT    NOT NULL,
+      created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // Per-job event log — same shape and 30-day retention discipline as
+    // automation_events, so the Logs page renders both with one component.
+    `CREATE TABLE IF NOT EXISTS schedule_events (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id     TEXT,
+      level      TEXT NOT NULL CHECK(level IN ('info','warn','error')),
+      kind       TEXT NOT NULL,
+      message    TEXT,
+      meta       TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_sched_events_created ON schedule_events(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_sched_events_job ON schedule_events(job_id)",
+    // Generic key→value app settings. Introduced for the calendar's display
+    // timezone, which must not require an app restart to change (unlike the
+    // .env-backed settings) since it silently changes what every slot means.
+    `CREATE TABLE IF NOT EXISTS app_settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
   ]) {
     try { _db.exec(sql); } catch { /* already exists */ }
@@ -164,6 +236,7 @@ export interface AutomationFlowRow {
   created_at: string;
   media_id?: string;
   activated_at?: string;
+  automation_key?: string;
 }
 
 export interface AutomationFlow {
@@ -179,6 +252,8 @@ export interface AutomationFlow {
   // Full set of targeted posts. Empty = any post. Source of truth for matching.
   media_ids: string[];
   activated_at?: string;
+  // Stable dedup slug set by API-driven publish+automate. Absent for UI flows.
+  automation_key?: string;
 }
 
 export function rowToFlow(row: AutomationFlowRow): AutomationFlow {
@@ -214,6 +289,7 @@ export function rowToFlow(row: AutomationFlowRow): AutomationFlow {
     media_id: media_ids[0] ?? row.media_id ?? undefined,
     media_ids,
     activated_at: row.activated_at ?? undefined,
+    automation_key: row.automation_key ?? undefined,
   };
 }
 

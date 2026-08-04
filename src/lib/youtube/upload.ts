@@ -70,6 +70,10 @@ async function insertOnce(
       // Forced to private by Google pre-audit; explicit so post-audit is a 1-line change.
       privacyStatus: "private",
       selfDeclaredMadeForKids: false,
+      // With a publishAt, YouTube itself flips the video public at that instant.
+      // The caller only sets this once the audit has passed — before then Google
+      // ignores it (and privacyStatus), so the scheduler holds the time locally.
+      ...(req.publishAt ? { publishAt: req.publishAt } : {}),
     },
   };
 

@@ -13,6 +13,7 @@ import type { Platform } from "@/hooks/usePlatform";
 import { usePublish } from "@/lib/compose/usePublish";
 import { useYoutubePublish } from "@/lib/compose/useYoutubePublish";
 import { useVideoProbe } from "@/lib/compose/useVideoProbe";
+import { SchedulePopover } from "./SchedulePopover";
 import { PlatformSwitch } from "@/components/dashboard/cockpit/PlatformSwitch";
 import { MediaTypeStrip } from "./MediaTypeStrip";
 import { SourcePanel } from "./SourcePanel";
@@ -29,6 +30,7 @@ export function ComposeStudio() {
   const [file, setFile] = useState<File | null>(null);
   const [photoFiles, setPhotoFiles] = useState<(File | null)[]>([null]);
   const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [scheduling, setScheduling] = useState(false);
   const publish = usePublish();
   const ytPublish = useYoutubePublish();
 
@@ -199,7 +201,13 @@ export function ComposeStudio() {
         {invalid && !pending && <div className="cs-msg warn">{invalid}</div>}
 
         <div className="cs-actions">
-          <button type="button" className="cs-ghost" disabled title="Scheduling ships in a later phase">
+          <button
+            type="button"
+            className="cs-ghost"
+            disabled={!!invalid || pending}
+            onClick={() => setScheduling((s) => !s)}
+            title="Publish this later — the file stays on this machine until then"
+          >
             Schedule
           </button>
           <button
@@ -211,6 +219,19 @@ export function ComposeStudio() {
             {pending ? "Transmitting…" : isYoutube ? "▸ Upload draft" : "▸ Transmit"}
           </button>
         </div>
+
+        {scheduling && (
+          <SchedulePopover
+            draft={draft}
+            files={{
+              video: igActiveFile && !igActiveFile.type.startsWith("image/") ? igActiveFile : ytFile ?? undefined,
+              image: igActiveFile?.type.startsWith("image/") ? igActiveFile : undefined,
+              cover: activeCoverFile ?? undefined,
+              photos: activePhotoFiles,
+            }}
+            onClose={() => setScheduling(false)}
+          />
+        )}
       </aside>
     </div>
   );

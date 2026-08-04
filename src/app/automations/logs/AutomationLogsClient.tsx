@@ -25,6 +25,23 @@ interface EventsResponse {
 
 type LevelFilter = "all" | "warn_error" | "info" | "warn" | "error";
 
+/**
+ * Which worker's log we're reading. The scheduler writes to its own
+ * `schedule_events` table with the same shape as `automation_events`, so one
+ * table renders both — only the source and the middle column differ.
+ */
+type Source = "automation" | "schedule";
+
+interface ScheduleEventRow {
+  id: number;
+  job_id?: string;
+  level: AutomationEvent["level"];
+  kind: string;
+  message?: string;
+  meta?: Record<string, unknown>;
+  created_at: string;
+}
+
 const LEVEL_PARAM: Record<LevelFilter, string> = {
   all: "",
   warn_error: "warn,error",
@@ -33,20 +50,55 @@ const LEVEL_PARAM: Record<LevelFilter, string> = {
   error: "error",
 };
 
-function useEvents(level: LevelFilter, kind: string) {
+function useEvents(source: Source, level: LevelFilter, kind: string) {
   const params = new URLSearchParams();
   if (LEVEL_PARAM[level]) params.set("level", LEVEL_PARAM[level]);
   if (kind) params.set("kind", kind);
   params.set("limit", "300");
+
   return useQuery<EventsResponse>({
-    queryKey: ["automation-events", level, kind],
+    queryKey: ["worker-events", source, level, kind],
     queryFn: async () => {
-      const res = await fetch(`/api/automation-events?${params.toString()}`);
+      if (source === "automation") {
+        const res = await fetch(`/api/automation-events?${params.toString()}`);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body?.message ?? "Failed to fetch events");
+        }
+        return res.json();
+      }
+
+      // The scheduler endpoint returns raw rows — filtering and the level/kind
+      // tallies are derived here so both sources feed the same table.
+      const res = await fetch("/api/schedule/events?limit=300");
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body?.message ?? "Failed to fetch events");
+        throw new Error(body?.message ?? "Failed to fetch scheduler events");
       }
-      return res.json();
+      const raw = (await res.json()) as { events: ScheduleEventRow[] };
+
+      const events: AutomationEvent[] = raw.events.map((e) => ({
+        id: e.id,
+        flow_id: null,
+        recipient_id: e.job_id ? e.job_id.slice(0, 8) : null,
+        comment_id: null,
+        level: e.level,
+        kind: e.kind,
+        message: e.message ?? null,
+        meta: e.meta ? JSON.stringify(e.meta) : null,
+        created_at: e.created_at,
+      }));
+
+      const counts = { info: 0, warn: 0, error: 0 };
+      for (const e of events) counts[e.level]++;
+      const kinds = Array.from(new Set(events.map((e) => e.kind))).sort();
+
+      const wanted = LEVEL_PARAM[level] ? LEVEL_PARAM[level].split(",") : null;
+      const filtered = events.filter(
+        (e) => (!wanted || wanted.includes(e.level)) && (!kind || e.kind === kind)
+      );
+
+      return { events: filtered, counts, kinds };
     },
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
@@ -87,9 +139,10 @@ const LEVEL_TABS: { key: LevelFilter; label: string }[] = [
 ];
 
 export function AutomationLogsClient() {
+  const [source, setSource] = useState<Source>("automation");
   const [level, setLevel] = useState<LevelFilter>("all");
   const [kind, setKind] = useState("");
-  const { data, isLoading, isFetching, error, refetch } = useEvents(level, kind);
+  const { data, isLoading, isFetching, error, refetch } = useEvents(source, level, kind);
 
   const events = data?.events ?? [];
   const counts = data?.counts ?? { info: 0, warn: 0, error: 0 };
@@ -108,8 +161,27 @@ export function AutomationLogsClient() {
         </Link>
         <span className="text-border">·</span>
         <span className="text-xs font-semibold text-text-muted uppercase tracking-widest">
-          Automation Logs
+          Worker Logs
         </span>
+        <div className="flex gap-1 p-0.5 bg-bg-base border border-border rounded-xl">
+          {(["automation", "schedule"] as Source[]).map((s) => (
+            <button
+              key={s}
+              onClick={() => {
+                setSource(s);
+                setKind("");
+              }}
+              className={clsx(
+                "px-3 py-1 rounded-[10px] text-[10px] font-medium capitalize transition-all",
+                source === s
+                  ? "bg-bg-card text-text-primary shadow-sm"
+                  : "text-text-muted hover:text-text-primary"
+              )}
+            >
+              {s === "schedule" ? "Scheduler" : "Automation"}
+            </button>
+          ))}
+        </div>
         {issues > 0 && (
           <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-accent-red/30 bg-accent-red/10 text-accent-red">
             {issues} {issues === 1 ? "issue" : "issues"}
@@ -172,7 +244,11 @@ export function AutomationLogsClient() {
             ))}
           </div>
         ) : events.length === 0 ? (
-          <p className="text-xs text-text-muted p-6">No events logged yet.</p>
+          <p className="text-xs text-text-muted p-6">
+            {source === "schedule"
+              ? "The scheduler hasn't logged anything yet."
+              : "No events logged yet."}
+          </p>
         ) : (
           <table className="w-full text-xs border-collapse">
             <thead className="sticky top-0 bg-bg-base/95 backdrop-blur border-b border-border">
@@ -180,7 +256,9 @@ export function AutomationLogsClient() {
                 <th className="text-left font-medium px-4 py-2 whitespace-nowrap">Time</th>
                 <th className="text-left font-medium px-2 py-2">Level</th>
                 <th className="text-left font-medium px-2 py-2">Kind</th>
-                <th className="text-left font-medium px-2 py-2">Recipient</th>
+                <th className="text-left font-medium px-2 py-2">
+                  {source === "schedule" ? "Job" : "Recipient"}
+                </th>
                 <th className="text-left font-medium px-2 py-2 w-full">Message</th>
               </tr>
             </thead>

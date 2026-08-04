@@ -4,5 +4,6 @@ export async function register() {
     await import("@/lib/transcription/register");
     await import("@/lib/cache/register");
     await import("@/lib/token/register");
+    await import("@/lib/schedule/register");
   }
 }

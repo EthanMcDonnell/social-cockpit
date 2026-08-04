@@ -49,6 +49,7 @@ Today, Social Cockpit targets **Instagram only**. The architecture is provider-a
 
 **Also included:**
 
+- **🗓️ Scheduling Calendar:** Plan posts across Instagram and YouTube on a drag-and-drop week/month/day calendar — drop a video straight from your desktop onto a time slot, or schedule from your laptop with `curl`. Media stays on your own disk until the moment it publishes; nothing sits in cloud storage in the meantime. Comment automations attach automatically when the post goes live. See [docs/scheduling.md](docs/scheduling.md).
 - **💬 Inbox:** Read and reply to comments in threaded view.
 - **🎙️ Video Transcription (optional):** A background worker transcribes your Reels/videos locally with [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) so you can search and rank by script content.
 - **⚡ Smart local caching & token management:** Media and insights are cached in local SQLite with stale-while-revalidate reads; short-lived tokens exchange for long-lived ones in the UI with automatic background refresh before expiry.
@@ -150,6 +151,17 @@ R2_BUCKET=social-cockpit-media
 # ── Video transcription (see below) ───────────────────────────────────
 # TRANSCRIPTION_PYTHON=/abs/path/to/.venv/bin/python
 # TRANSCRIPTION_MODEL=small            # whisper model; larger = slower/more accurate
+
+# ── Scheduling (see docs/scheduling.md) ───────────────────────────────
+# SCHEDULER_ENABLED=true               # master switch; set false on any non-prod instance
+# SCHEDULE_DRY_RUN=false               # run the full pipeline without publishing anything
+# SCHEDULE_INTERVAL_MS=30000           # how often the worker looks for due posts
+# SCHEDULE_GRACE_MINUTES=60            # after downtime, how late a post may still go out
+# SCHEDULE_TIMEZONE=America/Chicago    # fallback until you pick one in the calendar
+# SCHEDULE_MEDIA_DIR=./data/staged     # where drag-and-dropped files wait for their slot
+# SCHEDULE_MEDIA_CAP_BYTES=            # local-disk ceiling for staged media (default 20 GB)
+# SCHEDULE_API_TOKEN=                  # require a bearer token on /api/schedule*
+# YOUTUBE_AUDIT_PASSED=false           # post-audit: let YouTube hold the schedule itself
 ```
 
 > All application data (cache, transcripts, tokens, automation state) is stored locally in the git-ignored `data/` directory. Nothing leaves your machine except direct calls to the Instagram API.

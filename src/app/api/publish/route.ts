@@ -3,11 +3,17 @@ import type { PublishInput } from "@/lib/instagram/endpoints/publish";
 import {
   validatePublish,
   applyReelDefaults,
-  publishFromR2,
   handlePublishError,
   getContainerStatus,
   type R2Sources,
 } from "@/lib/instagram/publish-flow";
+import { executePublish } from "@/lib/publish/execute";
+import { getDb } from "@/lib/db";
+import {
+  planAutomation,
+  type AutomationSpec,
+  type AutomationPlan,
+} from "@/lib/automation/attach";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +30,13 @@ export const dynamic = "force-dynamic";
  * To publish a video straight from a local filesystem path (server reads the
  * file, uploads to R2, then calls Instagram), use POST /api/publish/local.
  *
+ * Pass an optional `automation` block to also wire the published post into a
+ * comment automation in the same call (see docs/publish-with-automation.md). A
+ * shared `automation.key` slug dedupes: re-posting a variation of the same video
+ * with the same key appends the new post to the existing flow instead of
+ * creating a duplicate. Automation is applied only when the post actually
+ * publishes (has a media_id); on a 202 (still processing) it's reported skipped.
+ *
  * Reusable from anywhere on the machine, e.g.:
  *   curl -X POST localhost:3000/api/publish -H 'Content-Type: application/json' \
  *     -d '{"media_type":"REELS","video_url":"https://…/reel.mp4","caption":"gm",
@@ -35,6 +48,7 @@ export async function POST(request: NextRequest) {
     timeoutMs?: number;
     intervalMs?: number;
     r2?: R2Sources;
+    automation?: AutomationSpec;
   };
   try {
     body = await request.json();
@@ -50,12 +64,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "invalid_param", message: problem }, { status: 400 });
   }
 
-  const { finalize, timeoutMs, intervalMs, r2, ...input } = body;
+  const { finalize, timeoutMs, intervalMs, r2, automation, ...input } = body;
   applyReelDefaults(input, r2);
 
+  // Validate + resolve the automation (create vs append) BEFORE publishing, so a
+  // bad automation spec fails fast without leaving a live, un-automated post.
+  let plan: AutomationPlan | undefined;
+  if (automation) {
+    const planned = planAutomation(getDb(), automation);
+    if ("error" in planned) {
+      return NextResponse.json({ error: "invalid_param", message: planned.error }, { status: 400 });
+    }
+    plan = planned.plan;
+  }
+
   try {
-    const { result, status } = await publishFromR2(input, r2, { finalize, timeoutMs, intervalMs });
-    return NextResponse.json(result, { status });
+    // Attaching automation needs the published media_id, which only exists once
+    // the container finishes processing — executePublish stretches the timeout
+    // when a plan is present so a slow reel still resolves synchronously.
+    const { result, status, automation: attach } = await executePublish({
+      input,
+      r2,
+      finalize,
+      timeoutMs,
+      intervalMs,
+      plan,
+    });
+    return NextResponse.json(attach ? { ...result, automation: attach } : result, { status });
   } catch (err) {
     return handlePublishError(err);
   }
