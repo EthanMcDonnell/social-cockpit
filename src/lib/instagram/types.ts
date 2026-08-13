@@ -189,6 +189,39 @@ export function isMediaGoneError(err: unknown): err is InstagramError {
   return err instanceof InstagramError && err.code === 100 && err.subcode === 33;
 }
 
+/**
+ * A failure that never reached a Graph-level error: a network fault, our own
+ * timeout, or a body the API didn't serve as JSON. Meta's edge answers 5xx,
+ * gateway timeouts and block/challenge pages with HTML, and parsing that throws
+ * a bare `SyntaxError: Unexpected token '<'` that hides the status entirely.
+ * Carry the status and a body preview here so the log says which one it was.
+ */
+export class InstagramTransportError extends Error {
+  readonly status?: number;
+  readonly statusText?: string;
+  readonly bodySnippet?: string;
+  /** A blip worth one more attempt (network fault or 5xx), not a 4xx block page. */
+  readonly retryable: boolean;
+
+  constructor(
+    message: string,
+    opts: {
+      status?: number;
+      statusText?: string;
+      bodySnippet?: string;
+      retryable: boolean;
+      cause?: unknown;
+    }
+  ) {
+    super(message, { cause: opts.cause });
+    this.name = "InstagramTransportError";
+    this.status = opts.status;
+    this.statusText = opts.statusText;
+    this.bodySnippet = opts.bodySnippet;
+    this.retryable = opts.retryable;
+  }
+}
+
 export class RateLimitError extends Error {
   readonly usage: AppUsage;
 

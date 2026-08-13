@@ -24,7 +24,13 @@ import {
 } from "@/lib/instagram/endpoints/comments";
 import { getFollowStatus } from "@/lib/instagram/endpoints/user";
 import { listInboundMessagesSince, type InboundMessage } from "@/lib/instagram/endpoints/messages";
-import { isMediaGoneError, type InstagramComment, type PaginatedResponse } from "@/lib/instagram/types";
+import {
+  InstagramError,
+  InstagramTransportError,
+  isMediaGoneError,
+  type InstagramComment,
+  type PaginatedResponse,
+} from "@/lib/instagram/types";
 import { instagramFetch } from "@/lib/instagram/client";
 import { getTombstonedIds, tombstoneMedia } from "@/lib/cache/store";
 import { throttledSend, hasSendBudget, logEvent } from "@/lib/automation-sender";
@@ -639,7 +645,21 @@ export async function runAutomationCycle() {
           meta: { postId, changed },
         });
       } else {
+        // Anything else — a Graph error, or the edge handing back an HTML page
+        // instead of JSON. The cursor stays put either way, so these comments
+        // come back next cycle; log it so a *run* of them is visible on the logs
+        // screen instead of only in the terminal. Retention prunes the rows.
         console.error(`[automation] failed to process post ${postId}:`, err);
+        logEvent(db, {
+          level: "error",
+          kind: "post_error",
+          message: `Post ${postId}: ${err instanceof Error ? err.message : String(err)}`,
+          meta: {
+            postId,
+            status: err instanceof InstagramTransportError ? err.status : undefined,
+            code: err instanceof InstagramError ? err.code : undefined,
+          },
+        });
       }
     }
   }
