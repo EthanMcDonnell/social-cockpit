@@ -9,6 +9,10 @@ import {
   setMaxPostsPerDay,
   getMinSameVideoDays,
   setMinSameVideoDays,
+  isSchedulerPaused,
+  setSchedulerPaused,
+  isDryRunStored,
+  setDryRunStored,
 } from "@/lib/schedule/settings";
 import { isValidTimeZone, zoneAbbreviation } from "@/lib/schedule/tz";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
@@ -20,10 +24,17 @@ function payload() {
   return {
     timezone,
     abbreviation: zoneAbbreviation(Date.now(), timezone),
-    scheduler_enabled: config.schedule.enabled,
-    dry_run: config.schedule.dryRun,
-    // Posting policy. Unlike the two flags above, these are stored and editable
-    // without restarting the server.
+    // Effective state — what the worker will actually do right now.
+    scheduler_enabled: config.schedule.enabled && !isSchedulerPaused(),
+    dry_run: config.schedule.dryRun || isDryRunStored(),
+    // The two inputs, reported separately so the UI can explain itself. When
+    // .env has disabled the scheduler outright, a pause toggle is meaningless
+    // and the panel says so rather than offering a control that does nothing.
+    scheduler_env_enabled: config.schedule.enabled,
+    dry_run_env: config.schedule.dryRun,
+    paused: isSchedulerPaused(),
+    dry_run_stored: isDryRunStored(),
+    // Posting policy — stored, and editable without restarting the server.
     suggested_times: getSuggestedTimes(),
     max_posts_per_day: getMaxPostsPerDay(),
     min_same_video_days: getMinSameVideoDays(),
@@ -88,6 +99,19 @@ export async function PUT(request: NextRequest) {
     } catch (err) {
       return invalid(err instanceof Error ? err.message : "Bad min_same_video_days.");
     }
+  }
+
+  // Both take booleans only. Coercing here would mean `paused: "false"` reads as
+  // true and quietly stops publishing — the failure is safe, but silently
+  // ignoring what the caller asked for is not.
+  if (body?.paused !== undefined) {
+    if (typeof body.paused !== "boolean") return invalid("paused must be a boolean.");
+    setSchedulerPaused(body.paused);
+  }
+
+  if (body?.dry_run !== undefined) {
+    if (typeof body.dry_run !== "boolean") return invalid("dry_run must be a boolean.");
+    setDryRunStored(body.dry_run);
   }
 
   return NextResponse.json(payload());

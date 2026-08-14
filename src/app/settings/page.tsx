@@ -4,6 +4,8 @@ import { TokenStatusPanel } from "@/components/settings/TokenStatusPanel";
 import { ExchangeTokenForm } from "@/components/settings/ExchangeTokenForm";
 import { TranscriptionSettingsPanel } from "@/components/settings/TranscriptionSettingsPanel";
 import { YouTubeConnectPanel } from "@/components/settings/YouTubeConnectPanel";
+import { PostingPolicyPanel } from "@/components/settings/PostingPolicyPanel";
+import { SchedulerPanel } from "@/components/settings/SchedulerPanel";
 
 export const metadata = {
   title: "Settings",
@@ -33,31 +35,40 @@ function SectionLabel({ tag, children }: { tag: string; children: React.ReactNod
 export default function SettingsPage() {
   return (
     <CockpitShell>
+      {/*
+        Grouped by what you'd come here to do, rather than by which subsystem
+        implements it: everything about the account first, everything about
+        posting next, connections after that, and the read-only environment
+        summary last. Token status and the exchange form were two sections that
+        are one job, so they now sit together.
+      */}
       <div className="max-w-xl space-y-8">
         <section className="space-y-3">
           <SectionLabel tag="S1">Account</SectionLabel>
           <TokenStatusPanel />
-        </section>
-
-        <section className="space-y-3">
-          <SectionLabel tag="S2">Token Management</SectionLabel>
           <ExchangeTokenForm />
         </section>
 
         <section className="space-y-3">
-          <SectionLabel tag="S3">YouTube</SectionLabel>
-          <Suspense fallback={null}>
-            <YouTubeConnectPanel />
-          </Suspense>
+          <SectionLabel tag="S2">Publishing</SectionLabel>
+          <PostingPolicyPanel />
         </section>
 
         <section className="space-y-3">
-          <SectionLabel tag="S4">Features</SectionLabel>
+          <SectionLabel tag="S3">Scheduler</SectionLabel>
+          <SchedulerPanel />
+        </section>
+
+        <section className="space-y-3">
+          <SectionLabel tag="S4">Integrations</SectionLabel>
+          <Suspense fallback={null}>
+            <YouTubeConnectPanel />
+          </Suspense>
           <TranscriptionSettingsPanel />
         </section>
 
         <section className="space-y-3">
-          <SectionLabel tag="S5">Environment Variables</SectionLabel>
+          <SectionLabel tag="S5">Environment</SectionLabel>
           <div className="panel">
             <p className="text-xs text-[var(--text-muted)] leading-relaxed mb-3">
               Configuration lives in{" "}

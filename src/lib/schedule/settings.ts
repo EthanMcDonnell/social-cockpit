@@ -14,14 +14,18 @@
  * Server-side only.
  */
 
-import { getDb } from "@/lib/db";
 import { config } from "@/lib/config";
+import { getSetting, setSetting, getBoolSetting, setBoolSetting } from "@/lib/settings";
 import { isValidTimeZone, systemTimeZone } from "./tz";
 
 const TZ_KEY = "calendar.timezone";
 const SUGGESTED_TIMES_KEY = "calendar.suggested_times";
 const MAX_PER_DAY_KEY = "calendar.max_posts_per_day";
 const MIN_SAME_VIDEO_DAYS_KEY = "calendar.min_same_video_days";
+const PAUSED_KEY = "scheduler.paused";
+const DRY_RUN_KEY = "scheduler.dry_run";
+
+export { getSetting, setSetting };
 
 /** Times of day slots are offered at, in preference order. */
 const DEFAULT_SUGGESTED_TIMES = ["09:30"];
@@ -41,21 +45,58 @@ export function isValidTimeOfDay(value: string): boolean {
   return TIME_PATTERN.test(value.trim());
 }
 
-export function getSetting(key: string): string | null {
-  const row = getDb()
-    .prepare("SELECT value FROM app_settings WHERE key = ?")
-    .get(key) as { value: string } | undefined;
-  return row?.value ?? null;
+// ─── Scheduler pause / dry run ───────────────────────────────────────────────
+
+/**
+ * Whether publishing is paused from the UI.
+ *
+ * This is stored rather than env-backed because the alternative is editing
+ * `.env` and restarting, and on this deployment restarting the server is the one
+ * thing we're told not to do. Without it there is no way to stop the scheduler
+ * at all.
+ *
+ * It composes with `SCHEDULER_ENABLED` rather than replacing it, and the
+ * direction is deliberate: see `schedulerEnabled()` in `worker.ts`. A stored
+ * value can pause publishing; it can never start publishing that `.env` has
+ * disabled. The worst a corrupt row or a stray API call can do is stop posts
+ * going out.
+ */
+export function isSchedulerPaused(): boolean {
+  return getBoolSetting(PAUSED_KEY, false);
 }
 
-export function setSetting(key: string, value: string): void {
-  getDb()
-    .prepare(
-      `INSERT INTO app_settings (key, value) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value,
-                                        updated_at = datetime('now')`
-    )
-    .run(key, value);
+export function setSchedulerPaused(paused: boolean): void {
+  setBoolSetting(PAUSED_KEY, paused);
+}
+
+/** Stored dry-run switch. ORs with SCHEDULE_DRY_RUN — either source can force it. */
+export function isDryRunStored(): boolean {
+  return getBoolSetting(DRY_RUN_KEY, false);
+}
+
+export function setDryRunStored(dryRun: boolean): void {
+  setBoolSetting(DRY_RUN_KEY, dryRun);
+}
+
+/**
+ * The effective gates, combining `.env` with the stored switches.
+ *
+ * They live here rather than in `worker.ts` so the composition can be tested on
+ * its own: importing the worker drags in the entire publish stack, and a safety
+ * property that is awkward to test is one nobody checks. `worker.ts` re-exports
+ * these under its old names.
+ */
+export function schedulerEnabled(): boolean {
+  // AND, so `.env` holds a veto the UI cannot override. Reversing this would let
+  // a row in a database re-enable a scheduler that .env disabled, defeating the
+  // kill switch entirely.
+  return config.schedule.enabled && !isSchedulerPaused();
+}
+
+export function dryRunActive(): boolean {
+  // OR, the mirror image: either source may force the safer behaviour, and
+  // neither can cancel the other's decision to be safe.
+  return config.schedule.dryRun || isDryRunStored();
 }
 
 /**

@@ -53,6 +53,7 @@ import {
   updateJob,
 } from "./store";
 import { getStagedMediaMany, releaseStaged, sweepOrphanedStaged } from "./media";
+import { schedulerEnabled, dryRunActive } from "./settings";
 import type {
   FailureKind,
   ScheduleResult,
@@ -70,12 +71,13 @@ const HOUSEKEEPING_MS = 60 * 60 * 1000;
 let lastHousekeeping = 0;
 
 /**
- * Master kill switch. Any instance that isn't production runs with this false so
- * that even a mispointed DB_PATH can't publish to a real account.
+ * Master kill switch. Any instance that isn't production runs with SCHEDULER_ENABLED
+ * false so that even a mispointed DB_PATH can't publish to a real account.
+ *
+ * Composed with the stored pause in `./settings`, where the reasoning and the
+ * tests for it live. Re-exported here because this is where callers expect it.
  */
-export function schedulerEnabled(): boolean {
-  return config.schedule.enabled;
-}
+export { schedulerEnabled };
 
 /**
  * Dry run: everything except the platform call. Claims, leases, stats the files,
@@ -84,9 +86,7 @@ export function schedulerEnabled(): boolean {
  * scheduler is tested without touching the live account (or needing R2
  * credentials at all).
  */
-export function isDryRun(): boolean {
-  return config.schedule.dryRun;
-}
+export const isDryRun = dryRunActive;
 
 // ─── Cycle ───────────────────────────────────────────────────────────────────
 

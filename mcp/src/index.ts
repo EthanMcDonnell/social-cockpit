@@ -26,11 +26,16 @@ function build(): McpServer {
     { name: "social-cockpit", version: "1.0.0" },
     {
       capabilities: { tools: {}, resources: {} },
+      // Loaded upfront under MCP tool search, when the tools themselves are
+      // not — so this has to answer "should I look in here?" before it answers
+      // anything else. Trigger vocabulary first, caveats second, and short:
+      // it is on every request whether or not the server is ever used.
       instructions:
-        "Schedule and inspect social posts through a running social-cockpit instance. " +
-        "Times are interpreted in the cockpit's configured timezone unless an explicit UTC offset is given — " +
-        "read the schedule://settings resource if you need to state a time back to the user. " +
-        "Media files are referenced by absolute path on the cockpit machine and are not uploaded until the slot arrives.",
+        "Use for this account's social posting: scheduling and rescheduling Instagram reels and " +
+        "YouTube Shorts, what's on the posting calendar, choosing when to post next, and which " +
+        "past posts performed best. " +
+        "Times are in the cockpit's configured timezone unless an explicit UTC offset is given. " +
+        "Media is referenced by absolute path on the cockpit machine and uploaded only when the slot arrives.",
     }
   );
 

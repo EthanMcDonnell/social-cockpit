@@ -23,9 +23,29 @@ interface JobsResponse {
 export interface ScheduleSettings {
   timezone: string;
   abbreviation: string;
+  /** Effective state: what the worker will actually do right now. */
   scheduler_enabled: boolean;
   dry_run: boolean;
+  /** The .env half of the two flags above, which the UI cannot change. */
+  scheduler_env_enabled: boolean;
+  dry_run_env: boolean;
+  /** The stored half, which it can. */
+  paused: boolean;
+  dry_run_stored: boolean;
+  suggested_times: string[];
+  max_posts_per_day: number;
+  min_same_video_days: number;
 }
+
+/** The subset a client may write. Everything else on the payload is read-only. */
+export type ScheduleSettingsPatch = Partial<{
+  timezone: string;
+  suggested_times: string[];
+  max_posts_per_day: number;
+  min_same_video_days: number;
+  paused: boolean;
+  dry_run: boolean;
+}>;
 
 async function asJson<T>(res: Response): Promise<T> {
   const body = await res.json().catch(() => ({}));
@@ -99,15 +119,23 @@ export function useScheduleSettings() {
   });
 }
 
-export function useSetTimeZone() {
+/**
+ * Write any subset of the editable settings.
+ *
+ * The API only touches keys that are present, so a panel can send one field
+ * without echoing the rest back and clobbering a concurrent edit. Jobs are
+ * invalidated on success because timezone and cadence both change how existing
+ * slots are rendered.
+ */
+export function useUpdateScheduleSettings() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (timezone: string) =>
+    mutationFn: async (patch: ScheduleSettingsPatch) =>
       asJson<ScheduleSettings>(
         await fetch("/api/schedule/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ timezone }),
+          body: JSON.stringify(patch),
         })
       ),
     onSuccess: (data) => {
@@ -115,6 +143,12 @@ export function useSetTimeZone() {
       qc.invalidateQueries({ queryKey: [JOBS_KEY] });
     },
   });
+}
+
+/** Timezone-only convenience wrapper, kept for the calendar's zone picker. */
+export function useSetTimeZone() {
+  const update = useUpdateScheduleSettings();
+  return { ...update, mutate: (timezone: string) => update.mutate({ timezone }) };
 }
 
 // ─── Writes ──────────────────────────────────────────────────────────────────

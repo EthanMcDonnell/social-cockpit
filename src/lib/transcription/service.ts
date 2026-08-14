@@ -1,5 +1,6 @@
 import { execFile } from "child_process";
 import { config } from "@/lib/config";
+import { getSetting, setSetting } from "@/lib/settings";
 import { promisify } from "util";
 import fs from "fs";
 import os from "os";
@@ -25,20 +26,30 @@ const inFlight = new Map<string, Promise<Transcript>>();
 
 // ─── App-wide toggle (default OFF) ──────────────────────────────────────────
 
+/**
+ * This toggle used to live in a second `app_settings` table inside
+ * `transcripts.db` — same name and same shape as the real one in
+ * `automations.db`, so nothing could tell you which file held a given key.
+ *
+ * It reads through to the old location when the new one has no row, rather than
+ * copying on upgrade. A migration that moves data has to run, can half-run, and
+ * has to be undone if you roll back; a fallback read has none of those
+ * properties. The first write lands in the new table and the fallback goes
+ * quiet, and the legacy row is deliberately left where it is so an older build
+ * still finds it.
+ */
 export function isTranscriptionEnabled(): boolean {
-  const row = getTranscriptsDb()
+  const stored = getSetting(SETTING_ENABLED);
+  if (stored !== null) return stored === "1";
+
+  const legacy = getTranscriptsDb()
     .prepare("SELECT value FROM app_settings WHERE key = ?")
     .get(SETTING_ENABLED) as { value: string } | undefined;
-  return row?.value === "1";
+  return legacy?.value === "1";
 }
 
 export function setTranscriptionEnabled(enabled: boolean): void {
-  getTranscriptsDb()
-    .prepare(
-      `INSERT INTO app_settings (key, value) VALUES (?, ?)
-       ON CONFLICT(key) DO UPDATE SET value = excluded.value`
-    )
-    .run(SETTING_ENABLED, enabled ? "1" : "0");
+  setSetting(SETTING_ENABLED, enabled ? "1" : "0");
 }
 
 // ─── Cache lookup ────────────────────────────────────────────────────────────
