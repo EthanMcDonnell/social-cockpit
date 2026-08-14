@@ -150,46 +150,16 @@ function ok(text: string, structured: Record<string, unknown>) {
 
 export function registerScheduleTools(server: McpServer): void {
   server.registerTool(
-    "schedule_post",
-    {
-      title: "Schedule a post",
-      description:
-        "Schedule one video or image to publish at a future time via social-cockpit. The media file is referenced " +
-        "in place on the cockpit machine's disk and is not uploaded until the slot arrives. Validation is immediate: " +
-        "a bad path, an unparseable time, or a malformed automation spec fails now rather than at publish time. " +
-        "Use schedule_posts to book several at once.",
-      inputSchema: z.object(POST_SPEC),
-      outputSchema: z.object({ job: JOB_SUMMARY }),
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: false,
-        idempotentHint: false,
-        openWorldHint: true,
-      },
-    },
-    async (spec) => {
-      const config = await settings();
-      const { job } = await cockpit<{ job: ScheduledPostView }>("/api/schedule", {
-        method: "POST",
-        body: toRequestBody(spec),
-      });
-
-      return ok(
-        `${settingsBanner(config)}\n\nScheduled:\n${formatJob(job, config.timezone)}`,
-        { job: summarize(job, config.timezone) }
-      );
-    }
-  );
-
-  server.registerTool(
     "schedule_posts",
     {
-      title: "Schedule several posts",
+      title: "Schedule posts",
       description:
-        "Schedule a batch of posts in one call — the normal way to book every hook variant of a video across a " +
-        "series of slots. Each entry is independent and carries its own time. Entries are created in order and a " +
-        "failure does not roll back earlier successes: the result lists what was scheduled and what was rejected, " +
-        "so retry only the rejected ones.",
+        "Schedule posts to publish at future times via social-cockpit — one entry for a single post, or every hook " +
+        "variant of a video in one call, which is the normal case. Each entry is independent and carries its own " +
+        "time. Media files are referenced in place on the cockpit machine's disk and are not uploaded until the slot " +
+        "arrives. Validation is immediate: a bad path, an unparseable time, or a malformed automation spec fails now " +
+        "rather than at publish time. Entries are created in order and a failure does not roll back earlier " +
+        "successes: the result lists what was scheduled and what was rejected, so retry only the rejected ones.",
       inputSchema: z.object({
         posts: z
           .array(z.object(POST_SPEC))
@@ -227,6 +197,10 @@ export function registerScheduleTools(server: McpServer): void {
           scheduled.push(summarize(job, config.timezone));
         } catch (err) {
           if (!(err instanceof CockpitError)) throw err;
+          // A one-entry batch has no partial success to report, and an error
+          // buried in `failed` is easy to read past. Surface it as a tool
+          // error instead, which a caller cannot overlook.
+          if (posts.length === 1) throw err;
           failed.push({ index, scheduled_at: spec.scheduled_at, error: err.message });
         }
       }

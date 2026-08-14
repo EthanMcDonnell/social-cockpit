@@ -20,8 +20,11 @@
  * the booking route would accept.
  */
 
-import { cockpit } from "./cockpit.js";
+import { cockpit, CockpitError } from "./cockpit.js";
 import type { ScheduledPostView } from "./types.js";
+
+/** The `/api/schedule` route's own hard cap on `limit`. */
+const JOB_LIMIT = 1000;
 
 export interface Commitment {
   /** Epoch ms. */
@@ -65,9 +68,23 @@ export async function fetchCommitments(from: number, to: number): Promise<Commit
   const [history, scheduled] = await Promise.all([
     cockpit<{ posts: HistoryEntry[] }>("/api/schedule/history", { query: { from, to } }),
     cockpit<{ jobs: ScheduledPostView[] }>("/api/schedule", {
-      query: { from, to, status: REAL_STATUSES.join(","), limit: 1000 },
+      query: { from, to, status: REAL_STATUSES.join(","), limit: JOB_LIMIT },
     }),
   ]);
+
+  // Hitting the cap means the far end of the window is missing, and a *short*
+  // calendar is the dangerous kind: slots would look free because the jobs
+  // holding them weren't returned. Unreachable at max_posts_per_day ≤ 2 over
+  // the 400-day horizon, so fail loudly rather than silently under-report.
+  if (scheduled.jobs.length >= JOB_LIMIT) {
+    throw new CockpitError(
+      "window_truncated",
+      `The calendar window ${new Date(from).toISOString()} — ${new Date(to).toISOString()} holds at least ` +
+        `${JOB_LIMIT} scheduled posts, which is the API's maximum per request, so it cannot be read completely. ` +
+        `Narrow the window before trusting any answer about free slots.`,
+      0
+    );
+  }
 
   // Media ids these jobs are responsible for, so history doesn't re-count them.
   const ownMediaIds = new Set<string>();
