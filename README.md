@@ -86,7 +86,7 @@ Social Cockpit uses the **[Instagram API with Instagram Login](https://developer
 # 1. Clone and install
 git clone <your-fork-url> social-cockpit
 cd social-cockpit
-npm install
+npm install   # also installs the MCP server's deps (mcp/), via postinstall
 
 # 2. Configure your environment (see below)
 cp .env.example .env
@@ -101,9 +101,14 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser. Head to
 For production:
 
 ```bash
-npm run build
-npm start   # serves on port 3000
+npm run build   # compiles mcp/ first, then the Next app
+npm start       # serves on port 3000
 ```
+
+`build` covers both packages on purpose. The MCP server talks to this app's HTTP
+API, so the two have a contract between them — building only one makes it possible
+to ship a cockpit whose API the MCP server no longer matches. `build:app` and
+`build:mcp` run them separately when you want just one.
 
 ---
 
