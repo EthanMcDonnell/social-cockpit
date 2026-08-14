@@ -43,7 +43,7 @@ Posting policy is **not** configured here — it comes from the cockpit:
 ```bash
 curl -X PUT localhost:3000/api/schedule/settings \
   -H 'Content-Type: application/json' \
-  -d '{"suggested_times":["09:30","18:00"],"max_posts_per_day":2,"min_same_video_days":2}'
+  -d '{"suggested_times":["09:30","18:00"],"max_posts_per_day":2}'
 ```
 
 ## Wiring it into Claude Code
@@ -73,7 +73,7 @@ Tools then appear as `mcp__social-cockpit__<tool>`.
 | Tool | What it does |
 |---|---|
 | `get_calendar` | Day-by-day view of what is published and scheduled, with each post's video. Read-only. |
-| `suggest_slots` | Free slots for one video's hooks, spaced so no two hooks of that video land within `min_days`. Read-only. |
+| `suggest_slots` | Free slots that respect the daily post cap and configured preferred times. Read-only. |
 | `schedule_posts` | Book one post or a whole batch. Entries are independent; a failure doesn't roll back earlier successes. A one-entry batch reports its failure as a tool error instead. |
 | `list_scheduled_posts` | What's booked, filtered by window, status, platform. |
 | `get_scheduled_post` | One job in full, with its event history — why it failed. |
@@ -87,19 +87,11 @@ enabled or in dry run.
 
 ### Design notes
 
-- **Posting policy lives in the cockpit, not here.** `suggested_times`,
-  `max_posts_per_day` and `min_same_video_days` are stored in its `app_settings`
-  table and served from `/api/schedule/settings`, so one change covers this
-  server, the booking routes, and `post_video.py` on the ReelCut side. This
-  package only supplies fallbacks for a cockpit too old to return them, and says
-  so in its output when it has to.
-- **Spacing is a same-video rule; the cap is an account rule.** Hooks of one
-  video share a body and a voiceover, so two close together land as
-  near-duplicates and the later one gets throttled — that is
-  `min_same_video_days`, and it does not apply between different videos. How many
-  posts a *day* may hold is a separate question, answered by `max_posts_per_day`.
-  Conflating the two makes "post twice a day" impossible to express without also
-  letting two hooks of one video collide.
+- **Posting policy lives in the cockpit, not here.** `suggested_times` and
+  `max_posts_per_day` are stored in its `app_settings` table and served from
+  `/api/schedule/settings`, so one change covers this server, the booking routes,
+  and `post_video.py` on the ReelCut side. This package only supplies fallbacks
+  for a cockpit too old to return them, and says so in its output when it has to.
 - **The cap is enforced, not suggested.** `POST /api/schedule` and a rescheduling
   `PATCH` both reject a booking that would exceed it with `409 day_full`, so
   `suggest_slots` skipping full days is a convenience, not the guarantee.

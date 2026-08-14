@@ -34,7 +34,6 @@ export interface ScheduleSettings {
   dry_run_stored: boolean;
   suggested_times: string[];
   max_posts_per_day: number;
-  min_same_video_days: number;
 }
 
 /** The subset a client may write. Everything else on the payload is read-only. */
@@ -42,7 +41,6 @@ export type ScheduleSettingsPatch = Partial<{
   timezone: string;
   suggested_times: string[];
   max_posts_per_day: number;
-  min_same_video_days: number;
   paused: boolean;
   dry_run: boolean;
 }>;

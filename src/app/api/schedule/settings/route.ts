@@ -7,8 +7,6 @@ import {
   setSuggestedTimes,
   getMaxPostsPerDay,
   setMaxPostsPerDay,
-  getMinSameVideoDays,
-  setMinSameVideoDays,
   isSchedulerPaused,
   setSchedulerPaused,
   isDryRunStored,
@@ -37,7 +35,6 @@ function payload() {
     // Posting policy — stored, and editable without restarting the server.
     suggested_times: getSuggestedTimes(),
     max_posts_per_day: getMaxPostsPerDay(),
-    min_same_video_days: getMinSameVideoDays(),
   };
 }
 
@@ -53,8 +50,7 @@ export async function GET(request: NextRequest) {
  *
  *   { "timezone": "America/Chicago",
  *     "suggested_times": ["09:30", "18:00"],
- *     "max_posts_per_day": 2,
- *     "min_same_video_days": 2 }
+ *     "max_posts_per_day": 2 }
  *
  * Only keys that are present are touched, so a client can change one setting
  * without having to echo back the rest and risk clobbering a concurrent edit.
@@ -90,14 +86,6 @@ export async function PUT(request: NextRequest) {
       setMaxPostsPerDay(Number(body.max_posts_per_day));
     } catch (err) {
       return invalid(err instanceof Error ? err.message : "Bad max_posts_per_day.");
-    }
-  }
-
-  if (body?.min_same_video_days !== undefined) {
-    try {
-      setMinSameVideoDays(Number(body.min_same_video_days));
-    } catch (err) {
-      return invalid(err instanceof Error ? err.message : "Bad min_same_video_days.");
     }
   }
 

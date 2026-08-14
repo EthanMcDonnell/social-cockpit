@@ -7,8 +7,7 @@ import { systemTimeZone, zoneAbbreviation } from "@/lib/schedule/tz";
 import { COMMON_ZONES } from "@/lib/schedule/zones";
 
 /**
- * The posting policy: where slots are offered, how many a day may hold, and how
- * far apart two hooks of one video must sit.
+ * The posting policy: where slots are offered and how many a day may hold.
  *
  * These were added to the API and the database earlier but had no UI at all —
  * the only way to change them was curl or the MCP server. They live in
@@ -26,7 +25,6 @@ export function PostingPolicyPanel() {
 
   const [times, setTimes] = useState<string[]>([]);
   const [maxPerDay, setMaxPerDay] = useState("");
-  const [minDays, setMinDays] = useState("");
 
   // Re-seed whenever the server's copy changes, so an edit made elsewhere (MCP,
   // another tab) doesn't leave this form showing something stale.
@@ -34,7 +32,6 @@ export function PostingPolicyPanel() {
     if (!data) return;
     setTimes(data.suggested_times);
     setMaxPerDay(String(data.max_posts_per_day));
-    setMinDays(String(data.min_same_video_days));
   }, [data]);
 
   const zoneOptions = useMemo(() => {
@@ -46,20 +43,15 @@ export function PostingPolicyPanel() {
 
   const dirty =
     !!data &&
-    (maxPerDay !== String(data.max_posts_per_day) ||
-      minDays !== String(data.min_same_video_days) ||
-      times.join(",") !== data.suggested_times.join(","));
+    (maxPerDay !== String(data.max_posts_per_day) || times.join(",") !== data.suggested_times.join(","));
 
   const maxPerDayNum = Number(maxPerDay);
-  const minDaysNum = Number(minDays);
   const problem =
     times.length === 0
       ? "At least one posting time is required."
       : !Number.isInteger(maxPerDayNum) || maxPerDayNum < 1
         ? "Max posts per day must be a whole number of at least 1."
-        : !Number.isFinite(minDaysNum) || minDaysNum < 0
-          ? "Minimum spacing must be zero or more."
-          : null;
+        : null;
 
   const busy = settings.isLoading || update.isPending;
 
@@ -68,7 +60,6 @@ export function PostingPolicyPanel() {
     update.mutate({
       suggested_times: times,
       max_posts_per_day: maxPerDayNum,
-      min_same_video_days: minDaysNum,
     });
   }
 
@@ -147,20 +138,6 @@ export function PostingPolicyPanel() {
             value={maxPerDay}
             disabled={busy}
             onChange={(e) => setMaxPerDay(e.target.value)}
-            className="w-20 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 text-xs text-[var(--text-primary)]"
-          />
-        </Field>
-
-        <Field
-          title="Days between hooks of one video"
-          description="Two hooks cut from the same video share a body and a voiceover, so posting them close together reads as a near-duplicate and the later one gets throttled. Different videos are unaffected and may share a day."
-        >
-          <input
-            type="number"
-            min={0}
-            value={minDays}
-            disabled={busy}
-            onChange={(e) => setMinDays(e.target.value)}
             className="w-20 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 text-xs text-[var(--text-primary)]"
           />
         </Field>

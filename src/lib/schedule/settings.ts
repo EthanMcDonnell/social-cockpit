@@ -21,7 +21,6 @@ import { isValidTimeZone, systemTimeZone } from "./tz";
 const TZ_KEY = "calendar.timezone";
 const SUGGESTED_TIMES_KEY = "calendar.suggested_times";
 const MAX_PER_DAY_KEY = "calendar.max_posts_per_day";
-const MIN_SAME_VIDEO_DAYS_KEY = "calendar.min_same_video_days";
 const PAUSED_KEY = "scheduler.paused";
 const DRY_RUN_KEY = "scheduler.dry_run";
 
@@ -31,12 +30,6 @@ export { getSetting, setSetting };
 const DEFAULT_SUGGESTED_TIMES = ["09:30"];
 /** Ceiling on posts per calendar day. Enforced at booking, not advisory. */
 const DEFAULT_MAX_POSTS_PER_DAY = 2;
-/**
- * Days two hooks of the *same* video are kept apart. Different videos are
- * unaffected — they are not near-duplicates of each other, so they may share a
- * day up to the daily cap.
- */
-const DEFAULT_MIN_SAME_VIDEO_DAYS = 2;
 
 /** "HH:MM", 24-hour. */
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -171,24 +164,6 @@ export function setMaxPostsPerDay(value: number): void {
     throw new Error("max_posts_per_day must be a whole number of at least 1.");
   }
   setSetting(MAX_PER_DAY_KEY, String(value));
-}
-
-/** Days two hooks of the same video must be kept apart. */
-export function getMinSameVideoDays(): number {
-  // Same trap as above, and worse here: zero is a *legal* value meaning "no
-  // spacing", so Number(null) === 0 would quietly disable the rule entirely.
-  const stored = getSetting(MIN_SAME_VIDEO_DAYS_KEY);
-  if (stored === null) return DEFAULT_MIN_SAME_VIDEO_DAYS;
-
-  const raw = Number(stored);
-  return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_MIN_SAME_VIDEO_DAYS;
-}
-
-export function setMinSameVideoDays(value: number): void {
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error("min_same_video_days must be zero or more.");
-  }
-  setSetting(MIN_SAME_VIDEO_DAYS_KEY, String(value));
 }
 
 function sortTimes(times: string[]): string[] {

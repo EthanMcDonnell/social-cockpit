@@ -73,14 +73,12 @@ export interface ScheduleSettings {
    */
   suggested_times?: string[];
   max_posts_per_day?: number;
-  min_same_video_days?: number;
 }
 
 /** Posting policy with fallbacks applied — mirrors the cockpit's own defaults. */
 export interface PostingPolicy {
   suggestedTimes: string[];
   maxPostsPerDay: number;
-  minSameVideoDays: number;
   /** True when the cockpit didn't supply policy, so these are local defaults. */
   fromDefaults: boolean;
 }
@@ -90,7 +88,6 @@ export function policy(settings: ScheduleSettings): PostingPolicy {
   return {
     suggestedTimes: times ?? ["09:30"],
     maxPostsPerDay: settings.max_posts_per_day ?? 2,
-    minSameVideoDays: settings.min_same_video_days ?? 2,
     fromDefaults: settings.max_posts_per_day == null && times === undefined,
   };
 }

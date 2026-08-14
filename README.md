@@ -122,9 +122,9 @@ them.
 
 Two things are deliberately *not* environment variables:
 
-- **Posting cadence** — preferred times, posts per day, spacing between hooks of one
-  video — lives in the database and is edited while the server runs, because changing it
-  shouldn't require a restart. See [docs/scheduling.md](docs/scheduling.md).
+- **Posting cadence** — preferred times and posts per day — lives in the database and is
+  edited while the server runs, because changing it shouldn't require a restart. See
+  [docs/scheduling.md](docs/scheduling.md).
 - **Send caps** — the ceiling on automated DMs per minute — are constants in
   `src/lib/automation-sender.ts`. They bound the blast radius of a bug, so no line in a
   config file can raise them.

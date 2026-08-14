@@ -53,9 +53,8 @@ const POST_SPEC = {
     .string()
     .optional()
     .describe(
-      "Which video this post is a hook of, e.g. the slug. Always set it when scheduling hook variants: it is how " +
-        "suggest_slots and get_calendar tell two hooks of one video apart from two unrelated posts, and so how " +
-        "the near-duplicate spacing is enforced. Stored on the job and never sent to the platform."
+      "Which video this post is a hook of, e.g. the slug. Use it to identify and group hook variants in calendar " +
+        "and scheduled-post output. Stored on the job and never sent to the platform."
     ),
   video_path: z
     .string()

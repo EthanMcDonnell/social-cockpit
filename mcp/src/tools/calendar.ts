@@ -26,9 +26,8 @@ export function registerCalendarTools(server: McpServer): void {
       description:
         "What the calendar actually looks like, day by day: everything already published and everything " +
         "already scheduled, in the cockpit's timezone. Read this before scheduling anything, so the choice of " +
-        "slot accounts for what is really there — including posts made outside the scheduler. Each entry names " +
-        "the video it belongs to when the job was tagged, which is how you tell two hooks of the same video apart " +
-        "from two unrelated posts.",
+        "slot accounts for what is really there — including posts made outside the scheduler. Tagged jobs include " +
+        "their video identifier to help group related hook variants.",
       inputSchema: z.object({
         days: z
           .number()
