@@ -12,6 +12,13 @@ import { Panel } from "./Panel";
 
 const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
+/**
+ * One track definition for the hour labels and every day row, so a column can't
+ * drift away from the label above it. `minmax(0, 1fr)` rather than `1fr` because
+ * a bare `1fr` lets an hour label's own text widen its track — which is exactly
+ * how the label row and the cell row end up disagreeing.
+ */
+const COLS = { gridTemplateColumns: "2rem repeat(24, minmax(0, 1fr))" } as const;
 // Amber intensity ramp (low → high), matching the COCKPIT v2 style guide.
 const RAMP = ["#6B4E14", "#8F6A18", "#B3871C", "#D9A621", "#FFC72E"];
 
@@ -137,12 +144,14 @@ export function BestTimeHeatmap() {
       {!isLoading && !isError && hasData && (
         <div className="overflow-x-auto">
           <div className="min-w-[440px]">
-            {/* Hour labels */}
-            <div className="flex ml-8 mb-1.5">
+            {/* Hour labels — same grid as the rows below, with an empty first
+                cell standing in for the weekday gutter. */}
+            <div className="grid gap-x-[2px] mb-1.5" style={COLS}>
+              <span aria-hidden="true" />
               {HOURS.map((h) => (
                 <div
                   key={h}
-                  className="flex-1 text-left text-[9px] text-[var(--mut)] font-mono leading-none"
+                  className="text-left text-[9px] text-[var(--mut)] font-mono leading-none overflow-visible"
                 >
                   {h % 3 === 0 ? formatHourLabel(h) : ""}
                 </div>
@@ -151,8 +160,8 @@ export function BestTimeHeatmap() {
 
             {/* Grid rows */}
             {DAYS.map((day, dayIdx) => (
-              <div key={day} className="flex items-center gap-0 mb-[3px]">
-                <span className="w-8 shrink-0 text-[9px] text-[var(--mut)] font-mono tracking-wider">
+              <div key={day} className="grid gap-x-[2px] items-center mb-[3px]" style={COLS}>
+                <span className="text-[9px] text-[var(--mut)] font-mono tracking-wider">
                   {day}
                 </span>
                 {HOURS.map((hour) => {
@@ -168,7 +177,7 @@ export function BestTimeHeatmap() {
                     <div
                       key={hour}
                       title={title}
-                      className="flex-1 h-[20px] mx-[1px] cursor-default transition-opacity hover:opacity-80"
+                      className="h-[20px] cursor-default transition-opacity hover:opacity-80"
                       style={
                         fill
                           ? { backgroundColor: fill, borderRadius: 1.5 }
@@ -181,7 +190,8 @@ export function BestTimeHeatmap() {
             ))}
 
             {/* Discrete color scale legend */}
-            <div className="legend ml-8 mt-3">
+            {/* 2rem gutter + the grid's 2px column gap, so it starts on column 00 */}
+            <div className="legend ml-[calc(2rem+2px)] mt-3">
               low
               <span className="cell" />
               {RAMP.map((c) => (

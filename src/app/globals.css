@@ -1528,20 +1528,147 @@ body {
   font-size: 10px;
   color: var(--mut);
 }
-.cal .cal-tz select {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--txt);
-  background: var(--panel);
-  border: 1px solid var(--hair);
-  padding: 7px 8px;
-  cursor: pointer;
-  max-width: 170px;
+.cal .cal-tz .cal-select {
+  max-width: 190px;
 }
 .cal .cal-tz > span {
   font-family: var(--cond);
   letter-spacing: 0.12em;
   color: var(--amber-hi);
+}
+
+/* ── select (custom listbox, replaces the OS-chrome <select> popup) ──────────
+   The trigger lives inside the panel; the menu is portalled to the `.cockpit`
+   root and positioned `fixed`, so these rules are scoped to `.cockpit` rather
+   than `.cal`. */
+.cockpit .cal-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--txt);
+  text-align: left;
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  padding: 7px 24px 7px 9px;
+  cursor: pointer;
+  transition: border-color 0.15s var(--cal-ease, ease), color 0.15s var(--cal-ease, ease),
+    background 0.15s var(--cal-ease, ease), box-shadow 0.15s var(--cal-ease, ease);
+}
+.cockpit .cal-select:hover:not(:disabled) {
+  border-color: var(--hair-2);
+  background: rgba(255, 179, 36, 0.04);
+}
+.cockpit .cal-select:focus-visible,
+.cockpit .cal-select.is-open {
+  outline: 0;
+  border-color: var(--amber-dim);
+  box-shadow: 0 0 0 1px rgba(255, 179, 36, 0.18);
+}
+.cockpit .cal-select:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+.cockpit .cal-select-value {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cockpit .cal-select-hint {
+  font-family: var(--cond);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--amber-hi);
+}
+/* A single downward chevron rather than the native double arrow. */
+.cockpit .cal-select-caret {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -4px;
+  border-right: 1px solid var(--mut);
+  border-bottom: 1px solid var(--mut);
+  transform: rotate(45deg);
+  transform-origin: center;
+  transition: transform 0.15s var(--cal-ease, ease), border-color 0.15s var(--cal-ease, ease);
+}
+.cockpit .cal-select:hover .cal-select-caret,
+.cockpit .cal-select.is-open .cal-select-caret {
+  border-color: var(--amber);
+}
+.cockpit .cal-select.is-open .cal-select-caret {
+  transform: rotate(-135deg);
+  margin-top: -1px;
+}
+
+.cockpit .cal-select-menu {
+  position: fixed;
+  z-index: 90;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 3px 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--hair-2);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+  animation: cal-select-in 0.11s var(--cal-ease, ease);
+}
+@keyframes cal-select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cockpit .cal-select-menu {
+    animation: none;
+  }
+}
+.cockpit .cal-select-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--mut);
+  padding: 7px 12px 7px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* The selected row is marked with an amber rule rather than a checkmark —
+   glyph-free, and it reads at 10px where a tick doesn't. */
+.cockpit .cal-select-mark {
+  width: 2px;
+  align-self: stretch;
+  background: transparent;
+  flex-shrink: 0;
+}
+.cockpit .cal-select-opt.is-selected {
+  color: var(--txt);
+}
+.cockpit .cal-select-opt.is-selected .cal-select-mark {
+  background: var(--amber);
+}
+.cockpit .cal-select-opt.is-active {
+  color: var(--txt);
+  background: rgba(255, 179, 36, 0.09);
+}
+.cockpit .cal-select-label {
+  flex: 1;
+}
+.cockpit .cal-select-opt-hint {
+  font-family: var(--cond);
+  letter-spacing: 0.1em;
+  color: var(--faint);
+}
+.cockpit .cal-select-opt.is-active .cal-select-opt-hint {
+  color: var(--amber-dim);
 }
 
 .cal .cal-btn {

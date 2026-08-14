@@ -42,3 +42,9 @@ data/
 .env
 /tasks
 PLAN.md
+
+# Claude Code local state. `worktrees/` holds whole checkouts of this repo made
+# by agent runs (6 MB and climbing); `settings.local.json` is one machine's
+# permission overrides. Neither belongs in a shared, public repo.
+.claude/worktrees/
+.claude/settings.local.json

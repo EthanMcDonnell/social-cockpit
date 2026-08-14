@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
 
 interface AutomationEvent {
@@ -105,6 +105,27 @@ function useEvents(source: Source, level: LevelFilter, kind: string) {
   });
 }
 
+/** Wipes the log for whichever worker is on screen; the flows/jobs stay put. */
+function useClearEvents(source: Source) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const url =
+        source === "automation" ? "/api/automation-events" : "/api/schedule/events";
+      const res = await fetch(url, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.message ?? "Failed to clear logs");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["worker-events", source] });
+    },
+  });
+}
+
 const LEVEL_STYLES: Record<AutomationEvent["level"], string> = {
   info: "text-text-muted border-border bg-bg-base",
   warn: "text-accent-amber border-accent-amber/30 bg-accent-amber/10",
@@ -143,11 +164,14 @@ export function AutomationLogsClient() {
   const [level, setLevel] = useState<LevelFilter>("all");
   const [kind, setKind] = useState("");
   const { data, isLoading, isFetching, error, refetch } = useEvents(source, level, kind);
+  const clear = useClearEvents(source);
 
   const events = data?.events ?? [];
   const counts = data?.counts ?? { info: 0, warn: 0, error: 0 };
   const kinds = data?.kinds ?? [];
   const issues = counts.warn + counts.error;
+  // Counts span the whole log, so Clear stays live even under a narrow filter.
+  const totalLogged = counts.info + counts.warn + counts.error;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -170,6 +194,7 @@ export function AutomationLogsClient() {
               onClick={() => {
                 setSource(s);
                 setKind("");
+                clear.reset();
               }}
               className={clsx(
                 "px-3 py-1 rounded-[10px] text-[10px] font-medium capitalize transition-all",
@@ -195,7 +220,28 @@ export function AutomationLogsClient() {
         >
           {isFetching ? "Refreshing…" : "Refresh"}
         </button>
+        <span className="text-border">·</span>
+        <button
+          onClick={() => {
+            const label = source === "schedule" ? "scheduler" : "automation";
+            if (!window.confirm(`Delete every ${label} log entry? This can't be undone.`)) {
+              return;
+            }
+            // The kind filter may name a kind that no longer exists afterwards.
+            setKind("");
+            clear.mutate();
+          }}
+          disabled={clear.isPending || totalLogged === 0}
+          className="text-[11px] text-text-muted hover:text-accent-red disabled:opacity-40 disabled:hover:text-text-muted transition-colors"
+        >
+          {clear.isPending ? "Clearing…" : "Clear logs"}
+        </button>
       </div>
+      {clear.error && (
+        <p className="px-6 py-2 text-[11px] text-accent-red border-b border-border flex-shrink-0">
+          {(clear.error as Error).message}
+        </p>
+      )}
 
       {/* Filters */}
       <div className="px-6 py-3 flex items-center gap-3 border-b border-border flex-shrink-0 flex-wrap">

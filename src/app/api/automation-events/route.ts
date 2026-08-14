@@ -74,3 +74,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "internal", message }, { status: 500 });
   }
 }
+
+/**
+ * DELETE /api/automation-events — wipe the log. Purely observability data: the
+ * worker's own state lives in automation_flows / automation_sends, so clearing
+ * this only resets what the logs page shows.
+ */
+export async function DELETE() {
+  try {
+    const result = getDb().prepare("DELETE FROM automation_events").run();
+    return NextResponse.json({ success: true, deleted: result.changes });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: "internal", message }, { status: 500 });
+  }
+}

@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Social Cockpit — YouTube Shorts (mockup)</title>
+<style>
+/* ══ cockpit tokens (mirrored from src/app/globals.css) ══════════════════════ */
+:root{
+  --char:#121110; --panel:#171613; --hair:#282520; --hair-2:#3b3730;
+  --amber:#ffb324; --amber-hi:#ffc72e; --amber-dim:#8f6a18;
+  --txt:#f2efe9; --mut:#9b958a; --faint:#5c574e;
+  --red:#d98a3a; --ytred:#ff3d3d;
+  --cond:"Avenir Next Condensed","Arial Narrow",ui-sans-serif,sans-serif;
+  --mono:"DM Mono","Menlo","SF Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--char); color:var(--txt); font-family:var(--mono);
+  -webkit-font-smoothing:antialiased; line-height:1.5;
+}
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(ellipse 900px 420px at 60% 0%, rgba(255,179,36,.05), transparent 70%),
+    radial-gradient(ellipse 130% 100% at 50% 50%, transparent 65%, rgba(0,0,0,.45));
+}
+::selection{background:var(--amber); color:var(--char)}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-thumb{background:var(--hair-2);border-radius:6px}
+a{color:var(--amber-hi)}
+
+.deck{position:relative; z-index:1; max-width:1380px; margin:0 auto; padding:0 30px 80px}
+
+/* ── header / nav ── */
+.ck-header{display:flex; align-items:center; gap:18px; padding:26px 0 14px; border-bottom:1px solid var(--hair)}
+.ck-sig{font-family:var(--cond); font-weight:700; font-size:21px; letter-spacing:.3em; text-transform:uppercase; white-space:nowrap}
+.ck-sig b{color:var(--amber)}
+.ck-nav{display:flex; gap:2px; margin-left:8px; flex-wrap:wrap}
+.ck-nav a{color:var(--mut); text-decoration:none; font-size:10px; letter-spacing:.2em; text-transform:uppercase; padding:7px 13px; border:1px solid transparent}
+.ck-nav a:hover{color:var(--txt); border-color:var(--hair-2)}
+.ck-nav a.on{color:var(--amber-hi); border:1px solid var(--amber-dim); background:rgba(255,179,36,.06)}
+.ck-hud{margin-left:auto; text-align:right; font-size:10px; color:var(--mut); letter-spacing:.12em; line-height:1.9}
+.ck-hud b{color:var(--txt); font-weight:400}
+.ck-hud .warn{color:var(--amber-hi)}
+
+.mocknote{margin:16px 0 4px; font-size:9px; letter-spacing:.22em; text-transform:uppercase; color:var(--faint)}
+.mocknote b{color:var(--red)}
+
+/* ── compose title ── */
+.cs-title{display:flex; align-items:center; gap:14px; margin:26px 0 6px}
+.cs-tag{font-size:9px; letter-spacing:.14em; color:var(--amber-hi); border:1px solid var(--amber-dim); background:rgba(255,179,36,.06); padding:2px 8px}
+.cs-title h1{margin:0; font-family:var(--cond); font-weight:700; font-size:26px; letter-spacing:.18em; text-transform:uppercase}
+.cs-endpoint{margin-left:auto; font-size:9px; letter-spacing:.14em; color:var(--faint); text-transform:uppercase}
+
+/* ── platform switch (mirrors dashboard .ck-pswitch) ── */
+.ck-pswitch{display:inline-flex; border:1px solid var(--hair-2)}
+.ck-pswitch button{appearance:none; background:transparent; border:0; border-right:1px solid var(--hair-2); font-family:var(--mono); font-size:10px; letter-spacing:.18em; color:var(--mut); padding:8px 15px; display:flex; align-items:center; gap:8px; cursor:pointer; transition:color .15s, background .15s}
+.ck-pswitch button:last-child{border-right:0}
+.ck-pswitch button svg{display:block}
+.ck-pswitch button.on{background:rgba(255,179,36,.12); color:var(--amber-hi)}
+.ck-pswitch button.on.yt{background:rgba(255,61,49,.14); color:#ff6a5f}
+.subhead{margin:0 0 22px; font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--faint)}
+.subhead b{color:var(--mut); font-weight:400}
+
+/* ── media type strip ── */
+.cs-seg{display:inline-grid; grid-auto-flow:column; gap:2px; margin-bottom:24px; border:1px solid var(--hair); background:var(--hair)}
+.cs-seg button{font-family:var(--cond); font-weight:600; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--mut); background:var(--panel); border:0; padding:10px 20px; cursor:pointer}
+.cs-seg button:hover{color:var(--txt)}
+.cs-seg button.on{color:#fff; background:var(--ytred)}
+
+.cs-stage{display:grid; grid-template-columns:1fr 372px; gap:34px; align-items:start}
+.cs-controls{min-width:0}
+
+/* ── section panels ── */
+.cs-sec{border:1px solid var(--hair); background:var(--panel); position:relative; margin-bottom:20px; padding:16px 20px 20px}
+.cs-sec::before,.cs-sec::after{content:""; position:absolute; width:8px; height:8px; border:1px solid var(--amber-dim)}
+.cs-sec::before{top:-1px; left:-1px; border-right:0; border-bottom:0}
+.cs-sec::after{bottom:-1px; right:-1px; border-left:0; border-top:0}
+.cs-sh{display:flex; align-items:center; gap:11px; margin-bottom:16px}
+.cs-sh .n{font-size:9px; color:var(--amber-dim); letter-spacing:.1em}
+.cs-sh h2{margin:0; font-family:var(--cond); font-weight:700; font-size:14px; letter-spacing:.22em; text-transform:uppercase}
+.cs-sh .hint{margin-left:auto; font-size:9px; color:var(--faint); letter-spacing:.06em}
+.cs-sh .hint.over{color:var(--red)}
+
+/* fields */
+.cs-field{margin-bottom:14px}
+.cs-field:last-child{margin-bottom:0}
+.cs-flabel{display:flex; justify-content:space-between; font-size:9px; letter-spacing:.2em; text-transform:uppercase; color:var(--mut); margin-bottom:7px}
+.cs-flabel b{color:var(--amber-dim); font-weight:400}
+.cs-input,.cs-textarea{width:100%; background:var(--char); border:1px solid var(--hair); color:var(--txt); font-family:var(--mono); font-size:12.5px; padding:11px 12px; line-height:1.6}
+.cs-input:focus,.cs-textarea:focus{outline:0; border-color:var(--amber-dim); background:#100f0d}
+.cs-textarea{min-height:92px; resize:vertical}
+.cs-two{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+
+/* drop zone */
+.cs-drop{border:1px dashed var(--hair-2); background:var(--char); position:relative; min-height:132px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; cursor:pointer; text-align:center}
+.cs-drop:hover{border-color:var(--amber-dim); background:#1d1b17}
+.cs-dropring{width:40px; height:40px; border:1px solid var(--amber-dim); border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--amber); font-size:18px}
+.cs-dropt{font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); line-height:1.9}
+.cs-dropt b{color:var(--amber); font-weight:400}
+.cs-drops{font-size:8px; letter-spacing:.12em; color:var(--faint); text-transform:uppercase}
+
+/* selected file + upload progress */
+.cs-file{display:flex; align-items:center; gap:12px; border:1px solid var(--amber-dim); background:rgba(255,179,36,.05); padding:12px 14px}
+.cs-file-ic{width:30px; height:30px; flex:0 0 auto; border:1px solid var(--amber-dim); color:var(--amber); display:flex; align-items:center; justify-content:center; font-size:11px}
+.cs-file-meta{min-width:0; flex:1}
+.cs-file-meta b{display:block; font-size:12px; color:var(--txt); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.cs-file-meta span{font-size:9px; letter-spacing:.06em; color:var(--faint); text-transform:uppercase}
+.cs-prog{margin-top:8px; height:3px; background:var(--hair); position:relative}
+.cs-prog i{position:absolute; inset:0; right:auto; width:68%; background:var(--amber); box-shadow:0 0 8px rgba(255,179,36,.7)}
+.cs-file-x{margin-left:auto; flex:0 0 auto; color:var(--mut); background:transparent; border:1px solid var(--hair-2); width:24px; height:24px; cursor:pointer; font-size:11px}
+
+/* r2 pill */
+.r2pill{display:inline-flex; align-items:center; gap:7px; margin-top:12px; font-size:8.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint)}
+.r2pill i{width:5px; height:5px; border-radius:50%; background:var(--amber); box-shadow:0 0 6px var(--amber); font-style:normal}
+.r2pill b{color:var(--mut); font-weight:400}
+
+/* toggle rows */
+.cs-trow{display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px dashed var(--hair-2)}
+.cs-trow:last-child{border-bottom:0; padding-bottom:0}
+.cs-trow .l b{display:block; font-family:var(--cond); font-weight:600; font-size:12px; letter-spacing:.1em; text-transform:uppercase}
+.cs-trow .l span{font-size:9px; color:var(--faint); letter-spacing:.04em}
+.cs-trow .r{margin-left:auto}
+.cs-sw{position:relative; width:38px; height:20px; border:1px solid var(--hair-2); background:var(--char); cursor:pointer; flex:0 0 auto}
+.cs-sw::after{content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; background:var(--faint); transition:left .2s}
+.cs-sw.on{border-color:var(--amber-dim); background:rgba(255,179,36,.12)}
+.cs-sw.on::after{left:20px; background:var(--amber); box-shadow:0 0 8px var(--amber)}
+
+/* visibility segmented */
+.cs-vis{display:grid; grid-template-columns:1fr 1fr 1fr; gap:2px; border:1px solid var(--hair); background:var(--hair)}
+.cs-vis button{font-family:var(--mono); font-size:10px; color:var(--mut); background:var(--char); border:0; padding:12px 10px; cursor:pointer; text-align:left}
+.cs-vis button b{display:block; font-family:var(--cond); font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--txt); margin-bottom:3px}
+.cs-vis button.on{background:rgba(255,179,36,.08); box-shadow:inset 0 0 0 1px var(--amber-dim)}
+.cs-vis button.on b{color:var(--amber-hi)}
+.cs-vis button.locked{opacity:.5; cursor:not-allowed}
+
+/* audit warning banner */
+.cs-audit{margin-top:14px; display:flex; gap:12px; padding:12px 14px; border:1px solid #6b4a24; background:rgba(217,138,58,.07)}
+.cs-audit .ic{flex:0 0 auto; color:var(--red); font-size:15px; line-height:1.3}
+.cs-audit .bd{font-size:10px; line-height:1.7; color:var(--red)}
+.cs-audit .bd b{color:#f0b070}
+.cs-audit .bd a{color:#f0b070}
+
+/* category select */
+.cs-select{width:100%; background:var(--char); border:1px solid var(--hair); color:var(--txt); font-family:var(--mono); font-size:12.5px; padding:11px 12px; appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--mut) 50%),linear-gradient(135deg,var(--mut) 50%,transparent 50%);
+  background-position:calc(100% - 16px) 50%,calc(100% - 11px) 50%; background-size:5px 5px,5px 5px; background-repeat:no-repeat}
+
+/* ── preview column ── */
+.cs-preview{position:sticky; top:22px}
+.cs-pvhead{display:flex; gap:2px; margin-bottom:14px; border:1px solid var(--hair); background:var(--hair)}
+.cs-pvhead button{flex:1; font-family:var(--cond); font-weight:600; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--mut); background:var(--panel); border:0; padding:8px; cursor:pointer}
+.cs-pvhead button.on{color:var(--amber-hi); background:rgba(255,179,36,.08)}
+.cs-phone{width:100%; aspect-ratio:9/19.5; background:#000; border:1px solid var(--hair-2); position:relative; overflow:hidden}
+.cs-reel{position:absolute; inset:0;
+  background:linear-gradient(180deg, rgba(0,0,0,.55), transparent 26%, transparent 58%, rgba(0,0,0,.82)),
+  repeating-linear-gradient(115deg,#2a2622,#2a2622 22px,#221f1b 22px,#221f1b 44px)}
+/* youtube shorts chrome */
+.yt-top{position:absolute; top:14px; left:14px; right:14px; display:flex; align-items:center; gap:8px; font-size:11px; color:#fff}
+.yt-top .back{font-size:15px; opacity:.9}
+.yt-top .lbl{font-family:var(--cond); font-weight:700; letter-spacing:.06em}
+.yt-top .lbl b{color:var(--ytred)}
+.yt-top .rt{margin-left:auto; display:flex; gap:12px; opacity:.9}
+.yt-side{position:absolute; right:10px; bottom:104px; display:flex; flex-direction:column; gap:20px; align-items:center; color:#fff; font-size:19px; opacity:.95}
+.yt-side .b{display:flex; flex-direction:column; align-items:center; gap:3px}
+.yt-side .b span{font-size:8px; opacity:.85}
+.yt-meta{position:absolute; left:14px; right:56px; bottom:22px; color:#fff}
+.yt-u{display:flex; align-items:center; gap:8px; font-size:11px; font-weight:600; margin-bottom:8px}
+.yt-av{width:24px; height:24px; border-radius:50%; border:1px solid #fff; background:linear-gradient(135deg,var(--ytred),#7a1414)}
+.yt-sub{font-size:9px; border:1px solid #fff; border-radius:2px; padding:2px 8px; margin-left:4px}
+.yt-cap{font-size:10px; line-height:1.5; opacity:.95}
+.yt-cap b{color:#8ab4ff; font-weight:400}
+.yt-audio{display:flex; align-items:center; gap:6px; font-size:9px; margin-top:9px; opacity:.9}
+.cs-badge{position:absolute; top:44px; left:14px; font-size:8px; letter-spacing:.12em; text-transform:uppercase; color:#fff; border:1px solid rgba(255,255,255,.5); background:rgba(0,0,0,.5); padding:2px 7px}
+.cs-pvfoot{margin-top:14px; font-size:9px; color:var(--faint); letter-spacing:.08em; line-height:1.95; text-transform:uppercase}
+.cs-pvfoot b{color:var(--mut); font-weight:400}
+.cs-pvfoot .ln{display:flex; justify-content:space-between}
+
+/* actions */
+.cs-actions{margin-top:16px; display:flex; gap:10px}
+.cs-ghost{flex:1; font-family:var(--cond); font-weight:600; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--mut); background:transparent; border:1px solid var(--hair-2); padding:12px; cursor:pointer}
+.cs-ghost:hover{color:var(--txt); border-color:var(--mut)}
+.cs-transmit{flex:1.4; font-family:var(--cond); font-weight:700; font-size:13px; letter-spacing:.18em; text-transform:uppercase; color:#fff; background:var(--ytred); border:0; padding:12px; cursor:pointer}
+.cs-transmit:hover{box-shadow:0 0 22px rgba(255,61,61,.4)}
+
+/* ── divider ── */
+.split{margin:64px 0 30px; display:flex; align-items:center; gap:16px}
+.split .ln{flex:1; height:1px; background:var(--hair)}
+.split h3{margin:0; font-family:var(--cond); font-weight:700; font-size:15px; letter-spacing:.26em; text-transform:uppercase; color:var(--mut)}
+
+/* ── automation panel ── */
+.panel{background:var(--panel); border:1px solid var(--hair); position:relative; padding:18px 22px 22px; margin-bottom:24px}
+.panel::before,.panel::after{content:""; position:absolute; width:8px; height:8px; border:1px solid var(--amber-dim)}
+.panel::before{top:-1px; left:-1px; border-right:0; border-bottom:0}
+.panel::after{bottom:-1px; right:-1px; border-left:0; border-top:0}
+.p-h{display:flex; align-items:baseline; gap:12px; margin-bottom:16px}
+.p-h .tag{font-size:9px; letter-spacing:.14em; color:var(--amber-hi); border:1px solid var(--amber-dim); background:rgba(255,179,36,.06); padding:2px 8px}
+.p-h h2{margin:0; font-family:var(--cond); font-weight:700; font-size:17px; letter-spacing:.24em; text-transform:uppercase}
+.p-h .rhs{margin-left:auto; font-size:9px; letter-spacing:.1em; color:var(--faint)}
+
+.autogrid{display:grid; grid-template-columns:1fr 1fr; gap:20px}
+.rule{border:1px solid var(--hair); background:var(--char); padding:14px 16px}
+.rule .rh{display:flex; align-items:center; gap:10px; margin-bottom:12px}
+.rule .rh .dot{width:6px; height:6px; border-radius:50%; background:var(--amber); box-shadow:0 0 6px var(--amber)}
+.rule .rh b{font-family:var(--cond); font-weight:700; font-size:13px; letter-spacing:.14em; text-transform:uppercase}
+.rule .rh .st{margin-left:auto; font-size:8px; letter-spacing:.16em; text-transform:uppercase; color:var(--amber-hi); border:1px solid var(--amber-dim); padding:2px 7px}
+.rule .rh .st.off{color:var(--faint); border-color:var(--hair-2)}
+.flow{font-size:10px; letter-spacing:.04em; line-height:1.9; color:var(--mut)}
+.flow .kw{color:var(--amber-hi)}
+.flow .arw{color:var(--faint); margin:0 6px}
+.rule .foot{margin-top:12px; padding-top:11px; border-top:1px dashed var(--hair-2); display:flex; justify-content:space-between; font-size:8.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint)}
+.rule .foot b{color:var(--mut); font-weight:400}
+
+/* meters */
+.meters{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:20px}
+.meter{border:1px solid var(--hair); padding:12px 14px}
+.meter .k{font-size:8.5px; letter-spacing:.24em; text-transform:uppercase; color:var(--mut); display:flex; justify-content:space-between}
+.meter .k i{font-style:normal; color:var(--faint)}
+.meter .v{font-family:var(--cond); font-weight:700; font-size:34px; line-height:1.1; margin-top:6px}
+.meter .g{margin-top:9px; height:3px; background:var(--hair); position:relative}
+.meter .g i{position:absolute; inset:0; right:auto; background:var(--amber-dim)}
+.meter .d{font-size:9px; color:var(--mut); margin-top:6px; letter-spacing:.04em}
+
+.feas{margin-top:22px; border:1px solid var(--hair); background:var(--char)}
+.feas table{width:100%; border-collapse:collapse; font-size:10px}
+.feas th,.feas td{text-align:left; padding:10px 14px; border-bottom:1px solid var(--hair); letter-spacing:.04em}
+.feas th{font-size:8.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--mut); font-weight:400}
+.feas td b{color:var(--txt); font-weight:400}
+.feas tr:last-child td{border-bottom:0}
+.pill{font-size:8px; letter-spacing:.12em; text-transform:uppercase; padding:2px 8px; border:1px solid}
+.pill.yes{color:var(--amber-hi); border-color:var(--amber-dim); background:rgba(255,179,36,.06)}
+.pill.cond{color:#f0b070; border-color:#6b4a24; background:rgba(217,138,58,.07)}
+.pill.no{color:var(--faint); border-color:var(--hair-2)}
+
+@media (max-width:960px){
+  .cs-stage{grid-template-columns:1fr}
+  .cs-preview{position:static}
+  .cs-phone{max-width:300px; margin:0 auto}
+  .autogrid{grid-template-columns:1fr}
+  .meters{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="deck">
+
+  <!-- header -->
+  <header class="ck-header">
+    <div class="ck-sig">SOCIAL <b>COCKPIT</b></div>
+    <nav class="ck-nav">
+      <a href="#">Dashboard</a>
+      <a href="#">Posts</a>
+      <a href="#" class="on">Compose</a>
+      <a href="#">Inbox</a>
+      <a href="#">Automations</a>
+      <a href="#">Settings</a>
+    </nav>
+    <div class="ck-hud">
+      <div>CH · <b>@yourchannel</b> · 42.1K SUBS</div>
+      <div>YT TOKEN · <span class="warn">OAUTH — NEEDS CONNECT</span></div>
+    </div>
+  </header>
+
+  <div class="mocknote">STATIC MOCKUP · NON-FUNCTIONAL · <b>PROPOSED</b> — NOT YET IMPLEMENTED · NO DB / PROD TOUCHED</div>
+
+  <!-- title + platform switch (same spine as the dashboard) -->
+  <div class="cs-title">
+    <span class="cs-tag">STUDIO</span>
+    <h1>Compose</h1>
+    <div class="ck-pswitch" role="group" aria-label="Platform">
+      <button type="button" aria-pressed="false">
+        <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="2.5" y="2.5" width="19" height="19" rx="5.5" fill="none" stroke="#e04a8c" stroke-width="1.9"/>
+          <circle cx="12" cy="12" r="4.4" fill="none" stroke="#e04a8c" stroke-width="1.9"/>
+          <circle cx="17.4" cy="6.6" r="1.35" fill="#e04a8c"/>
+        </svg>IG
+      </button>
+      <button type="button" class="on yt" aria-pressed="true">
+        <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="1.5" y="5" width="21" height="14" rx="4.4" fill="#ff3d31"/>
+          <path d="M10 8.6 L16 12 L10 15.4 Z" fill="var(--char)"/>
+        </svg>YT
+      </button>
+    </div>
+    <span class="cs-endpoint">POST /api/youtube/publish</span>
+  </div>
+  <p class="subhead">Platform · <b>YouTube</b> — switch drives the whole studio (media types, fields, preview, endpoint), exactly like the dashboard readout rail</p>
+
+  <!-- media type strip: platform-scoped (YT shows Short / Video) -->
+  <div class="cs-seg">
+    <button class="on">▶ Short</button>
+    <button>Video</button>
+  </div>
+
+  <div class="cs-stage">
+    <!-- controls -->
+    <div class="cs-controls">
+
+      <!-- 01 source -->
+      <section class="cs-sec">
+        <div class="cs-sh"><span class="n">01</span><h2>Source</h2><span class="hint">MP4 / MOV · ≤ 3 MIN · 9:16</span></div>
+        <div class="cs-file">
+          <div class="cs-file-ic">▶</div>
+          <div class="cs-file-meta">
+            <b>morning-routine-v3.mp4</b>
+            <span>1080×1920 · 0:47 · 61.4 MB · UPLOADING TO R2</span>
+            <div class="cs-prog"><i></i></div>
+          </div>
+          <button class="cs-file-x">✕</button>
+        </div>
+        <div class="r2pill"><i></i> <b>Browser → R2 (private)</b> · presigned PUT · Google fetches signed GET at publish · object reclaimed after</div>
+      </section>
+
+      <!-- 02 details -->
+      <section class="cs-sec">
+        <div class="cs-sh"><span class="n">02</span><h2>Details</h2><span class="hint">100 CHAR TITLE MAX</span></div>
+        <div class="cs-field">
+          <div class="cs-flabel"><span>Title</span><b>snippet.title</b></div>
+          <input class="cs-input" value="5am routine that actually stuck #Shorts" />
+        </div>
+        <div class="cs-field">
+          <div class="cs-flabel"><span>Description</span><b>snippet.description</b></div>
+          <textarea class="cs-textarea">Three habits, zero willpower. Full breakdown on the channel.
+
+#Shorts #morningroutine #productivity</textarea>
+        </div>
+        <div class="cs-two">
+          <div class="cs-field">
+            <div class="cs-flabel"><span>Tags</span><b>snippet.tags</b></div>
+            <input class="cs-input" value="routine, habits, morning" />
+          </div>
+          <div class="cs-field">
+            <div class="cs-flabel"><span>Category</span><b>categoryId</b></div>
+            <select class="cs-select"><option>People &amp; Blogs (22)</option><option>Howto &amp; Style (26)</option><option>Entertainment (24)</option></select>
+          </div>
+        </div>
+      </section>
+
+      <!-- 03 visibility -->
+      <section class="cs-sec">
+        <div class="cs-sh"><span class="n">03</span><h2>Visibility</h2><span class="hint">status.privacyStatus</span></div>
+        <div class="cs-vis">
+          <button class="locked"><b>Public</b><span>audit required</span></button>
+          <button class="locked"><b>Unlisted</b><span>audit required</span></button>
+          <button class="on"><b>Private</b><span>forced · unverified app</span></button>
+        </div>
+        <div class="cs-audit">
+          <div class="ic">▲</div>
+          <div class="bd">
+            <b>Unverified-app lock.</b> Until this Google Cloud project passes a one-time
+            <b>YouTube API compliance audit</b>, every video uploaded via the API is forced to
+            <b>private</b> — the Public/Unlisted options above are inert regardless of what we send.
+            Same class of gate as the Instagram publishing permissions.
+            <a href="https://developers.google.com/youtube/v3/guides/quota_and_compliance_audits">Audit docs →</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- 04 distribution -->
+      <section class="cs-sec">
+        <div class="cs-sh"><span class="n">04</span><h2>Distribution</h2></div>
+        <div class="cs-trow">
+          <div class="l"><b>Made for kids</b><span>status.selfDeclaredMadeForKids · required by COPPA</span></div>
+          <div class="r"><div class="cs-sw"></div></div>
+        </div>
+        <div class="cs-trow">
+          <div class="l"><b>Notify subscribers</b><span>notifySubscribers · push on publish</span></div>
+          <div class="r"><div class="cs-sw on"></div></div>
+        </div>
+        <div class="cs-trow">
+          <div class="l"><b>Auto-reply to comments</b><span>attach comment automation · see below</span></div>
+          <div class="r"><div class="cs-sw on"></div></div>
+        </div>
+      </section>
+
+    </div><!-- /controls -->
+
+    <!-- preview -->
+    <aside class="cs-preview">
+      <div class="cs-pvhead"><button>Grid</button><button class="on">Shorts Player</button></div>
+      <div class="cs-phone">
+        <div class="cs-reel"></div>
+        <div class="yt-top">
+          <span class="back">‹</span>
+          <span class="lbl"><b>▶</b> Shorts</span>
+          <span class="rt">⌕ ⋮</span>
+        </div>
+        <div class="cs-badge">9:16 · 0:47</div>
+        <div class="yt-side">
+          <div class="b">♡ <span>4.2K</span></div>
+          <div class="b">💬 <span>318</span></div>
+          <div class="b">↻ <span>Share</span></div>
+          <div class="b">⋯ <span>Remix</span></div>
+          <div class="b">♪</div>
+        </div>
+        <div class="yt-meta">
+          <div class="yt-u"><span class="yt-av"></span> @yourchannel <span class="yt-sub">Subscribe</span></div>
+          <div class="yt-cap">5am routine that actually stuck <b>#Shorts</b> <b>#productivity</b></div>
+          <div class="yt-audio">♪ Original audio · @yourchannel</div>
+        </div>
+      </div>
+      <div class="cs-pvfoot">
+        <div class="ln"><span>Endpoint</span><b>videos.insert</b></div>
+        <div class="ln"><span>Upload</span><b>resumable · R2 source</b></div>
+        <div class="ln"><span>Quota</span><b>~1600 u · 6/day</b></div>
+        <div class="ln"><span>Short signal</span><b>9:16 + ≤3m + #Shorts</b></div>
+      </div>
+      <div class="cs-actions">
+        <button class="cs-ghost">Save draft</button>
+        <button class="cs-transmit">Publish ▶</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ══ automation section ══ -->
+  <div class="split"><div class="ln"></div><h3>YouTube Automations</h3><div class="ln"></div></div>
+
+  <section class="panel">
+    <div class="p-h">
+      <span class="tag">AUTO</span>
+      <h2>Comment Engine</h2>
+      <div class="ck-pswitch" style="margin-left:14px">
+        <button type="button">
+          <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="2.5" y="2.5" width="19" height="19" rx="5.5" fill="none" stroke="#e04a8c" stroke-width="1.9"/>
+            <circle cx="12" cy="12" r="4.4" fill="none" stroke="#e04a8c" stroke-width="1.9"/>
+            <circle cx="17.4" cy="6.6" r="1.35" fill="#e04a8c"/>
+          </svg>IG
+        </button>
+        <button type="button" class="on yt">
+          <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="1.5" y="5" width="21" height="14" rx="4.4" fill="#ff3d31"/>
+            <path d="M10 8.6 L16 12 L10 15.4 Z" fill="var(--char)"/>
+          </svg>YT
+        </button>
+      </div>
+      <span class="rhs">POLL · commentThreads.list every 90s</span>
+    </div>
+
+    <div class="autogrid">
+      <div class="rule">
+        <div class="rh"><span class="dot"></span><b>Keyword → Reply</b><span class="st">Live</span></div>
+        <div class="flow">
+          New comment on a Short contains <span class="kw">"GUIDE"</span>
+          <span class="arw">→</span> post public reply
+          <span class="arw">→</span> <span class="kw">chill_replies()</span> template
+          <span class="arw">→</span> "@user check the pinned link 👇"
+        </div>
+        <div class="foot"><span>comments.insert · <b>50 u</b></span><span>reuses <b>comment-reply-functions.ts</b></span></div>
+      </div>
+
+      <div class="rule">
+        <div class="rh"><span class="dot"></span><b>First-comment pin</b><span class="st">Live</span></div>
+        <div class="flow">
+          On publish <span class="arw">→</span> post top-level comment
+          <span class="arw">→</span> <span class="kw">comments.markAsSpam / setModerationStatus</span> pin
+          <span class="arw">→</span> "Drop a 🔥 if this helped"
+        </div>
+        <div class="foot"><span>commentThreads.insert · <b>50 u</b></span><span>pin = <b>manual / limited</b></span></div>
+      </div>
+
+      <div class="rule">
+        <div class="rh"><span class="dot"></span><b>Heart top comments</b><span class="st off">Draft</span></div>
+        <div class="flow">
+          Comment likes <span class="kw">&gt; 25</span> <span class="arw">→</span> creator-heart
+          <span class="arw">→</span> <span class="kw">(no public API — see note)</span>
+        </div>
+        <div class="foot"><span>unsupported endpoint</span><span><b>not automatable</b></span></div>
+      </div>
+
+      <div class="rule">
+        <div class="rh"><span class="dot"></span><b>New-upload webhook</b><span class="st">Live</span></div>
+        <div class="flow">
+          Channel uploads a video <span class="arw">→</span> <span class="kw">WebSub push</span>
+          <span class="arw">→</span> arm comment poll for that video id
+        </div>
+        <div class="foot"><span>PubSubHubbub · <b>0 u</b></span><span>push, not poll</span></div>
+      </div>
+    </div>
+
+    <div class="meters">
+      <div class="meter">
+        <div class="k"><span>Daily quota</span><i>10,000 u</i></div>
+        <div class="v">1,840</div>
+        <div class="g"><i style="width:18%"></i></div>
+        <div class="d">18% used · 163 poll + 2 uploads today</div>
+      </div>
+      <div class="meter">
+        <div class="k"><span>Replies sent</span><i>24h</i></div>
+        <div class="v">37</div>
+        <div class="g"><i style="width:52%"></i></div>
+        <div class="d">of 71 matched comments · 34 skipped (dupe/self)</div>
+      </div>
+      <div class="meter">
+        <div class="k"><span>R2 in flight</span><i>8 GiB cap</i></div>
+        <div class="v">0.0<span style="font-size:16px">GB</span></div>
+        <div class="g"><i style="width:2%"></i></div>
+        <div class="d">steady-state ~0 · upload→publish→reclaim</div>
+      </div>
+    </div>
+
+    <!-- feasibility matrix -->
+    <div class="feas">
+      <table>
+        <thead><tr><th>Capability</th><th>API surface</th><th>Auth / cost</th><th>Feasible?</th></tr></thead>
+        <tbody>
+          <tr><td><b>Upload a Short</b></td><td>videos.insert (resumable)</td><td>OAuth youtube.upload · ~1600 u</td><td><span class="pill cond">Yes — private until audit</span></td></tr>
+          <tr><td><b>Reply to a comment</b></td><td>comments.insert</td><td>OAuth force-ssl · 50 u</td><td><span class="pill yes">Yes</span></td></tr>
+          <tr><td><b>Post top-level comment</b></td><td>commentThreads.insert</td><td>OAuth force-ssl · 50 u</td><td><span class="pill yes">Yes</span></td></tr>
+          <tr><td><b>Read / poll comments</b></td><td>commentThreads.list</td><td>OAuth or key · 1 u</td><td><span class="pill yes">Yes</span></td></tr>
+          <tr><td><b>Delete / hide / moderate</b></td><td>comments.setModerationStatus</td><td>OAuth force-ssl · 50 u</td><td><span class="pill yes">Yes (own channel)</span></td></tr>
+          <tr><td><b>New-upload trigger</b></td><td>PubSubHubbub (WebSub)</td><td>public callback · 0 u</td><td><span class="pill yes">Yes — push</span></td></tr>
+          <tr><td><b>New-comment push</b></td><td>—</td><td>no webhook exists</td><td><span class="pill cond">Poll only</span></td></tr>
+          <tr><td><b>Creator-heart a comment</b></td><td>—</td><td>not in public API</td><td><span class="pill no">No</span></td></tr>
+          <tr><td><b>Pin a comment</b></td><td>—</td><td>not in public API</td><td><span class="pill no">No (manual)</span></td></tr>
+          <tr><td><b>DM a commenter</b></td><td>—</td><td>YouTube has no DM API</td><td><span class="pill no">No</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

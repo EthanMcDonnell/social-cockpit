@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { COMMON_ZONES } from "@/lib/schedule/zones";
 import { WeekGrid } from "./WeekGrid";
 import { MonthGrid } from "./MonthGrid";
 import { ComposerDrawer, type ComposerDraft } from "./ComposerDrawer";
+import { CalSelect } from "./CalSelect";
 import {
   usePublishedHistory,
   useScheduledPosts,
@@ -195,8 +197,9 @@ export function CalendarClient() {
 
       {settings.data && !settings.data.scheduler_enabled && (
         <p className="cal-banner warn">
-          The worker is disabled on this instance (SCHEDULER_ENABLED=false). Posts can be
-          scheduled but nothing will publish.
+          {settings.data.paused
+            ? "Publishing is paused in Settings. Posts can be scheduled but nothing will go out until it's resumed."
+            : "The worker is disabled on this instance (SCHEDULER_ENABLED=false). Posts can be scheduled but nothing will publish."}
         </p>
       )}
       {settings.data?.dry_run && (
@@ -262,19 +265,6 @@ function nextRoundHour(from: number): number {
   return Math.ceil(base / 3_600_000) * 3_600_000;
 }
 
-const COMMON_ZONES = [
-  "America/Los_Angeles",
-  "America/Denver",
-  "America/Chicago",
-  "America/New_York",
-  "Europe/London",
-  "Europe/Berlin",
-  "Asia/Dubai",
-  "Asia/Singapore",
-  "Australia/Sydney",
-  "UTC",
-];
-
 function TimeZonePicker({
   timeZone,
   abbreviation,
@@ -290,19 +280,25 @@ function TimeZonePicker({
     const set = new Set(COMMON_ZONES);
     set.add(systemTimeZone());
     set.add(timeZone);
-    return Array.from(set).sort();
+    return Array.from(set)
+      .sort()
+      .map((tz) => ({
+        value: tz,
+        label: tz.replace(/_/g, " "),
+        hint: zoneAbbreviation(Date.now(), tz),
+      }));
   }, [timeZone]);
 
   return (
-    <label className="cal-tz" title="Every slot on this calendar is read in this timezone">
-      <select value={timeZone} onChange={(e) => onChange(e.target.value)}>
-        {options.map((tz) => (
-          <option key={tz} value={tz}>
-            {tz.replace(/_/g, " ")}
-          </option>
-        ))}
-      </select>
+    <div className="cal-tz" title="Every slot on this calendar is read in this timezone">
+      <CalSelect
+        value={timeZone}
+        options={options}
+        onChange={onChange}
+        align="end"
+        aria-label="Calendar timezone"
+      />
       <span>{abbreviation || zoneAbbreviation(Date.now(), timeZone)}</span>
-    </label>
+    </div>
   );
 }

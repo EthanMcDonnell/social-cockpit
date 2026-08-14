@@ -8,6 +8,8 @@
  */
 
 import { randomUUID } from "crypto";
+import { EVENTS_RETENTION_DAYS } from "@/lib/retention";
+import { config } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import type {
   FailureKind,
@@ -29,7 +31,6 @@ import type {
  */
 export const LEASE_MS = 15 * 60 * 1000;
 
-const EVENTS_RETENTION_DAYS = 30;
 
 interface ScheduledPostRow {
   id: string;
@@ -117,8 +118,7 @@ export function createJob(input: CreateJobInput): ScheduledPost {
 }
 
 export function defaultGraceMinutes(): number {
-  const raw = Number(process.env.SCHEDULE_GRACE_MINUTES);
-  return Number.isFinite(raw) && raw > 0 ? raw : 60;
+  return config.schedule.graceMinutes;
 }
 
 // ─── Read ────────────────────────────────────────────────────────────────────
@@ -423,6 +423,11 @@ export function listScheduleEvents(opts: { jobId?: string; limit?: number } = {}
     meta: r.meta ? parseJson<Record<string, unknown>>(r.meta as string, {}) : undefined,
     created_at: r.created_at as string,
   }));
+}
+
+/** Wipe the activity log. Observability only — jobs themselves are untouched. */
+export function clearScheduleEvents(): number {
+  return getDb().prepare("DELETE FROM schedule_events").run().changes;
 }
 
 /** 30-day retention cull, run on the worker cadence (mirrors automation_events). */

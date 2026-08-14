@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CalSelect } from "./CalSelect";
 import { PlatformGlyph } from "@/components/dashboard/cockpit/PlatformGlyph";
 import { useAutomationFlows } from "@/hooks/useAutomationFlows";
 import {
@@ -268,21 +269,23 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
           {platform === "ig" && (
             <div className="cal-field">
               <label htmlFor="cal-auto">Comment automation</label>
-              <select
+              <CalSelect
                 id="cal-auto"
                 value={automationKey}
-                onChange={(e) => setAutomationKey(e.target.value)}
-              >
-                <option value="">None</option>
-                {keyedFlows.map((f) => (
-                  <option key={f.id} value={f.automation_key}>
-                    {f.name} ({f.automation_key})
-                  </option>
-                ))}
-                {automationKey && !keyedFlows.some((f) => f.automation_key === automationKey) && (
-                  <option value={automationKey}>{automationKey} (new)</option>
-                )}
-              </select>
+                onChange={setAutomationKey}
+                options={[
+                  { value: "", label: "None" },
+                  ...keyedFlows.map((f) => ({
+                    value: f.automation_key!,
+                    label: `${f.name} (${f.automation_key})`,
+                  })),
+                  // A key typed into the field below isn't a flow yet, but it
+                  // still has to show as the current selection.
+                  ...(automationKey && !keyedFlows.some((f) => f.automation_key === automationKey)
+                    ? [{ value: automationKey, label: `${automationKey} (new)` }]
+                    : []),
+                ]}
+              />
               <input
                 value={automationKey}
                 onChange={(e) => setAutomationKey(e.target.value)}

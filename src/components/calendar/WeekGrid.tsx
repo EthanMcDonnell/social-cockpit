@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { JobCard } from "./JobCard";
 import { useSlotDrag } from "./useSlotDrag";
 import {
@@ -63,6 +63,7 @@ export function WeekGrid({
   const colsRef = useRef<HTMLDivElement>(null);
   const [dropSlot, setDropSlot] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [scrollbarW, setScrollbarW] = useState(0);
 
   const days = useMemo(
     () => Array.from({ length: dayCount }, (_, i) => addDays(weekStart, i, timeZone)),
@@ -80,6 +81,21 @@ export function WeekGrid({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = 7 * HOUR_H;
+  }, []);
+
+  // The body scrolls and the header doesn't, so a classic (space-taking)
+  // scrollbar makes the body narrower than the header and the day columns drift
+  // left — a couple of pixels each, a whole scrollbar's worth by Sunday. Feed
+  // the measured width back as padding on the header. Zero on overlay
+  // scrollbars, which is exactly right: they take no space.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setScrollbarW(el.offsetWidth - el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   /** Viewport point → the slot beneath it, snapped. Shared by drag and file-drop. */
@@ -188,7 +204,7 @@ export function WeekGrid({
   const dragTarget = drag?.target ?? null;
 
   return (
-    <div className="cal-week">
+    <div className="cal-week" style={{ ["--cal-sbw" as string]: `${scrollbarW}px` }}>
       <div className="cal-week-head" style={{ ["--cal-days" as string]: dayCount }}>
         <div className="cal-gutter-cell" />
         {days.map((day, i) => {
