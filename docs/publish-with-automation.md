@@ -28,6 +28,10 @@ Pass a stable `automation.key` slug. The first publish with a given key **create
 the flow; every later publish with the **same key appends** its new `media_id` to
 that existing flow's target list (deduped — re-posting the same media is a no-op).
 
+The post-publish lookup/create/append runs inside one SQLite write transaction and
+the database enforces one non-null key owner. Concurrent successful publishes with
+the same key therefore converge on that owner without dropping either media ID.
+
 - **With a key** → dedup by key. Reuse it across posts to grow one flow.
 - **Without a key** → always a brand-new flow.
 

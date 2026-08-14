@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getJob, updateJob, logScheduleEvent } from "@/lib/schedule/store";
+import { getJob, updateJobWithinScheduledCap, logScheduleEvent } from "@/lib/schedule/store";
 import { runScheduleCycle, schedulerEnabled } from "@/lib/schedule/worker";
 import { hydrateJob } from "@/lib/schedule/view";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
+import { checkDailyCap } from "@/lib/schedule/capacity";
+import { getMaxPostsPerDay, getTimeZone } from "@/lib/schedule/settings";
+import { addDays } from "@/lib/schedule/tz";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+const RUNNABLE_STATUSES = ["pending", "paused", "failed", "missed", "cancelled"] as const;
 
 /**
  * POST /api/schedule/:id/run — publish now, ignoring the clock.
@@ -49,16 +54,33 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
   }
 
   // Due now, with a full attempt budget and a grace window wide enough that the
-  // very act of asking can't immediately mark it missed.
-  updateJob(job.id, {
-    status: "pending",
-    scheduledAt: Date.now(),
-    attempts: 0,
-    nextAttemptAt: null,
-    result: null,
-    containerId: null,
-    graceMinutes: Math.max(job.grace_minutes, 60),
-  });
+  // very act of asking can't immediately mark it missed. It still consumes the
+  // same account-day capacity as a normal booking.
+  const now = Date.now();
+  const timeZone = getTimeZone();
+  const cap = checkDailyCap(now, timeZone, getMaxPostsPerDay(), job.id);
+  if (!cap.allowed) {
+    return NextResponse.json({ error: "day_full", message: cap.message }, { status: 409 });
+  }
+  const queued = updateJobWithinScheduledCap(
+    job.id,
+    {
+      status: "pending",
+      scheduledAt: now,
+      attempts: 0,
+      nextAttemptAt: null,
+      result: null,
+      containerId: null,
+      graceMinutes: Math.max(job.grace_minutes, 60),
+    },
+    cap.usage.dayStart,
+    addDays(cap.usage.dayStart, 1, timeZone),
+    cap.max - cap.usage.external,
+    RUNNABLE_STATUSES
+  );
+  if (!queued) {
+    return NextResponse.json({ error: "conflict", message: "Already publishing." }, { status: 409 });
+  }
   logScheduleEvent("info", "run_now", "Triggered manually", { jobId: job.id });
 
   await runScheduleCycle();

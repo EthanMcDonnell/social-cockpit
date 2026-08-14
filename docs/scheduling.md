@@ -9,8 +9,15 @@ than forking it.
 Everything is staged on local disk; R2 is a transient carrier that exists only
 for the seconds/minutes of the actual publish call.
 
-> **Status:** built and verified end-to-end against a scratch database in dry-run
-> mode. §11 lists what testing covered and the two things it couldn't.
+> **Integrity migration required:** production scheduler workers require the
+> explicitly reviewed `lease_token` migration. It never runs automatically at
+> startup. See [Scheduler integrity migration](./scheduler-integrity-migration.md)
+> for backup, preflight, apply, rollback, and deployment instructions.
+>
+> **Delivery guarantee:** SQLite lease fencing prevents stale workers from
+> overwriting a newer owner and serializes finalizer claims. The external platform
+> boundary remains at-least-once if a process crashes after an API acceptance but
+> before durable state is written.
 
 ---
 

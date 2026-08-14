@@ -44,6 +44,7 @@ interface ScheduledPostRow {
   max_attempts: number;
   next_attempt_at: number | null;
   lease_until: number | null;
+  lease_token: string | null;
   grace_minutes: number;
   container_id: string | null;
   result: string | null;
@@ -58,6 +59,13 @@ function parseJson<T>(raw: string | null | undefined, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/** Server-only credential proving a worker owns the current lease. */
+export type ClaimedScheduledPost = ScheduledPost & { leaseToken: string };
+export interface RecoveredLease {
+  id: string;
+  terminal: boolean;
 }
 
 export function rowToPost(row: ScheduledPostRow): ScheduledPost {
@@ -78,6 +86,11 @@ export function rowToPost(row: ScheduledPostRow): ScheduledPost {
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+}
+
+function rowToClaimedPost(row: ScheduledPostRow): ClaimedScheduledPost | null {
+  const post = rowToPost(row);
+  return row.lease_token ? { ...post, leaseToken: row.lease_token } : null;
 }
 
 // ─── Create ──────────────────────────────────────────────────────────────────
@@ -121,6 +134,39 @@ export function defaultGraceMinutes(): number {
   return config.schedule.graceMinutes;
 }
 
+const CAP_OCCUPYING_STATUSES: ScheduleStatus[] = [
+  "pending",
+  "paused",
+  "publishing",
+  "finalizing",
+  "published",
+];
+
+/**
+ * Serialize scheduler-owned capacity reservations with the insert. External
+ * cached posts are counted by the route before this call; concurrent scheduler
+ * requests cannot overbook the remaining capacity.
+ */
+export function createJobWithinScheduledCap(
+  input: CreateJobInput,
+  dayStart: number,
+  dayEnd: number,
+  remainingScheduledCapacity: number
+): ScheduledPost | null {
+  const db = getDb();
+  const reserve = db.transaction(() => {
+    const count = (db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM scheduled_posts
+          WHERE scheduled_at >= ? AND scheduled_at < ?
+            AND status IN (${CAP_OCCUPYING_STATUSES.map(() => "?").join(",")})`
+      )
+      .get(dayStart, dayEnd, ...CAP_OCCUPYING_STATUSES) as { count: number }).count;
+    return count >= remainingScheduledCapacity ? null : createJob(input);
+  });
+  return reserve.immediate();
+}
+
 // ─── Read ────────────────────────────────────────────────────────────────────
 
 export function getJob(id: string): ScheduledPost | null {
@@ -128,6 +174,42 @@ export function getJob(id: string): ScheduledPost | null {
     .prepare("SELECT * FROM scheduled_posts WHERE id = ?")
     .get(id) as ScheduledPostRow | undefined;
   return row ? rowToPost(row) : null;
+}
+
+/**
+ * Claim one failed job's idempotent artifact cleanup. Holding a lease keeps an
+ * operator from reviving the job and losing its staged media mid-cleanup.
+ */
+export function claimTerminalCleanup(now: number): ClaimedScheduledPost | null {
+  const token = randomUUID();
+  const row = getDb()
+    .prepare(
+      `UPDATE scheduled_posts
+          SET lease_until = ?, lease_token = ?, updated_at = datetime('now')
+        WHERE id = (
+          SELECT id FROM scheduled_posts
+           WHERE status = 'failed'
+             AND (result IS NULL OR result NOT LIKE '%"cleanup_done":true%')
+             AND (lease_until IS NULL OR lease_until < ?)
+           ORDER BY updated_at ASC LIMIT 1
+        )
+          AND status = 'failed'
+          AND (lease_until IS NULL OR lease_until < ?)
+      RETURNING *`
+    )
+    .get(now + LEASE_MS, token, now, now) as ScheduledPostRow | undefined;
+  return row ? rowToClaimedPost(row) : null;
+}
+
+export function finishTerminalCleanup(job: ClaimedScheduledPost): boolean {
+  const info = getDb()
+    .prepare(
+      `UPDATE scheduled_posts
+          SET result = ?, lease_until = NULL, lease_token = NULL, updated_at = datetime('now')
+        WHERE id = ? AND status = 'failed' AND lease_token = ?`
+    )
+    .run(JSON.stringify({ ...(job.result ?? {}), cleanup_done: true }), job.id, job.leaseToken);
+  return info.changes === 1;
 }
 
 export interface ListJobsFilter {
@@ -199,11 +281,17 @@ export interface JobPatch {
   maxAttempts?: number;
   nextAttemptAt?: number | null;
   leaseUntil?: number | null;
+  /** Internal worker fencing credential; never supplied by a public route. */
+  leaseToken?: string | null;
   containerId?: string | null;
   result?: ScheduleResult | null;
 }
 
-export function updateJob(id: string, patch: JobPatch): ScheduledPost | null {
+export function updateJob(
+  id: string,
+  patch: JobPatch,
+  expectedStatuses?: readonly ScheduleStatus[]
+): ScheduledPost | null {
   const sets: string[] = [];
   const params: (string | number | null)[] = [];
 
@@ -224,6 +312,7 @@ export function updateJob(id: string, patch: JobPatch): ScheduledPost | null {
   if (patch.maxAttempts !== undefined) put("max_attempts", patch.maxAttempts);
   if (patch.nextAttemptAt !== undefined) put("next_attempt_at", patch.nextAttemptAt);
   if (patch.leaseUntil !== undefined) put("lease_until", patch.leaseUntil);
+  if (patch.leaseToken !== undefined) put("lease_token", patch.leaseToken);
   if (patch.containerId !== undefined) put("container_id", patch.containerId);
   if (patch.result !== undefined) {
     put("result", patch.result ? JSON.stringify(patch.result) : null);
@@ -232,147 +321,243 @@ export function updateJob(id: string, patch: JobPatch): ScheduledPost | null {
   if (!sets.length) return getJob(id);
 
   sets.push("updated_at = datetime('now')");
-  getDb()
-    .prepare(`UPDATE scheduled_posts SET ${sets.join(", ")} WHERE id = ?`)
-    .run(...params, id);
+  const statuses = expectedStatuses?.length ? ` AND status IN (${expectedStatuses.map(() => "?").join(", ")})` : "";
+  const unleased = expectedStatuses?.length ? " AND lease_token IS NULL" : "";
+  const info = getDb()
+    .prepare(`UPDATE scheduled_posts SET ${sets.join(", ")} WHERE id = ?${statuses}${unleased}`)
+    .run(...params, id, ...(expectedStatuses?.length ? expectedStatuses : []));
 
-  return getJob(id);
+  return info.changes ? getJob(id) : null;
 }
 
-export function deleteJob(id: string): boolean {
-  const info = getDb().prepare("DELETE FROM scheduled_posts WHERE id = ?").run(id);
+/** Atomically reserve destination-day scheduler capacity while applying an edit. */
+export function updateJobWithinScheduledCap(
+  id: string,
+  patch: JobPatch,
+  dayStart: number,
+  dayEnd: number,
+  remainingScheduledCapacity: number,
+  expectedStatuses: readonly ScheduleStatus[]
+): ScheduledPost | null {
+  const db = getDb();
+  const reserve = db.transaction(() => {
+    const count = (db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM scheduled_posts
+          WHERE id != ? AND scheduled_at >= ? AND scheduled_at < ?
+            AND status IN (${CAP_OCCUPYING_STATUSES.map(() => "?").join(",")})`
+      )
+      .get(id, dayStart, dayEnd, ...CAP_OCCUPYING_STATUSES) as { count: number }).count;
+    return count >= remainingScheduledCapacity ? null : updateJob(id, patch, expectedStatuses);
+  });
+  return reserve.immediate();
+}
+
+export function deleteJob(id: string, expectedStatuses?: readonly ScheduleStatus[]): boolean {
+  const statuses = expectedStatuses?.length ? ` AND status IN (${expectedStatuses.map(() => "?").join(", ")})` : "";
+  const unleased = expectedStatuses?.length ? " AND lease_token IS NULL" : "";
+  const info = getDb()
+    .prepare(`DELETE FROM scheduled_posts WHERE id = ?${statuses}${unleased}`)
+    .run(id, ...(expectedStatuses?.length ? expectedStatuses : []));
   return info.changes > 0;
 }
 
 // ─── Worker claim / recovery ─────────────────────────────────────────────────
 
-/**
- * Atomically claim the next due job, or return null.
- *
- * The `AND status = 'pending'` re-check on the outer UPDATE is what makes this
- * safe: a publish can take minutes, so two ticks can overlap, and without it
- * both would claim the same row and double-post. SQLite runs the statement
- * atomically, so the loser's UPDATE matches zero rows.
- */
-export function claimDueJob(now: number): ScheduledPost | null {
-  const db = getDb();
-
-  const claim = db.transaction((ts: number): string | null => {
-    const row = db
-      .prepare(
-        `SELECT id FROM scheduled_posts
-          WHERE status = 'pending'
-            AND scheduled_at <= ?
-            AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-          ORDER BY scheduled_at ASC
-          LIMIT 1`
-      )
-      .get(ts, ts) as { id: string } | undefined;
-    if (!row) return null;
-
-    const info = db
-      .prepare(
-        `UPDATE scheduled_posts
-            SET status = 'publishing',
-                lease_until = ?,
-                attempts = attempts + 1,
-                updated_at = datetime('now')
-          WHERE id = ? AND status = 'pending'`
-      )
-      .run(ts + LEASE_MS, row.id);
-
-    return info.changes > 0 ? row.id : null;
-  });
-
-  const id = claim(now);
-  return id ? getJob(id) : null;
+/** Atomically lease one due publishing job and return its fenced credential. */
+export function claimDueJob(now: number): ClaimedScheduledPost | null {
+  const token = randomUUID();
+  const row = getDb()
+    .prepare(
+      `UPDATE scheduled_posts
+          SET status = 'publishing',
+              lease_until = ?,
+              lease_token = ?,
+              attempts = attempts + 1,
+              updated_at = datetime('now')
+        WHERE id = (
+          SELECT id FROM scheduled_posts
+           WHERE status = 'pending'
+             AND scheduled_at <= ?
+             AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+           ORDER BY scheduled_at ASC
+           LIMIT 1
+        ) AND status = 'pending'
+      RETURNING *`
+    )
+    .get(now + LEASE_MS, token, now, now) as ScheduledPostRow | undefined;
+  return row ? rowToClaimedPost(row) : null;
 }
 
-/** Re-claim the lease on a long-running job so a slow publish isn't requeued. */
-export function renewLease(id: string, now: number): void {
-  getDb()
-    .prepare("UPDATE scheduled_posts SET lease_until = ? WHERE id = ?")
-    .run(now + LEASE_MS, id);
+/** Atomically lease one container poll without changing publication attempts. */
+export function claimFinalizingJob(now: number): ClaimedScheduledPost | null {
+  const token = randomUUID();
+  const row = getDb()
+    .prepare(
+      `UPDATE scheduled_posts
+          SET lease_until = ?, lease_token = ?, updated_at = datetime('now')
+        WHERE id = (
+          SELECT id FROM scheduled_posts
+           WHERE status = 'finalizing'
+             AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+             AND (lease_until IS NULL OR lease_until < ?)
+           ORDER BY scheduled_at ASC
+           LIMIT 1
+        )
+          AND status = 'finalizing'
+          AND (lease_until IS NULL OR lease_until < ?)
+      RETURNING *`
+    )
+    .get(now + LEASE_MS, token, now, now, now) as ScheduledPostRow | undefined;
+  return row ? rowToClaimedPost(row) : null;
+}
+
+/** Renew a still-owned active lease. False means another worker owns the job. */
+export function renewLease(job: ClaimedScheduledPost, now: number): boolean {
+  const info = getDb()
+    .prepare(
+      `UPDATE scheduled_posts SET lease_until = ?, updated_at = datetime('now')
+        WHERE id = ? AND lease_token = ?
+          AND status IN ('publishing', 'finalizing')
+          AND lease_until >= ?`
+    )
+    .run(now + LEASE_MS, job.id, job.leaseToken, now);
+  return info.changes === 1;
 }
 
 /**
- * Jobs left `publishing`/`finalizing` by a process that died mid-flight. Their
- * lease has expired, so they go back to `pending` for another attempt — unless
- * they've exhausted `max_attempts`, in which case they're terminal.
- *
- * Returns the ids requeued, for logging.
+ * Fenced worker transition. A false result is ownership loss; callers must not
+ * perform resource cleanup or further external side effects after that point.
  */
-export function recoverExpiredLeases(now: number): string[] {
+export function updateClaimedJob(
+  job: ClaimedScheduledPost,
+  expectedStatus: "publishing" | "finalizing",
+  patch: JobPatch,
+  now = Date.now()
+): boolean {
+  const sets: string[] = [];
+  const params: (string | number | null)[] = [];
+  const put = (column: string, value: string | number | null) => {
+    sets.push(`${column} = ?`);
+    params.push(value);
+  };
+  if (patch.status !== undefined) put("status", patch.status);
+  if (patch.scheduledAt !== undefined) put("scheduled_at", patch.scheduledAt);
+  if (patch.attempts !== undefined) put("attempts", patch.attempts);
+  if (patch.payload !== undefined) put("payload", JSON.stringify(patch.payload));
+  if (patch.media !== undefined) put("media", JSON.stringify(patch.media));
+  if (patch.automation !== undefined) put("automation", patch.automation ? JSON.stringify(patch.automation) : null);
+  if (patch.graceMinutes !== undefined) put("grace_minutes", patch.graceMinutes);
+  if (patch.maxAttempts !== undefined) put("max_attempts", patch.maxAttempts);
+  if (patch.nextAttemptAt !== undefined) put("next_attempt_at", patch.nextAttemptAt);
+  if (patch.leaseUntil !== undefined) put("lease_until", patch.leaseUntil);
+  if (patch.leaseToken !== undefined) put("lease_token", patch.leaseToken);
+  if (patch.containerId !== undefined) put("container_id", patch.containerId);
+  if (patch.result !== undefined) put("result", patch.result ? JSON.stringify(patch.result) : null);
+  if (!sets.length) return false;
+
+  sets.push("updated_at = datetime('now')");
+  const info = getDb()
+    .prepare(
+      `UPDATE scheduled_posts SET ${sets.join(", ")}
+        WHERE id = ? AND status = ? AND lease_token = ? AND lease_until >= ?`
+    )
+    .run(...params, job.id, expectedStatus, job.leaseToken, now);
+  return info.changes === 1;
+}
+
+/**
+ * Recover only rows that are still expired in the same state seen by recovery.
+ * Finalizing rows retain their container and become available for a later poll;
+ * they are never sent through a new upload/container creation path.
+ */
+export function recoverExpiredLeases(now: number): RecoveredLease[] {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT id, attempts, max_attempts FROM scheduled_posts
-        WHERE status IN ('publishing','finalizing')
-          AND lease_until IS NOT NULL
-          AND lease_until < ?`
+      `SELECT id, status, attempts, max_attempts, lease_token, result FROM scheduled_posts
+        WHERE status IN ('publishing', 'finalizing')
+          AND lease_until IS NOT NULL AND lease_until < ?`
     )
-    .all(now) as { id: string; attempts: number; max_attempts: number }[];
+    .all(now) as {
+      id: string;
+      status: "publishing" | "finalizing";
+      attempts: number;
+      max_attempts: number;
+      lease_token: string | null;
+      result: string | null;
+    }[];
 
-  const requeued: string[] = [];
+  const recovered: RecoveredLease[] = [];
   for (const row of rows) {
-    if (row.attempts >= row.max_attempts) {
-      updateJob(row.id, {
-        status: "failed",
-        leaseUntil: null,
-        result: {
-          error: "Interrupted mid-publish and out of attempts.",
-          error_kind: "internal",
-          finished_at: new Date().toISOString(),
-        },
-      });
+    if (row.status === "finalizing") {
+      const info = db
+        .prepare(
+          `UPDATE scheduled_posts SET lease_until = NULL, lease_token = NULL, updated_at = datetime('now')
+            WHERE id = ? AND status = 'finalizing' AND lease_token IS ? AND lease_until < ?`
+        )
+        .run(row.id, row.lease_token, now);
+      if (info.changes) recovered.push({ id: row.id, terminal: false });
       continue;
     }
-    updateJob(row.id, { status: "pending", leaseUntil: null });
-    requeued.push(row.id);
+
+    // A crashed `publishing` worker may have crossed the external platform
+    // boundary but failed before it durably recorded the response. Retrying that
+    // ambiguity can double-post, so fail closed for operator review instead.
+    const terminal = true;
+    const terminalResult: ScheduleResult = {
+      ...parseJson<ScheduleResult>(row.result, {}),
+      error: "Interrupted during an unknown publish boundary; manual review required before retrying.",
+      error_kind: "internal",
+      finished_at: new Date().toISOString(),
+      cleanup_done: false,
+    };
+    const info = db
+      .prepare(
+        `UPDATE scheduled_posts
+            SET status = ?, lease_until = NULL, lease_token = NULL,
+                result = CASE WHEN ? THEN ? ELSE result END,
+                updated_at = datetime('now')
+          WHERE id = ? AND status = 'publishing' AND lease_token IS ? AND lease_until < ?`
+      )
+      .run(
+        terminal ? "failed" : "pending",
+        terminal ? 1 : 0,
+        JSON.stringify(terminalResult),
+        row.id,
+        row.lease_token,
+        now
+      );
+    if (info.changes) recovered.push({ id: row.id, terminal });
   }
-  return requeued;
+  return recovered;
 }
 
-/**
- * Retire jobs whose slot passed by more than their grace window.
- *
- * Without this, bringing the server back after a few hours down would fire a
- * backlog of stale posts all at once — the single worst failure mode a scheduler
- * has. Returns the ids retired.
- */
+/** Retire only rows that remain pending at the moment the write runs. */
 export function markMissed(now: number): string[] {
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT id FROM scheduled_posts
-        WHERE status = 'pending'
-          AND scheduled_at + (grace_minutes * 60000) < ?`
+      `SELECT id FROM scheduled_posts WHERE status = 'pending'
+        AND scheduled_at + (grace_minutes * 60000) < ?`
     )
     .all(now) as { id: string }[];
-
+  const missed: string[] = [];
   for (const row of rows) {
-    updateJob(row.id, {
-      status: "missed",
-      result: {
-        error: "The scheduled time passed outside the grace window.",
-        finished_at: new Date().toISOString(),
-      },
-    });
+    const info = db
+      .prepare(
+        `UPDATE scheduled_posts SET status = 'missed', result = ?, updated_at = datetime('now')
+          WHERE id = ? AND status = 'pending'
+            AND scheduled_at + (grace_minutes * 60000) < ?`
+      )
+      .run(
+        JSON.stringify({ error: "The scheduled time passed outside the grace window.", finished_at: new Date().toISOString() }),
+        row.id,
+        now
+      );
+    if (info.changes) missed.push(row.id);
   }
-  return rows.map((r) => r.id);
-}
-
-/** Jobs sitting in `finalizing`, oldest first — containers awaiting a publish. */
-export function listFinalizing(limit = 5): ScheduledPost[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT * FROM scheduled_posts
-        WHERE status = 'finalizing'
-          AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-        ORDER BY scheduled_at ASC LIMIT ?`
-    )
-    .all(Date.now(), limit) as ScheduledPostRow[];
-  return rows.map(rowToPost);
+  return missed;
 }
 
 // ─── Events ──────────────────────────────────────────────────────────────────

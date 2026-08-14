@@ -3,11 +3,19 @@ import { runScheduleCycle, schedulerEnabled, isDryRun, INTERVAL_MS } from "@/lib
 // Boot tick plus a fixed cadence, mirroring the automation/cache/transcription
 // workers. 30s rather than their 60s because a scheduled slot should land within
 // about half a minute of its time.
+let cycleInProgress = false;
+
 const tick = async () => {
+  // SQLite lease tokens are the cross-process correctness boundary. This guard
+  // merely avoids overlapping interval callbacks in this one Node process.
+  if (cycleInProgress) return;
+  cycleInProgress = true;
   try {
     await runScheduleCycle();
   } catch (err) {
     console.error("[schedule] cycle error:", err);
+  } finally {
+    cycleInProgress = false;
   }
 };
 

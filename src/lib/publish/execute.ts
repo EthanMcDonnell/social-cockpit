@@ -53,18 +53,22 @@ export interface ExecutePublishResult {
  * bad, but failing the whole publish after the post went out is worse, and the
  * caller can retry the attach separately.
  */
-export function attachAutomation(
-  result: PublishResult,
-  plan: AutomationPlan
-): AutomationOutcome {
+/** Apply automation without converting a transient database failure to success. */
+export function attachAutomationStrict(result: PublishResult, plan: AutomationPlan): AttachResult {
   if (!result.published || !result.media_id) {
-    return {
-      skipped: true,
-      reason: "post not yet published (no media_id) — automation not attached",
-    };
+    throw new Error("post not yet published (no media_id) — automation not attached");
   }
+  return applyAutomationPlan(getDb(), result.media_id, plan);
+}
+
+/**
+ * Direct publish endpoints report an attachment failure rather than turning an
+ * already-live post into an HTTP publish failure. The scheduler uses the strict
+ * variant above so it can persist and retry an attachment separately.
+ */
+export function attachAutomation(result: PublishResult, plan: AutomationPlan): AutomationOutcome {
   try {
-    return applyAutomationPlan(getDb(), result.media_id, plan);
+    return attachAutomationStrict(result, plan);
   } catch (e) {
     return { skipped: true, reason: e instanceof Error ? e.message : "attach failed" };
   }

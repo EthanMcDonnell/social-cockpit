@@ -166,6 +166,9 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
       `Could not read scheduled_at (${String(body.scheduled_at)}). Use ISO-8601, e.g. "2026-08-12T09:30" or "2026-08-12T09:30:00-05:00".`
     );
   }
+  if (scheduledAt <= Date.now()) {
+    return fail("invalid_param", "scheduled_at must be in the future; use the run-now endpoint to publish immediately.");
+  }
 
   const platform: SchedulePlatform = body.platform === "yt" ? "yt" : "ig";
 
@@ -232,9 +235,16 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
   // deliberately DISCARDED: create-vs-append must be decided at fire time,
   // because another post may claim this key between now and then. We store the
   // raw spec and re-plan in the worker.
+  let storedAutomation = automation;
   if (automation) {
     const planned = planAutomation(getDb(), automation);
     if ("error" in planned) return fail("invalid_param", planned.error);
+    // Preserve the scheduling-time contract for a key-only/append request. If
+    // its owner is later deleted, publishing must not silently create a new
+    // flow from fields that were ignored on the original append.
+    if (planned.plan.mode === "append") {
+      storedAutomation = { ...automation, existing_key_required: true };
+    }
   }
 
   return {
@@ -243,7 +253,7 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
       scheduledAt,
       payload: input,
       media,
-      automation,
+      automation: storedAutomation,
       graceMinutes: grace_minutes ?? defaultGraceMinutes(),
       maxAttempts: max_attempts,
     },

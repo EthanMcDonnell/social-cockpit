@@ -14,6 +14,7 @@ import {
 } from "@/lib/schedule/settings";
 import { isValidTimeZone, zoneAbbreviation } from "@/lib/schedule/tz";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
+import { schedulerEnabled } from "@/lib/schedule/worker";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ function payload() {
     timezone,
     abbreviation: zoneAbbreviation(Date.now(), timezone),
     // Effective state — what the worker will actually do right now.
-    scheduler_enabled: config.schedule.enabled && !isSchedulerPaused(),
+    scheduler_enabled: schedulerEnabled(),
     dry_run: config.schedule.dryRun || isDryRunStored(),
     // The two inputs, reported separately so the UI can explain itself. When
     // .env has disabled the scheduler outright, a pause toggle is meaningless
@@ -62,6 +63,10 @@ export async function PUT(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const invalid = (message: string) =>
     NextResponse.json({ error: "invalid_param", message }, { status: 400 });
+
+  if (body?.min_same_video_days !== undefined) {
+    return invalid("min_same_video_days was removed; use max_posts_per_day and suggested_times instead.");
+  }
 
   if (body?.timezone !== undefined) {
     if (typeof body.timezone !== "string" || !isValidTimeZone(body.timezone)) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getJob,
   updateJob,
+  updateJobWithinScheduledCap,
   deleteJob,
   listScheduleEvents,
   logScheduleEvent,
@@ -10,9 +11,11 @@ import { releaseStaged } from "@/lib/schedule/media";
 import { hydrateJob } from "@/lib/schedule/view";
 import { getTimeZone, getMaxPostsPerDay } from "@/lib/schedule/settings";
 import { checkDailyCap } from "@/lib/schedule/capacity";
-import { parseScheduledAt } from "@/lib/schedule/tz";
+import { addDays, parseScheduledAt } from "@/lib/schedule/tz";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
 import { validatePublish } from "@/lib/instagram/publish-flow";
+import { planAutomation } from "@/lib/automation/attach";
+import { getDb } from "@/lib/db";
 import type { PublishInput } from "@/lib/instagram/endpoints/publish";
 import type { JobPatch } from "@/lib/schedule/store";
 import type { ScheduledPost, YoutubeJobPayload } from "@/lib/schedule/types";
@@ -23,6 +26,14 @@ export const dynamic = "force-dynamic";
 function isLocked(job: ScheduledPost): boolean {
   return job.status === "publishing" || job.status === "finalizing";
 }
+
+const EDITABLE_STATUSES: ScheduledPost["status"][] = [
+  "pending",
+  "paused",
+  "failed",
+  "missed",
+  "cancelled",
+];
 
 const notFound = () =>
   NextResponse.json({ error: "not_found", message: "No such scheduled post." }, { status: 404 });
@@ -68,9 +79,23 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   if (isLocked(job)) return locked();
 
   const body = await request.json().catch(() => null);
-  if (!body || typeof body !== "object") {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
     return NextResponse.json(
-      { error: "bad_request", message: "Body must be valid JSON" },
+      { error: "bad_request", message: "Body must be a JSON object." },
+      { status: 400 }
+    );
+  }
+  const allowed = new Set(["scheduled_at", "status", "grace_minutes", "automation", "payload"]);
+  const unknown = Object.keys(body).filter((key) => !allowed.has(key));
+  if (unknown.length) {
+    return NextResponse.json(
+      { error: "invalid_param", message: `Unknown patch field(s): ${unknown.join(", ")}.` },
+      { status: 400 }
+    );
+  }
+  if (!Object.keys(body).length) {
+    return NextResponse.json(
+      { error: "invalid_param", message: "PATCH body must change at least one field." },
       { status: 400 }
     );
   }
@@ -83,6 +108,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (ms == null) {
       return NextResponse.json(
         { error: "invalid_param", message: "Could not read scheduled_at." },
+        { status: 400 }
+      );
+    }
+    if (ms <= Date.now()) {
+      return NextResponse.json(
+        { error: "invalid_param", message: "scheduled_at must be in the future; use the run-now endpoint instead." },
         { status: 400 }
       );
     }
@@ -126,10 +157,34 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     patch.graceMinutes = g;
   }
 
-  if (body.automation !== undefined) patch.automation = body.automation ?? null;
+  if (body.automation !== undefined) {
+    if (body.automation === null) {
+      patch.automation = null;
+    } else if (typeof body.automation !== "object" || Array.isArray(body.automation)) {
+      return NextResponse.json(
+        { error: "invalid_param", message: "automation must be an object or null." },
+        { status: 400 }
+      );
+    } else {
+      const planned = planAutomation(getDb(), body.automation);
+      if ("error" in planned) {
+        return NextResponse.json({ error: "invalid_param", message: planned.error }, { status: 400 });
+      }
+      patch.automation =
+        planned.plan.mode === "append"
+          ? { ...body.automation, existing_key_required: true }
+          : body.automation;
+    }
+  }
 
   // Payload edits: merge, then re-validate exactly as the create path does.
-  if (body.payload && typeof body.payload === "object") {
+  if (body.payload !== undefined) {
+    if (!body.payload || typeof body.payload !== "object" || Array.isArray(body.payload)) {
+      return NextResponse.json(
+        { error: "invalid_param", message: "payload must be a JSON object." },
+        { status: 400 }
+      );
+    }
     const merged = { ...job.payload, ...body.payload };
     if (job.platform === "ig") {
       const problem = validatePublish({
@@ -148,10 +203,35 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     patch.payload = merged;
   }
 
-  const updated = updateJob(job.id, patch);
+  const becomesOccupying =
+    patch.status === "pending" && !["pending", "paused", "publishing", "finalizing", "published"].includes(job.status);
+  const capacityTime = patch.scheduledAt ?? job.scheduled_at;
+  const updated = patch.scheduledAt != null || becomesOccupying
+    ? (() => {
+        const cap = checkDailyCap(capacityTime, timeZone, getMaxPostsPerDay(), job.id);
+        if (!cap.allowed) return undefined;
+        return updateJobWithinScheduledCap(
+          job.id,
+          patch,
+          cap.usage.dayStart,
+          addDays(cap.usage.dayStart, 1, timeZone),
+          cap.max - cap.usage.external,
+          EDITABLE_STATUSES
+        );
+      })()
+    : updateJob(job.id, patch, EDITABLE_STATUSES);
+  if (!updated) {
+    // An occupying transition can lose the capacity race; otherwise the worker
+    // claimed the row between our initial read and conditional update.
+    if (patch.scheduledAt != null || becomesOccupying) {
+      const cap = checkDailyCap(capacityTime, timeZone, getMaxPostsPerDay(), job.id);
+      if (!cap.allowed) return NextResponse.json({ error: "day_full", message: cap.message }, { status: 409 });
+    }
+    return locked();
+  }
   logScheduleEvent("info", "updated", describePatch(patch), { jobId: job.id });
 
-  return NextResponse.json({ job: hydrateJob(updated!), timezone: timeZone });
+  return NextResponse.json({ job: hydrateJob(updated), timezone: timeZone });
 }
 
 /** DELETE /api/schedule/:id — cancel and clean up any media we own. */
@@ -163,8 +243,8 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
   if (!job) return notFound();
   if (isLocked(job)) return locked();
 
+  if (!deleteJob(job.id, EDITABLE_STATUSES)) return locked();
   await releaseStaged(job.media.map((m) => m.staged_id));
-  deleteJob(job.id);
   logScheduleEvent("info", "cancelled", "Cancelled from the calendar", { jobId: job.id });
 
   return NextResponse.json({ ok: true, id: job.id });

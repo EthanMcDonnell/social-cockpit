@@ -120,11 +120,15 @@ export interface ScheduleResult {
   dry_run?: boolean;
   finished_at?: string;
   /**
-   * R2 keys deliberately left in the bucket across a `finalizing` window.
-   * On a 202 the container may still be fetching the source, so the objects
-   * can't be reclaimed yet — they're carried here and dropped at finalize.
+   * Durable scheduler cleanup ledger for R2 source keys. It is written as files
+   * upload and retained across a `finalizing` window; cleanup drops it only once
+   * the platform has ingested the bytes or the job reaches terminal failure.
    */
   r2_keys?: string[];
+  /** Terminal R2/staged-media cleanup completed (or is intentionally empty). */
+  cleanup_done?: boolean;
+  /** Leave sources to their lifecycle when container ingestion is unknown. */
+  skip_r2_cleanup?: boolean;
 }
 
 export interface ScheduledPost {

@@ -1,33 +1,25 @@
 /**
- * Attach a freshly-published post to an automation flow, as part of a single
- * publish+automate API call (see docs/publish-with-automation.md).
+ * Attach a freshly-published post to an automation flow.
  *
- * The tricky part the caller wants solved: don't create a duplicate flow when a
- * *variation* of the same video is posted again. A caller-supplied `key` slug is
- * the dedup handle — the same key across publish calls resolves to the same flow,
- * and each new post's media_id is appended to that flow's target list. No key =
- * always a fresh flow.
+ * A caller-supplied `key` is the stable owner handle: every successful attach
+ * with that key belongs to one flow and contributes its media_id to that
+ * flow's target list. No key deliberately means a fresh flow.
  *
- * Split into two phases on purpose:
- *   1. planAutomation()      — validates the spec and resolves create-vs-append
- *                              via a cheap read-only key lookup. Runs BEFORE the
- *                              publish so a bad spec 400s instead of leaving a
- *                              live-but-un-automated post behind.
- *   2. applyAutomationPlan() — the actual DB write, run only once we hold the
- *                              real published media_id.
+ * Planning is a pre-publish validation step. Its create/append result is never
+ * used as a write snapshot: the real resolution happens again under an
+ * immediate SQLite transaction after the platform returns the media_id.
  */
 
 import type Database from "better-sqlite3";
 import { randomUUID } from "crypto";
 import {
   rowToFlow,
-  type AutomationFlow,
   type AutomationFlowRow,
   type AutomationConfig,
   type AutomationTemplateType,
 } from "@/lib/db";
 
-/** Automation block accepted inside the publish request body. */
+/** Automation block accepted inside a publish or schedule request. */
 export interface AutomationSpec {
   /** Dedup slug. Reused across posts → they share one flow. Absent → new flow. */
   key?: string;
@@ -40,9 +32,11 @@ export interface AutomationSpec {
   config?: AutomationConfig;
   /** Activate the flow immediately. Default true (an API publish wants it live). */
   activate?: boolean;
+  /** Internal schedule marker: this was validated as append-only at booking time. */
+  existing_key_required?: boolean;
 }
 
-interface NormalizedSpec {
+export interface NormalizedAutomationSpec {
   key?: string;
   name?: string;
   keywords: string[];
@@ -51,9 +45,16 @@ interface NormalizedSpec {
   activate: boolean;
 }
 
-export type AutomationPlan =
-  | { mode: "create"; spec: NormalizedSpec }
-  | { mode: "append"; flow: AutomationFlow; spec: NormalizedSpec };
+/**
+ * `mode` describes what was valid at preflight time, not a future DB write.
+ * An append-only request must not silently recreate a deleted flow with its
+ * ignored append fields; a create request may safely append if another caller
+ * creates the keyed flow while its post is publishing.
+ */
+export type AutomationPlan = {
+  mode: "create" | "append";
+  spec: NormalizedAutomationSpec;
+};
 
 export interface AttachResult {
   /** created = new flow; appended = added to existing flow; noop = already there. */
@@ -78,89 +79,100 @@ function normalizeKeywords(raw?: string[]): string[] {
     .filter(Boolean);
 }
 
+export function normalizeAutomationSpec(spec: AutomationSpec): NormalizedAutomationSpec {
+  return {
+    key: spec.key?.trim() || undefined,
+    name: spec.name?.trim() || undefined,
+    keywords: normalizeKeywords(spec.trigger_keywords),
+    templateType: resolveTemplateType(spec.template_type),
+    config: (spec.config ?? {}) as AutomationConfig,
+    activate: spec.activate !== false,
+  };
+}
+
 /**
- * Validate the automation spec and decide whether this publish will create a new
- * flow or append to an existing one (matched by `key`). Returns the plan, or an
- * error string suitable for a 400. Read-only — safe to call before publishing.
+ * Validate an automation before publishing. The lookup only decides whether a
+ * key-only spec is valid now; attachment always re-resolves the owner later.
  */
 export function planAutomation(
   db: Database.Database,
   spec: AutomationSpec
 ): { plan: AutomationPlan } | { error: string } {
-  const key = spec.key?.trim() || undefined;
-  const name = spec.name?.trim() || undefined;
-  const keywords = normalizeKeywords(spec.trigger_keywords);
-  const templateType = resolveTemplateType(spec.template_type);
-  const config = (spec.config ?? {}) as AutomationConfig;
-  const activate = spec.activate !== false; // default true
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+    return { error: "automation must be an object" };
+  }
+  if (
+    (spec.key !== undefined && typeof spec.key !== "string") ||
+    (spec.name !== undefined && typeof spec.name !== "string") ||
+    (spec.activate !== undefined && typeof spec.activate !== "boolean") ||
+    (spec.existing_key_required !== undefined && typeof spec.existing_key_required !== "boolean") ||
+    (spec.trigger_keywords !== undefined &&
+      (!Array.isArray(spec.trigger_keywords) || spec.trigger_keywords.some((keyword) => typeof keyword !== "string"))) ||
+    (spec.config !== undefined && (typeof spec.config !== "object" || spec.config === null || Array.isArray(spec.config)))
+  ) {
+    return { error: "automation has an invalid field type" };
+  }
+  const normalized = normalizeAutomationSpec(spec);
 
-  const normalized: NormalizedSpec = { key, name, keywords, templateType, config, activate };
-
-  // Append path: an existing flow already owns this key — reuse it as-is and just
-  // add the new post. Keywords/name/config on the spec are ignored here so the
-  // established flow's settings aren't silently rewritten by a later post.
-  if (key) {
+  if (normalized.key) {
     const row = db
-      .prepare(
-        "SELECT * FROM automation_flows WHERE automation_key = ? ORDER BY created_at ASC LIMIT 1"
-      )
-      .get(key) as AutomationFlowRow | undefined;
-    if (row) {
-      return { plan: { mode: "append", flow: rowToFlow(row), spec: normalized } };
-    }
+      .prepare("SELECT 1 FROM automation_flows WHERE automation_key = ? LIMIT 1")
+      .get(normalized.key) as { 1: number } | undefined;
+    if (row) return { plan: { mode: "append", spec: normalized } };
+  }
+  if (spec.existing_key_required) {
+    return { error: `automation flow for key "${normalized.key ?? ""}" no longer exists` };
   }
 
-  // Create path: need something to name it and at least one trigger keyword.
-  if (!name && !key) {
+  if (!normalized.name && !normalized.key) {
     return { error: "automation requires a name or key" };
   }
-  if (keywords.length === 0) {
+  if (normalized.keywords.length === 0) {
     return { error: "automation requires at least one trigger_keyword to create a flow" };
   }
 
   return { plan: { mode: "create", spec: normalized } };
 }
 
-/**
- * Execute a plan against the just-published media_id. Creating writes a new flow;
- * appending adds the media_id (deduped) to the matched flow's target list. Never
- * rewrites an existing flow's keywords/config beyond its media_ids.
- */
-export function applyAutomationPlan(
+function appendToFlow(
   db: Database.Database,
-  mediaId: string,
-  plan: AutomationPlan
+  row: AutomationFlowRow,
+  mediaId: string
 ): AttachResult {
-  if (plan.mode === "append") {
-    const { flow } = plan;
-    if (flow.media_ids.includes(mediaId)) {
-      return {
-        action: "noop",
-        flow_id: flow.id,
-        automation_key: flow.automation_key,
-        media_ids: flow.media_ids,
-      };
-    }
-    const media_ids = [...flow.media_ids, mediaId];
-    const config = JSON.stringify({ ...flow.config, media_ids });
-    db.prepare(
-      "UPDATE automation_flows SET config = ?, media_id = ? WHERE id = ?"
-    ).run(config, media_ids[0] ?? null, flow.id);
+  const flow = rowToFlow(row);
+  if (flow.media_ids.includes(mediaId)) {
     return {
-      action: "appended",
+      action: "noop",
       flow_id: flow.id,
       automation_key: flow.automation_key,
-      media_ids,
+      media_ids: flow.media_ids,
     };
   }
 
-  const { spec } = plan;
+  const media_ids = [...flow.media_ids, mediaId];
+  db.prepare("UPDATE automation_flows SET config = ?, media_id = ? WHERE id = ?").run(
+    JSON.stringify({ ...flow.config, media_ids }),
+    media_ids[0] ?? null,
+    flow.id
+  );
+  return {
+    action: "appended",
+    flow_id: flow.id,
+    automation_key: flow.automation_key,
+    media_ids,
+  };
+}
+
+function createFlow(
+  db: Database.Database,
+  spec: NormalizedAutomationSpec,
+  mediaId: string
+): AttachResult {
   const media_ids = [mediaId];
-  const config = JSON.stringify({ ...spec.config, media_ids });
   const id = randomUUID();
   const isActive = spec.activate ? 1 : 0;
   const activatedAt = spec.activate ? new Date().toISOString() : null;
-  const name = spec.name ?? spec.key!; // planAutomation guarantees one is present
+  const name = spec.name ?? spec.key!;
 
   db.prepare(
     `INSERT INTO automation_flows
@@ -171,7 +183,7 @@ export function applyAutomationPlan(
     name,
     spec.templateType,
     JSON.stringify(spec.keywords),
-    config,
+    JSON.stringify({ ...spec.config, media_ids }),
     mediaId,
     isActive,
     activatedAt,
@@ -179,4 +191,49 @@ export function applyAutomationPlan(
   );
 
   return { action: "created", flow_id: id, automation_key: spec.key, media_ids };
+}
+
+/**
+ * Attach under an immediate write transaction. The current row is read only
+ * after the transaction owns the SQLite writer lock, so keyed creates converge
+ * and JSON target-list updates cannot lose a concurrent media_id.
+ */
+export function applyAutomationPlan(
+  db: Database.Database,
+  mediaId: string,
+  plan: AutomationPlan
+): AttachResult {
+  const mutate = db.transaction(() => {
+    const { spec } = plan;
+    if (!spec.key) return createFlow(db, spec, mediaId);
+
+    const row = db
+      .prepare("SELECT * FROM automation_flows WHERE automation_key = ? LIMIT 1")
+      .get(spec.key) as AutomationFlowRow | undefined;
+    if (row) return appendToFlow(db, row, mediaId);
+
+    if (plan.mode === "append") {
+      throw new Error(`automation flow for key "${spec.key}" no longer exists`);
+    }
+    return createFlow(db, spec, mediaId);
+  });
+
+  try {
+    return mutate.immediate();
+  } catch (err) {
+    // The unique index is the final cross-process backstop. If an older process
+    // inserted the key without using this transaction, re-read under our own
+    // writer lock and append rather than leaving an already-live post unattached.
+    if (!(err instanceof Error) || !/UNIQUE constraint failed/.test(err.message) || !plan.spec.key) {
+      throw err;
+    }
+    const appendAfterConflict = db.transaction(() => {
+      const row = db
+        .prepare("SELECT * FROM automation_flows WHERE automation_key = ? LIMIT 1")
+        .get(plan.spec.key!) as AutomationFlowRow | undefined;
+      if (!row) throw err;
+      return appendToFlow(db, row, mediaId);
+    });
+    return appendAfterConflict.immediate();
+  }
 }

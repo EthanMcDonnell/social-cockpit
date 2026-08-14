@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createJob, listJobs, type ListJobsFilter } from "@/lib/schedule/store";
+import { createJobWithinScheduledCap, listJobs, type ListJobsFilter } from "@/lib/schedule/store";
 import { parseScheduleBody, isFailure, type ScheduleRequestBody } from "@/lib/schedule/input";
 import { hydrateJob, hydrateJobs } from "@/lib/schedule/view";
 import { logScheduleEvent } from "@/lib/schedule/store";
 import { getTimeZone, getMaxPostsPerDay } from "@/lib/schedule/settings";
 import { checkDailyCap } from "@/lib/schedule/capacity";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
+import { addDays } from "@/lib/schedule/tz";
 import type { ScheduleStatus, SchedulePlatform } from "@/lib/schedule/types";
 
 export const dynamic = "force-dynamic";
@@ -57,9 +58,13 @@ export async function GET(request: NextRequest) {
 
   const limit = num(q.get("limit"));
   const effectiveLimit = limit ? Math.min(limit, MAX_LIMIT) : undefined;
-  if (effectiveLimit) filter.limit = effectiveLimit;
+  // Read one extra row so `truncated` means rows were actually omitted rather
+  // than merely that the returned count happens to equal the requested limit.
+  if (effectiveLimit) filter.limit = effectiveLimit + 1;
 
-  const jobs = hydrateJobs(listJobs(filter));
+  const listed = hydrateJobs(listJobs(filter));
+  const truncated = effectiveLimit !== undefined && listed.length > effectiveLimit;
+  const jobs = truncated ? listed.slice(0, effectiveLimit) : listed;
 
   return NextResponse.json({
     timezone: getTimeZone(),
@@ -73,7 +78,7 @@ export async function GET(request: NextRequest) {
      * stops firing, and a *short* calendar is the dangerous kind: slots look
      * free because the jobs holding them weren't returned.
      */
-    truncated: effectiveLimit !== undefined && jobs.length >= effectiveLimit,
+    truncated,
     jobs,
   });
 }
@@ -106,6 +111,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json(
+      { error: "bad_request", message: "Body must be a JSON object." },
+      { status: 400 }
+    );
+  }
+
   const parsed = await parseScheduleBody(body);
   if (isFailure(parsed)) {
     return NextResponse.json(
@@ -122,7 +134,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "day_full", message: cap.message }, { status: 409 });
   }
 
-  const job = createJob(parsed.job);
+  const job = createJobWithinScheduledCap(
+    parsed.job,
+    cap.usage.dayStart,
+    addDays(cap.usage.dayStart, 1, getTimeZone()),
+    cap.max - cap.usage.external
+  );
+  if (!job) {
+    return NextResponse.json(
+      { error: "day_full", message: "That day filled while this request was being scheduled. Pick another slot." },
+      { status: 409 }
+    );
+  }
   logScheduleEvent("info", "scheduled", `Scheduled for ${new Date(job.scheduled_at).toISOString()}`, {
     jobId: job.id,
     meta: { platform: job.platform, media: job.media.length, automation: !!job.automation },

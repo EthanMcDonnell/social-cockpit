@@ -9,7 +9,8 @@
     "build:app": "NODE_ENV=production next build",
     "postinstall": "npm --prefix mcp install",
     "start": "NODE_ENV=production next start -p 3000",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:integrity": "node --test test/*.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",

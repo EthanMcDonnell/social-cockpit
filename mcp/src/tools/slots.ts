@@ -31,8 +31,6 @@ import {
 import { policy, type ScheduleSettings } from "../types.js";
 
 const DAY_MS = 86_400_000;
-/** Nothing may stack this close to an existing post. Not a cadence rule. */
-const MIN_SEPARATION_MS = 3_600_000;
 /** Give up rather than search forever on a pathologically full calendar. */
 const SEARCH_HORIZON_DAYS = 400;
 
@@ -104,16 +102,15 @@ export function registerSlotTools(server: McpServer): void {
       }
       const start = Math.max(floor, now);
 
-      // Fetch enough history to count today's posts and respect the collision
-      // buffer immediately before the requested window.
+      // Commitments establish daily usage. Posting policy intentionally imposes
+      // no global collision/cadence buffer beyond max_posts_per_day.
       const commitments = await fetchCommitments(
-        Math.min(startOfDay(start, tz), start - MIN_SEPARATION_MS),
+        startOfDay(start, tz),
         start + SEARCH_HORIZON_DAYS * DAY_MS
       );
 
-      // Running state as slots are chosen, so they count toward daily capacity
-      // and do not collide with one another either.
-      const everythingAt = commitments.map((c) => c.at);
+      // Running state as slots are chosen, so they count toward daily capacity.
+
       const perDay = new Map<string, number>();
       for (const c of commitments) {
         const key = dayKey(c.at, tz);
@@ -142,15 +139,12 @@ export function registerSlotTools(server: McpServer): void {
             break; // No time of day helps once the day itself is full.
           }
 
-          if (!everythingAt.every((t) => Math.abs(candidate - t) >= MIN_SEPARATION_MS)) continue;
-
           const w = utcToWall(candidate, tz);
           slots.push({
             scheduled_at: `${w.year}-${pad(w.month)}-${pad(w.day)}T${pad(w.hour)}:${pad(w.minute)}`,
             local: formatWhen(candidate, tz),
             epoch_ms: candidate,
           });
-          everythingAt.push(candidate);
           perDay.set(key, (perDay.get(key) ?? 0) + 1);
         }
 

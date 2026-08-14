@@ -6,6 +6,8 @@ import fs from "fs";
 const DB_PATH = config.db.main;
 
 let _db: Database.Database | null = null;
+let _schedulerIntegrityReady: boolean | null = null;
+const SCHEDULER_INTEGRITY_MIGRATION_ID = "2026-08-scheduler-automation-integrity-v1";
 
 /**
  * Narrow this database to its owner.
@@ -150,6 +152,7 @@ export function getDb(): Database.Database {
       max_attempts    INTEGER NOT NULL DEFAULT 3,
       next_attempt_at INTEGER,
       lease_until     INTEGER,
+      lease_token     TEXT,
       grace_minutes   INTEGER NOT NULL DEFAULT 60,
       container_id    TEXT,
       result          TEXT,
@@ -196,6 +199,29 @@ export function getDb(): Database.Database {
     try { _db.exec(sql); } catch { /* already exists */ }
   }
   return _db;
+}
+
+/**
+ * Scheduler workers require the explicit integrity migration. Keep this check
+ * read-only: normal startup must never alter a live production database.
+ */
+export function hasSchedulerLeaseSchema(): boolean {
+  // A migration happens only during a maintenance-window restart. Cache the
+  // verified result so the 30-second worker cadence never repeatedly introspects
+  // immutable schema state.
+  if (_schedulerIntegrityReady !== null) return _schedulerIntegrityReady;
+  const db = getDb();
+  const columns = db.prepare("PRAGMA table_info(scheduled_posts)").all() as { name: string }[];
+  const ledgerExists = Boolean(
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'scheduler_integrity_migrations'").get()
+  );
+  const migrated = ledgerExists && Boolean(
+    db
+      .prepare("SELECT 1 FROM scheduler_integrity_migrations WHERE id = ?")
+      .get(SCHEDULER_INTEGRITY_MIGRATION_ID)
+  );
+  _schedulerIntegrityReady = columns.some((column) => column.name === "lease_token") && migrated;
+  return _schedulerIntegrityReady;
 }
 
 // ─── Cursors ─────────────────────────────────────────────────────────────────
