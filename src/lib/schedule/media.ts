@@ -19,6 +19,7 @@
  */
 
 import { randomUUID } from "crypto";
+import { config } from "@/lib/config";
 import fs from "fs";
 import { mkdir, stat, unlink } from "fs/promises";
 import path from "path";
@@ -30,8 +31,7 @@ import { referencedStagedIds } from "./store";
 import type { StagedMedia, StagedMediaStatus } from "./types";
 
 /** Where browser uploads land. Sits beside the SQLite files, so one backup covers both. */
-export const STAGE_DIR =
-  process.env.SCHEDULE_MEDIA_DIR ?? path.join(process.cwd(), "data", "staged");
+export const STAGE_DIR = config.schedule.mediaDir;
 
 /** Owned files with no job referencing them are swept after this long. */
 const ORPHAN_TTL_HOURS = 24 * 7;
@@ -47,8 +47,7 @@ export { PathError };
  * cap in src/lib/storage/usage.ts, for the same reason: nothing else bounds it.
  */
 function capBytes(): number {
-  const raw = Number(process.env.SCHEDULE_MEDIA_CAP_BYTES);
-  return Number.isFinite(raw) && raw > 0 ? raw : 20 * 1024 * 1024 * 1024;
+  return config.schedule.mediaCapBytes;
 }
 
 interface StagedRow {

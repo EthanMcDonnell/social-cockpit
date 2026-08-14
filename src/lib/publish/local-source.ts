@@ -12,6 +12,7 @@
  */
 
 import { readFile, stat } from "fs/promises";
+import { config } from "@/lib/config";
 import path from "path";
 import { generateKey, putObject } from "@/lib/storage/r2";
 import { reserve, release } from "@/lib/storage/usage";
@@ -47,7 +48,7 @@ export class CapError extends Error {}
  */
 export function resolveLocalPath(input: string): string {
   const abs = path.resolve(input);
-  const root = process.env.LOCAL_MEDIA_ROOT;
+  const root = config.localMediaRoot;
   if (root) {
     const absRoot = path.resolve(root);
     if (abs !== absRoot && !abs.startsWith(absRoot + path.sep)) {

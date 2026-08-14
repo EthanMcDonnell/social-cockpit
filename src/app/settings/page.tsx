@@ -9,17 +9,17 @@ export const metadata = {
   title: "Settings",
 };
 
-const ENV_VARS = [
-  "INSTAGRAM_ACCOUNT_ID",
-  "INSTAGRAM_ACCESS_TOKEN",
-  "INSTAGRAM_APP_SECRET",
-  "TOKEN_EXPIRES_AT",
-  "YOUTUBE_API_KEY",
-  "YOUTUBE_CHANNEL_ID",
-  "YOUTUBE_OAUTH_CLIENT_ID",
-  "YOUTUBE_OAUTH_CLIENT_SECRET",
-  "YOUTUBE_OAUTH_REFRESH_TOKEN",
-];
+/**
+ * The two variables without which the server will not boot.
+ *
+ * This list used to name nine, describe them all as mandatory, and point at
+ * `.env.local` — a file this app does not read. It also went stale the moment
+ * the scheduler landed, because nothing tied it to what the code actually
+ * reads. Rather than restate all 38 here and drift again, it names only the
+ * hard requirements and sends you to the file that is generated from the
+ * config module.
+ */
+const REQUIRED_ENV_VARS = ["INSTAGRAM_ACCOUNT_ID", "INSTAGRAM_ACCESS_TOKEN"];
 
 function SectionLabel({ tag, children }: { tag: string; children: React.ReactNode }) {
   return (
@@ -60,16 +60,23 @@ export default function SettingsPage() {
           <SectionLabel tag="S5">Environment Variables</SectionLabel>
           <div className="panel">
             <p className="text-xs text-[var(--text-muted)] leading-relaxed mb-3">
-              The following variables must be set in{" "}
-              <code className="font-mono text-[var(--amber)]">.env.local</code>:
+              Configuration lives in{" "}
+              <code className="font-mono text-[var(--amber)]">.env</code>. These two are
+              required — the server refuses to start without them:
             </p>
             <div className="space-y-1.5">
-              {ENV_VARS.map((key) => (
+              {REQUIRED_ENV_VARS.map((key) => (
                 <p key={key} className="font-mono text-xs text-[var(--text-primary)]">
                   <span className="text-[var(--amber-dim)]">›</span> {key}
                 </p>
               ))}
             </div>
+            <p className="text-xs text-[var(--text-muted)] leading-relaxed mt-3">
+              Everything else is optional and documented in{" "}
+              <code className="font-mono text-[var(--amber)]">.env.example</code>. Posting
+              cadence is not an environment variable — it is stored in the database and
+              edited in the app.
+            </p>
           </div>
         </section>
       </div>

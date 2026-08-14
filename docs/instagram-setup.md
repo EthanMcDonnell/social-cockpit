@@ -18,7 +18,7 @@ Social Cockpit uses the **[Instagram API with Instagram Login](https://developer
    - **Instagram account ID**: your app-scoped Instagram user ID.
    - **App Secret**: from **App settings → Basic** (used for automatic long-lived-token refresh).
    - **A short-lived access token**: generate one from the [Graph API Explorer](https://developers.facebook.com/tools/explorer/), then exchange it inside the app (**Settings → Exchange Short-Lived Token**) for a 60-day long-lived token.
-7. **Fill in `.env.local`** with the account ID, app secret, and long-lived token (see the [Configuration](../README.md#️-configuration) section of the README).
+7. **Fill in `.env`** with the account ID, app secret, and long-lived token (see the [Configuration](../README.md#️-configuration) section of the README).
 
 > [!NOTE]
 > While your app is in **Development mode** it works only for accounts with a role on the app, perfect for running your own cockpit. Going through Meta **App Review** is only necessary if you want to operate on accounts you don't control.

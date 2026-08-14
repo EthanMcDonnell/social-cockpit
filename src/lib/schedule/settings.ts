@@ -15,6 +15,7 @@
  */
 
 import { getDb } from "@/lib/db";
+import { config } from "@/lib/config";
 import { isValidTimeZone, systemTimeZone } from "./tz";
 
 const TZ_KEY = "calendar.timezone";
@@ -65,7 +66,7 @@ export function getTimeZone(): string {
   const stored = getSetting(TZ_KEY);
   if (stored && isValidTimeZone(stored)) return stored;
 
-  const fromEnv = process.env.SCHEDULE_TIMEZONE;
+  const fromEnv = config.schedule.timezone;
   if (fromEnv && isValidTimeZone(fromEnv)) return fromEnv;
 
   return systemTimeZone();

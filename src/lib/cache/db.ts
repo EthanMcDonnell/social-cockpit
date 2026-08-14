@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { config } from "@/lib/config";
 import path from "path";
 import fs from "fs";
 import type {
@@ -11,8 +12,7 @@ import type {
 // A local materialized cache of Meta API data, in its OWN sqlite file — fully
 // decoupled from automations.db and transcripts.db. Reads are served from here
 // (fast, local) and a background worker keeps it fresh; see ./sync.ts.
-const CACHE_DB_PATH =
-  process.env.CACHE_DB_PATH ?? path.join(process.cwd(), "data", "cache.db");
+const CACHE_DB_PATH = config.db.cache;
 
 let _db: Database.Database | null = null;
 

@@ -9,6 +9,7 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "crypto";
+import { config } from "@/lib/config";
 
 const PUT_TTL_SECONDS = 5 * 60;
 const GET_TTL_SECONDS = 2 * 60 * 60;
@@ -18,9 +19,10 @@ let _client: S3Client | null = null;
 function client(): S3Client {
   if (_client) return _client;
 
-  const accountId = process.env.R2_ACCOUNT_ID;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  // Boot validation already rejects a *partly* configured R2. Reaching here with
+  // nothing set means the feature is simply off, which is a legitimate install
+  // and so stays a use-time error rather than a startup one.
+  const { accountId, accessKeyId, secretAccessKey } = config.r2;
   if (!accountId || !accessKeyId || !secretAccessKey) {
     throw new Error(
       "R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY must be set. Add them to .env."
@@ -36,7 +38,7 @@ function client(): S3Client {
 }
 
 function bucket(): string {
-  const name = process.env.R2_BUCKET;
+  const name = config.r2.bucket;
   if (!name) throw new Error("R2_BUCKET must be set. Add it to .env.");
   return name;
 }

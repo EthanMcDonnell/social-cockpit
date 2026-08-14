@@ -33,7 +33,7 @@ Infra is defined as Terraform in `infra/`. One-time setup:
    terraform output -raw access_key_id
    terraform output -raw secret_access_key
    ```
-5. **Fill in `.env.local`** with those two values plus `R2_ACCOUNT_ID`/`R2_BUCKET` (see the [Configuration](../README.md#️-configuration) section of the README).
+5. **Fill in `.env`** with those two values plus `R2_ACCOUNT_ID`/`R2_BUCKET` (see the [Configuration](../README.md#️-configuration) section of the README).
 6. **Revoke the bootstrap token** in the dashboard; it's done its job.
 7. **Set a Budget Alert**: Dashboard → Billing → Budget Alerts, a ~$0.01 tripwire. No Terraform resource covers this; it's a one-time manual click.
 

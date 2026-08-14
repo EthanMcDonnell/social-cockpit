@@ -1,4 +1,5 @@
 import { instagramFetch } from "../client";
+import { config } from "@/lib/config";
 import type { InstagramProfile } from "../types";
 
 const DEFAULT_FIELDS = [
@@ -16,10 +17,7 @@ const DEFAULT_FIELDS = [
 export async function getProfile(
   fields: string[] = DEFAULT_FIELDS
 ): Promise<InstagramProfile> {
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!accountId) {
-    throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
-  }
+  const accountId = config.instagram.accountId;
 
   return instagramFetch<InstagramProfile>(`/${accountId}`, {
     params: { fields: fields.join(",") },

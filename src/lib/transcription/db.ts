@@ -1,13 +1,12 @@
 import Database from "better-sqlite3";
+import { config } from "@/lib/config";
 import path from "path";
 import fs from "fs";
 
 // Transcripts live in their OWN sqlite file, fully decoupled from the
 // production automations.db. This keeps the transcription feature from ever
 // touching the live automations dataset.
-const TRANSCRIPTS_DB_PATH =
-  process.env.TRANSCRIPTS_DB_PATH ??
-  path.join(process.cwd(), "data", "transcripts.db");
+const TRANSCRIPTS_DB_PATH = config.db.transcripts;
 
 let _db: Database.Database | null = null;
 

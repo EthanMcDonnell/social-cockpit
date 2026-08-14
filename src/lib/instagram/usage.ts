@@ -12,6 +12,8 @@
  * are fine via `import type`).
  */
 
+import { config, liveEnv } from "@/lib/config";
+
 const BASE_URL = "https://graph.instagram.com/v25.0";
 
 /** One bucket of the per-business-account usage header. Values are percentages. */
@@ -84,10 +86,10 @@ function parseBusinessUsage(
 }
 
 export async function fetchUsageSnapshot(): Promise<UsageSnapshot> {
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!token) throw new Error("INSTAGRAM_ACCESS_TOKEN is not set. Add it to .env.local.");
-  if (!accountId) throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
+  // Read live: the token manager rotates this value while the process runs.
+  const token = liveEnv.instagramAccessToken;
+  const accountId = config.instagram.accountId;
+  if (!token) throw new Error("INSTAGRAM_ACCESS_TOKEN is not set. Add it to .env.");
 
   const res = await fetch(`${BASE_URL}/${accountId}?fields=id`, {
     headers: { Authorization: `Bearer ${token}` },

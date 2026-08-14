@@ -1,12 +1,13 @@
 import { getTokenStatus, refreshAccessToken } from "@/lib/token/manager";
+import { config } from "@/lib/config";
 
 // Proactively refresh the Instagram long-lived token before it expires.
 // Instagram's ig_refresh_token only works on a still-valid token (>24h old) and
 // extends it ~60 days, so we refresh once it drops within REFRESH_THRESHOLD_DAYS
 // of expiry rather than waiting for it to lapse. Mirrors the cache/automation
 // worker registration pattern.
-const INTERVAL_MS = Number(process.env.TOKEN_REFRESH_INTERVAL_MS) || 12 * 60 * 60 * 1000;
-const REFRESH_THRESHOLD_DAYS = Number(process.env.TOKEN_REFRESH_THRESHOLD_DAYS) || 10;
+const INTERVAL_MS = config.token.refreshIntervalMs;
+const REFRESH_THRESHOLD_DAYS = config.token.refreshThresholdDays;
 
 const tick = async () => {
   try {

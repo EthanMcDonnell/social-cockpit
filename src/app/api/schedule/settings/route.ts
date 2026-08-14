@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { config } from "@/lib/config";
 import {
   getTimeZone,
   setTimeZone,
@@ -19,8 +20,8 @@ function payload() {
   return {
     timezone,
     abbreviation: zoneAbbreviation(Date.now(), timezone),
-    scheduler_enabled: process.env.SCHEDULER_ENABLED !== "false",
-    dry_run: process.env.SCHEDULE_DRY_RUN === "true",
+    scheduler_enabled: config.schedule.enabled,
+    dry_run: config.schedule.dryRun,
     // Posting policy. Unlike the two flags above, these are stored and editable
     // without restarting the server.
     suggested_times: getSuggestedTimes(),

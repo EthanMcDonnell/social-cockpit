@@ -1,4 +1,5 @@
 import { instagramFetch } from "../client";
+import { config } from "@/lib/config";
 import type { CommentListResponse, InstagramComment } from "../types";
 
 const DEFAULT_COMMENT_FIELDS = [
@@ -79,10 +80,7 @@ export async function sendPrivateReply(
   commentId: string,
   text: string
 ): Promise<{ recipient_id: string; message_id: string }> {
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!accountId) {
-    throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
-  }
+  const accountId = config.instagram.accountId;
 
   return instagramFetch<{ recipient_id: string; message_id: string }>(
     `/${accountId}/messages`,
@@ -97,10 +95,7 @@ export async function sendPrivateReply(
 }
 
 function requireAccountId(): string {
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!accountId) {
-    throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
-  }
+  const accountId = config.instagram.accountId;
   return accountId;
 }
 

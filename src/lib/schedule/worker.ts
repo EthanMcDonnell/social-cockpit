@@ -20,6 +20,7 @@
  */
 
 import { existsSync } from "fs";
+import { config } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { planAutomation, type AutomationPlan } from "@/lib/automation/attach";
 import { executePublish, attachAutomation } from "@/lib/publish/execute";
@@ -59,7 +60,7 @@ import type {
   YoutubeJobPayload,
 } from "./types";
 
-export const INTERVAL_MS = Number(process.env.SCHEDULE_INTERVAL_MS) || 30_000;
+export const INTERVAL_MS = config.schedule.intervalMs;
 
 /** How long to wait before re-polling a container that's still processing. */
 const FINALIZE_POLL_MS = 30_000;
@@ -73,7 +74,7 @@ let lastHousekeeping = 0;
  * that even a mispointed DB_PATH can't publish to a real account.
  */
 export function schedulerEnabled(): boolean {
-  return process.env.SCHEDULER_ENABLED !== "false";
+  return config.schedule.enabled;
 }
 
 /**
@@ -84,7 +85,7 @@ export function schedulerEnabled(): boolean {
  * credentials at all).
  */
 export function isDryRun(): boolean {
-  return process.env.SCHEDULE_DRY_RUN === "true";
+  return config.schedule.dryRun;
 }
 
 // ─── Cycle ───────────────────────────────────────────────────────────────────
@@ -364,7 +365,7 @@ async function runYoutubeJob(job: ScheduledPost): Promise<void> {
 }
 
 export function youtubeAuditPassed(): boolean {
-  return process.env.YOUTUBE_AUDIT_PASSED === "true";
+  return config.youtube.auditPassed;
 }
 
 // ─── Outcomes ────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { youtubeFetch } from "../client";
+import { config } from "@/lib/config";
 import { getChannelStats } from "./channel";
 import type {
   YoutubeVideo,
@@ -27,7 +28,7 @@ function parseIsoDuration(iso: string | undefined): number {
 export async function getRecentVideos(limit = 25): Promise<YoutubeVideo[]> {
   const capped = Math.min(Math.max(limit, 1), 50);
 
-  const uploads = process.env.YOUTUBE_UPLOADS_PLAYLIST_ID
+  const uploads = config.youtube.uploadsPlaylistId
     ?? (await getChannelStats()).uploadsPlaylistId;
   if (!uploads) {
     throw new Error("Could not resolve the channel's uploads playlist id.");

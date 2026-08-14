@@ -10,6 +10,7 @@ import {
   type InstagramApiError,
 } from "./types";
 import { parseRateLimit } from "./rate-limit";
+import { liveEnv } from "@/lib/config";
 
 const BASE_URL = "https://graph.instagram.com/v25.0";
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -50,12 +51,15 @@ function buildUrl(path: string, params?: FetchOptions["params"]): string {
   return url.toString();
 }
 
+/**
+ * Read live rather than from the config snapshot: `lib/token/manager.ts` swaps
+ * this value on `process.env` when it refreshes, and a cached copy would keep
+ * signing calls with the dead token.
+ */
 function getAccessToken(): string {
-  const token = process.env.INSTAGRAM_ACCESS_TOKEN;
+  const token = liveEnv.instagramAccessToken;
   if (!token) {
-    throw new Error(
-      "INSTAGRAM_ACCESS_TOKEN is not set. Add it to .env.local."
-    );
+    throw new Error("INSTAGRAM_ACCESS_TOKEN is not set. Add it to .env.");
   }
   return token;
 }

@@ -1,11 +1,13 @@
 /**
  * Token manager for Instagram long-lived access tokens.
- * Server-side only — reads/writes .env.local.
+ * Server-side only. Reads and writes .env (NOT .env.local — the comments here
+ * said otherwise for a long time while ENV_FILE below always resolved .env).
  */
 
 import fs from "fs";
 import path from "path";
 import type { TokenState, RefreshResult, ExchangeResult } from "./types";
+import { config, liveEnv } from "@/lib/config";
 
 const BASE_URL = "https://graph.instagram.com";
 const WARNING_THRESHOLD_DAYS = 7;
@@ -14,7 +16,7 @@ const ENV_FILE = path.resolve(process.cwd(), ".env");
 // ─── Status ───────────────────────────────────────────────────────────────────
 
 export function getTokenStatus(): TokenState {
-  const expiresAtStr = process.env.TOKEN_EXPIRES_AT;
+  const expiresAtStr = liveEnv.instagramTokenExpiresAt;
 
   if (!expiresAtStr) {
     return { status: "unknown", daysRemaining: null, expiresAt: null };
@@ -44,10 +46,10 @@ export function getTokenStatus(): TokenState {
 
 /**
  * Refresh a long-lived Instagram access token.
- * Writes the new token and expiry back to .env.local.
+ * Writes the new token and expiry back to .env.
  */
 export async function refreshAccessToken(): Promise<RefreshResult> {
-  const currentToken = process.env.INSTAGRAM_ACCESS_TOKEN;
+  const currentToken = liveEnv.instagramAccessToken;
   if (!currentToken) {
     return { success: false, error: "INSTAGRAM_ACCESS_TOKEN is not set" };
   }
@@ -84,7 +86,7 @@ export async function refreshAccessToken(): Promise<RefreshResult> {
   const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
   const expiresAtStr = expiresAt.toISOString().split("T")[0]; // YYYY-MM-DD
 
-  // Write back to .env.local
+  // Write back to .env
   writeEnvVar(ENV_FILE, "INSTAGRAM_ACCESS_TOKEN", newToken);
   writeEnvVar(ENV_FILE, "TOKEN_EXPIRES_AT", expiresAtStr);
 
@@ -104,7 +106,7 @@ export async function refreshAccessToken(): Promise<RefreshResult> {
 export async function exchangeShortLivedToken(
   shortLivedToken: string
 ): Promise<ExchangeResult> {
-  const appSecret = process.env.INSTAGRAM_APP_SECRET;
+  const appSecret = config.instagram.appSecret;
   if (!appSecret) {
     return { success: false, error: "INSTAGRAM_APP_SECRET is not set" };
   }
@@ -154,7 +156,7 @@ export async function exchangeShortLivedToken(
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Update or append an environment variable in the .env.local file.
+ * Update or append an environment variable in the .env file.
  * Uses regex replace — same pattern as the Python client.
  */
 function writeEnvVar(filePath: string, key: string, value: string): void {

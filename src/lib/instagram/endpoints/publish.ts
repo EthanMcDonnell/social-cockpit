@@ -11,6 +11,7 @@
  */
 
 import { instagramFetch } from "../client";
+import { config } from "@/lib/config";
 import { getMedia } from "./media";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -144,10 +145,7 @@ export class ContainerFailedError extends Error {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function requireAccountId(): string {
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!accountId) {
-    throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
-  }
+  const accountId = config.instagram.accountId;
   return accountId;
 }
 

@@ -11,6 +11,7 @@ import {
   YoutubeQuotaError,
   type YoutubeApiError,
 } from "./types";
+import { config } from "@/lib/config";
 
 const BASE_URL = "https://www.googleapis.com/youtube/v3";
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -21,7 +22,7 @@ export interface FetchOptions {
 }
 
 function getApiKey(): string {
-  const key = process.env.YOUTUBE_API_KEY;
+  const key = config.youtube.apiKey;
   if (!key) {
     throw new Error("YOUTUBE_API_KEY is not set. Add it to .env.");
   }

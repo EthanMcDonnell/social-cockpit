@@ -1,4 +1,5 @@
 import { youtubeFetch } from "../client";
+import { config } from "@/lib/config";
 import type {
   YoutubeChannelStats,
   YoutubeChannelItem,
@@ -11,7 +12,7 @@ import type {
  * Costs 1 quota unit. Analog of instagram/endpoints/user.ts `getProfile`.
  */
 export async function getChannelStats(): Promise<YoutubeChannelStats> {
-  const channelId = process.env.YOUTUBE_CHANNEL_ID;
+  const channelId = config.youtube.channelId;
   if (!channelId) {
     throw new Error("YOUTUBE_CHANNEL_ID is not set. Add it to .env.");
   }

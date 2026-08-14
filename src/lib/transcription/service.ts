@@ -1,4 +1,5 @@
 import { execFile } from "child_process";
+import { config } from "@/lib/config";
 import { promisify } from "util";
 import fs from "fs";
 import os from "os";
@@ -101,15 +102,15 @@ export function getTranscriptSummaries(
 // treated as not configured and simply does not run — we never fall back to a
 // system python that wouldn't have the deps.
 function resolvePython(): string | null {
-  return process.env.TRANSCRIPTION_PYTHON ?? null;
+  return config.transcription.python ?? null;
 }
 
 export function isTranscriptionConfigured(): boolean {
-  return !!process.env.TRANSCRIPTION_PYTHON;
+  return !!config.transcription.python;
 }
 
 function resolveModel(): string {
-  return process.env.TRANSCRIPTION_MODEL ?? "small";
+  return config.transcription.model;
 }
 
 interface ScriptOutput {

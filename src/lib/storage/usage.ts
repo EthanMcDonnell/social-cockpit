@@ -17,6 +17,7 @@
  */
 
 import { getDb } from "@/lib/db";
+import { config } from "@/lib/config";
 
 // Upper bound on how long a reservation can legitimately be in flight before its
 // object has certainly left the bucket. Keep this >= the R2 publish/ lifecycle
@@ -24,9 +25,7 @@ import { getDb } from "@/lib/db";
 const RESERVATION_TTL_HOURS = 24;
 
 function capBytes(): number {
-  const raw = process.env.R2_CAP_BYTES;
-  const parsed = raw ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 8 * 1024 * 1024 * 1024;
+  return config.r2.capBytes;
 }
 
 /**

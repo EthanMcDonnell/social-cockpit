@@ -1,8 +1,9 @@
 import { runCacheSync } from "@/lib/cache/sync";
+import { config } from "@/lib/config";
 
 // Re-sync the Meta API cache on boot and every CACHE_SYNC_INTERVAL_MS (default
 // 30 min). Mirrors the automation/transcription worker registration pattern.
-const INTERVAL_MS = Number(process.env.CACHE_SYNC_INTERVAL_MS) || 30 * 60 * 1000;
+const INTERVAL_MS = config.cache.syncIntervalMs;
 
 const tick = async () => {
   try {

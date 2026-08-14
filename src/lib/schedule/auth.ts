@@ -12,10 +12,11 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { config } from "@/lib/config";
 
 /** Returns a 401 response when the request should be rejected, else null. */
 export function requireScheduleAuth(request: NextRequest): NextResponse | null {
-  const expected = process.env.SCHEDULE_API_TOKEN;
+  const expected = config.schedule.apiToken;
   if (!expected) return null;
 
   const header = request.headers.get("authorization") ?? "";

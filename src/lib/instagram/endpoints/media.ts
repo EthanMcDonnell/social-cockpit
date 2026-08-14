@@ -1,4 +1,5 @@
 import { instagramFetch } from "../client";
+import { config } from "@/lib/config";
 import type { InstagramMedia, MediaListResponse } from "../types";
 
 const DEFAULT_FIELDS = [
@@ -19,10 +20,7 @@ export async function listMedia(
   limit: number = 25,
   fields: string[] = DEFAULT_FIELDS
 ): Promise<MediaListResponse> {
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!accountId) {
-    throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
-  }
+  const accountId = config.instagram.accountId;
 
   return instagramFetch<MediaListResponse>(`/${accountId}/media`, {
     params: { fields: fields.join(","), limit },
@@ -39,10 +37,7 @@ export async function listMediaPage(
   after?: string,
   fields: string[] = DEFAULT_FIELDS
 ): Promise<MediaListResponse> {
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!accountId) {
-    throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
-  }
+  const accountId = config.instagram.accountId;
 
   return instagramFetch<MediaListResponse>(`/${accountId}/media`, {
     params: { fields: fields.join(","), limit, after },
@@ -52,10 +47,7 @@ export async function listMediaPage(
 export async function getAllMedia(
   fields: string[] = DEFAULT_FIELDS
 ): Promise<InstagramMedia[]> {
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!accountId) {
-    throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
-  }
+  const accountId = config.instagram.accountId;
 
   const results: InstagramMedia[] = [];
   let url: string = `/${accountId}/media`;

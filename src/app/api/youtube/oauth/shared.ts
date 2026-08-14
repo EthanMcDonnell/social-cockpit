@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { config } from "@/lib/config";
 
 /** Cookie holding the CSRF state between /start and /callback. */
 export const OAUTH_STATE_COOKIE = "yt_oauth_state";
@@ -11,7 +12,7 @@ export const OAUTH_STATE_COOKIE = "yt_oauth_state";
  * (e.g. behind a proxy).
  */
 export function oauthRedirectUri(request: NextRequest): string {
-  const override = process.env.YOUTUBE_OAUTH_REDIRECT_URI;
+  const override = config.youtube.oauth.redirectUri;
   if (override) return override;
   return `${request.nextUrl.origin}/api/youtube/oauth/callback`;
 }

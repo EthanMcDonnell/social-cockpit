@@ -10,6 +10,7 @@ import {
   type CommentToDmConfig,
   type CommentToFollowDmConfig,
 } from "@/lib/db";
+import { config } from "@/lib/config";
 
 export const INTERVAL_MS = 60_000;
 import { callReplyFunction } from "@/lib/comment-reply-functions";
@@ -175,8 +176,7 @@ export async function processFlows(
 
   if (flows.length === 0) return { deferredOldest: null };
 
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!accountId) throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
+  const accountId = config.instagram.accountId;
 
   for (const flow of flows) {
     if (!flow.activated_at) {

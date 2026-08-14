@@ -1,4 +1,5 @@
 import { instagramFetch } from "../client";
+import { config } from "@/lib/config";
 import type { PaginatedResponse } from "../types";
 
 /**
@@ -58,10 +59,7 @@ const MESSAGES_PER_CONVERSATION = 5;
 export async function listInboundMessagesSince(
   sinceIso?: string
 ): Promise<InboundMessage[]> {
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!accountId) {
-    throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
-  }
+  const accountId = config.instagram.accountId;
 
   const out: InboundMessage[] = [];
   let url: string | undefined;

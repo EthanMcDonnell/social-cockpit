@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { config } from "@/lib/config";
 import { isConnected, getAccessToken } from "@/lib/youtube/oauth";
 import { getChannelStats } from "@/lib/youtube/endpoints/channel";
 
@@ -22,9 +23,7 @@ export interface YoutubeConnectionStatus {
  * env vars" apart from "click connect" apart from "reconnect, token is stale".
  */
 export async function GET() {
-  const configured = !!(
-    process.env.YOUTUBE_OAUTH_CLIENT_ID && process.env.YOUTUBE_OAUTH_CLIENT_SECRET
-  );
+  const configured = config.youtube.oauth.configured;
   const connected = isConnected();
 
   const status: YoutubeConnectionStatus = { configured, connected, healthy: false };

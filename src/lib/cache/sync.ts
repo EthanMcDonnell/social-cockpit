@@ -1,4 +1,5 @@
 import { getAllMedia } from "@/lib/instagram/endpoints/media";
+import { config } from "@/lib/config";
 import { getMediaInsightsFlat } from "@/lib/instagram/endpoints/insights";
 import {
   RateLimitError,
@@ -10,7 +11,7 @@ import * as store from "./store";
 
 // How long cached data is considered fresh before a read triggers a background
 // refresh (stale-while-revalidate). Defaults to 30 min.
-export const CACHE_TTL_MS = Number(process.env.CACHE_TTL_MS) || 30 * 60 * 1000;
+export const CACHE_TTL_MS = config.cache.ttlMs;
 
 // Metrics valid for any media type; reels/videos additionally get watch-time
 // metrics. Graph rejects metrics that don't apply to a media type, so we tailor

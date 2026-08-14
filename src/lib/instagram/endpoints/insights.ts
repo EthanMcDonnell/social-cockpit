@@ -1,4 +1,5 @@
 import { instagramFetch } from "../client";
+import { config } from "@/lib/config";
 import type {
   InsightsResponse,
   InsightMetric,
@@ -66,10 +67,7 @@ export async function getUserInsights(
   since?: string,
   until?: string
 ): Promise<InsightsResponse> {
-  const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-  if (!accountId) {
-    throw new Error("INSTAGRAM_ACCOUNT_ID is not set. Add it to .env.local.");
-  }
+  const accountId = config.instagram.accountId;
 
   const params: Record<string, string | number | undefined> = {
     metric: metrics.join(","),

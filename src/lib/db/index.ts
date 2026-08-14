@@ -1,9 +1,9 @@
 import Database from "better-sqlite3";
+import { config } from "@/lib/config";
 import path from "path";
 import fs from "fs";
 
-const DB_PATH =
-  process.env.DB_PATH ?? path.join(process.cwd(), "data", "automations.db");
+const DB_PATH = config.db.main;
 
 let _db: Database.Database | null = null;
 

@@ -88,8 +88,8 @@ cd social-cockpit
 npm install
 
 # 2. Configure your environment (see below)
-cp .env.example .env.local
-#   ...then edit .env.local with your credentials
+cp .env.example .env
+#   ...then edit .env with your credentials
 
 # 3. Run
 npm run dev
@@ -108,12 +108,25 @@ npm start   # serves on port 3000
 
 ## ⚙️ Configuration
 
-Configuration lives in `.env.local` (git-ignored).
+Configuration lives in `.env` (git-ignored). Every variable is declared in
+[`src/lib/config.ts`](src/lib/config.ts), which validates them at startup: a missing
+required variable, or any value that can't be parsed, stops the server at boot with the
+full list rather than failing later inside a request. `.env.example` documents all of
+them.
+
+Two things are deliberately *not* environment variables:
+
+- **Posting cadence** — preferred times, posts per day, spacing between hooks of one
+  video — lives in the database and is edited while the server runs, because changing it
+  shouldn't require a restart. See [docs/scheduling.md](docs/scheduling.md).
+- **Send caps** — the ceiling on automated DMs per minute — are constants in
+  `src/lib/automation-sender.ts`. They bound the blast radius of a bug, so no line in a
+  config file can raise them.
 
 ### Required: Instagram API access
 
 ```bash
-# .env.local
+# .env
 INSTAGRAM_ACCESS_TOKEN=EAA...        # your long-lived Instagram token
 INSTAGRAM_ACCOUNT_ID=17841400000000  # your Instagram (app-scoped) user ID
 INSTAGRAM_APP_SECRET=abc123...       # Meta App Secret: enables auto token refresh
@@ -182,7 +195,7 @@ python3 -m venv .venv
 Then point the app at it and (optionally) pick a model:
 
 ```bash
-# .env.local
+# .env
 TRANSCRIPTION_PYTHON=/absolute/path/to/social-cockpit/.venv/bin/python
 # TRANSCRIPTION_MODEL=medium   # default is "small"
 ```
@@ -247,7 +260,7 @@ scripts/transcribe.py   # Python transcription entrypoint
 
 ## 🔒 Security & data ownership
 
-- Your access token and app secret live only in your local `.env.local` and are used **only** for direct calls to Meta.
+- Your access token and app secret live only in your local `.env` and are used **only** for direct calls to Meta.
 - All caches and databases are local SQLite files under `data/` (git-ignored).
 - No analytics, telemetry, or third-party backends. **Your data stays on your machine.**
 
