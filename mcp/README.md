@@ -38,6 +38,14 @@ the tree the live server is running from. Nothing here touches that.
 The server holds no credentials of its own. Instagram tokens, R2 keys, and the
 database all stay on the cockpit side.
 
+Posting policy is **not** configured here — it comes from the cockpit:
+
+```bash
+curl -X PUT localhost:3000/api/schedule/settings \
+  -H 'Content-Type: application/json' \
+  -d '{"suggested_times":["09:30","18:00"],"max_posts_per_day":2,"min_same_video_days":2}'
+```
+
 ## Wiring it into Claude Code
 
 ```bash
@@ -80,14 +88,22 @@ enabled or in dry run.
 
 ### Design notes
 
-- **Spacing is a same-video rule, not a cadence rule.** Hooks of one video share
-  a body and a voiceover, so two of them close together land as near-duplicates
-  and the later one gets throttled. Two *different* videos on one day are fine.
-  `suggest_slots` therefore blocks only on posts carrying the same `video` tag,
-  and merely reports everything else — with a one-hour floor so nothing stacks.
-- **How busy a day should be is not configured anywhere.** That is a judgement,
-  so `get_calendar` shows the week and the caller decides. Encoding a cadence in
-  config would freeze a policy that ought to respond to what is actually booked.
+- **Posting policy lives in the cockpit, not here.** `suggested_times`,
+  `max_posts_per_day` and `min_same_video_days` are stored in its `app_settings`
+  table and served from `/api/schedule/settings`, so one change covers this
+  server, the booking routes, and `post_video.py` on the ReelCut side. This
+  package only supplies fallbacks for a cockpit too old to return them, and says
+  so in its output when it has to.
+- **Spacing is a same-video rule; the cap is an account rule.** Hooks of one
+  video share a body and a voiceover, so two close together land as
+  near-duplicates and the later one gets throttled — that is
+  `min_same_video_days`, and it does not apply between different videos. How many
+  posts a *day* may hold is a separate question, answered by `max_posts_per_day`.
+  Conflating the two makes "post twice a day" impossible to express without also
+  letting two hooks of one video collide.
+- **The cap is enforced, not suggested.** `POST /api/schedule` and a rescheduling
+  `PATCH` both reject a booking that would exceed it with `409 day_full`, so
+  `suggest_slots` skipping full days is a convenience, not the guarantee.
 - **The calendar is the authority on what exists.** Commitments are read from
   scheduler jobs *and* the published-post cache, because neither is complete:
   jobs carry the `video` tag (even after publishing), while the cache is the only

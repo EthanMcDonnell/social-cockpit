@@ -424,8 +424,37 @@ instance isn't restarted until you say so.
 
 ## 9. Configuration
 
+Two tiers, split by whether needing a restart is acceptable.
+
+### 9a. Posting policy — stored, live-editable
+
+Kept in the `app_settings` table (`src/lib/schedule/settings.ts`), served from
+`GET/PUT /api/schedule/settings`. These live in the database for the same reason
+the timezone does: they change what a slot *means*, so they have to take effect
+immediately rather than at the next restart of a production server we're told
+not to restart.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `calendar.timezone` | host zone | Zone the calendar renders in, and that bare `scheduled_at` strings are read in. |
+| `calendar.suggested_times` | `["09:30"]` | Times of day slots are offered at, in preference order. **More than one entry is how a day holds more than one post.** A suggestion — a caller may still ask for any time. |
+| `calendar.max_posts_per_day` | `2` | Hard ceiling on posts per calendar day. **Enforced, not advisory:** `POST /api/schedule` and a rescheduling `PATCH` return `409 day_full`. Counts posts published outside the scheduler too, so it is a true statement about the account rather than about this app's own bookings (`src/lib/schedule/capacity.ts`). |
+| `calendar.min_same_video_days` | `2` | Days two hooks of the *same* video are kept apart, since they are near-duplicates of each other and the later one gets throttled. Does **not** apply between different videos — those may share a day, up to the cap. |
+
+```bash
+curl -X PUT localhost:3000/api/schedule/settings -H 'Content-Type: application/json' \
+  -d '{"suggested_times":["09:30","18:00"],"max_posts_per_day":2}'
+```
+
+The two rules are deliberately separate. A single "minimum gap" cannot express
+"post twice a day" without also permitting two hooks of one video to collide,
+which is the exact throttling case the gap exists to prevent.
+
+### 9b. Operational switches — environment, restart to change
+
 Every variable is optional; the defaults are what a single-user local install
-wants.
+wants. Needing a restart is a feature here — a kill switch you can flip with a
+web request is a worse kill switch.
 
 | Variable | Default | What it does |
 |---|---|---|

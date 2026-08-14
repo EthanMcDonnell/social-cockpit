@@ -8,7 +8,8 @@ import {
 } from "@/lib/schedule/store";
 import { releaseStaged } from "@/lib/schedule/media";
 import { hydrateJob } from "@/lib/schedule/view";
-import { getTimeZone } from "@/lib/schedule/settings";
+import { getTimeZone, getMaxPostsPerDay } from "@/lib/schedule/settings";
+import { checkDailyCap } from "@/lib/schedule/capacity";
 import { parseScheduledAt } from "@/lib/schedule/tz";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
 import { validatePublish } from "@/lib/instagram/publish-flow";
@@ -85,6 +86,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         { status: 400 }
       );
     }
+    // Same ceiling as creation. This job is excluded from the count, so moving
+    // it *within* a day that is already at capacity isn't blocked by itself.
+    const cap = checkDailyCap(ms, timeZone, getMaxPostsPerDay(), job.id);
+    if (!cap.allowed) {
+      return NextResponse.json({ error: "day_full", message: cap.message }, { status: 409 });
+    }
+
     patch.scheduledAt = ms;
     // Moving a finished-unhappily job back onto the calendar revives it.
     if (job.status === "failed" || job.status === "missed" || job.status === "cancelled") {

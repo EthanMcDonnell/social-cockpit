@@ -3,7 +3,8 @@ import { createJob, listJobs, type ListJobsFilter } from "@/lib/schedule/store";
 import { parseScheduleBody, isFailure, type ScheduleRequestBody } from "@/lib/schedule/input";
 import { hydrateJob, hydrateJobs } from "@/lib/schedule/view";
 import { logScheduleEvent } from "@/lib/schedule/store";
-import { getTimeZone } from "@/lib/schedule/settings";
+import { getTimeZone, getMaxPostsPerDay } from "@/lib/schedule/settings";
+import { checkDailyCap } from "@/lib/schedule/capacity";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
 import type { ScheduleStatus, SchedulePlatform } from "@/lib/schedule/types";
 
@@ -94,6 +95,14 @@ export async function POST(request: NextRequest) {
       { error: parsed.code, message: parsed.error },
       { status: parsed.status }
     );
+  }
+
+  // Hard daily ceiling. Checked here rather than inside parseScheduleBody
+  // because it is a property of the calendar, not of the request: the same body
+  // is acceptable or not depending on what else is booked that day.
+  const cap = checkDailyCap(parsed.job.scheduledAt, getTimeZone(), getMaxPostsPerDay());
+  if (!cap.allowed) {
+    return NextResponse.json({ error: "day_full", message: cap.message }, { status: 409 });
   }
 
   const job = createJob(parsed.job);

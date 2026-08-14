@@ -65,6 +65,34 @@ export interface ScheduleSettings {
   abbreviation: string;
   scheduler_enabled: boolean;
   dry_run: boolean;
+  /**
+   * Posting policy, stored in the cockpit's `app_settings`.
+   *
+   * Optional because a cockpit running an older build won't return them; the
+   * fallbacks in `policy()` keep this server working against one that doesn't.
+   */
+  suggested_times?: string[];
+  max_posts_per_day?: number;
+  min_same_video_days?: number;
+}
+
+/** Posting policy with fallbacks applied — mirrors the cockpit's own defaults. */
+export interface PostingPolicy {
+  suggestedTimes: string[];
+  maxPostsPerDay: number;
+  minSameVideoDays: number;
+  /** True when the cockpit didn't supply policy, so these are local defaults. */
+  fromDefaults: boolean;
+}
+
+export function policy(settings: ScheduleSettings): PostingPolicy {
+  const times = settings.suggested_times?.length ? settings.suggested_times : undefined;
+  return {
+    suggestedTimes: times ?? ["09:30"],
+    maxPostsPerDay: settings.max_posts_per_day ?? 2,
+    minSameVideoDays: settings.min_same_video_days ?? 2,
+    fromDefaults: settings.max_posts_per_day == null && times === undefined,
+  };
 }
 
 /** Mirrors `PostListItem` in `src/lib/posts.ts` (camelCase on the wire). */

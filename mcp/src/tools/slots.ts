@@ -1,15 +1,20 @@
 /**
- * Slot planning, scoped to one video.
+ * Slot planning, against the cockpit's posting policy.
  *
- * The spacing rule this enforces is a *same-video* rule, not a cadence rule.
- * Every hook of one video is the same body over the same voiceover with a
- * different opening line, so posting two of them close together gets the later
- * one clustered as a near-duplicate and throttled. Two posts on one day are
- * fine when they are different videos.
+ * Three rules, and they are deliberately different in kind:
  *
- * So this keeps hooks of `video` apart, and reports — without blocking on —
- * everything else nearby. How busy a day should be is a judgement call for
- * whoever is reading `get_calendar`, not a policy to bake in here.
+ * - **`min_same_video_days`** — hooks of one video share a body and a voiceover,
+ *   so two of them close together land as near-duplicates and the later one is
+ *   throttled. This is a same-content rule; two *different* videos on one day
+ *   are fine.
+ * - **`max_posts_per_day`** — a hard ceiling on the account's daily volume. It
+ *   comes from the cockpit and is not negotiable here: the booking route
+ *   enforces it too, so ignoring it would only produce slots that get rejected.
+ * - **`suggested_times`** — where slots are offered by preference. A suggestion,
+ *   overridable per call. More than one entry is how a day holds more than one
+ *   post.
+ *
+ * All three live in the cockpit's settings so there is one place to change them.
  */
 
 import type { McpServer } from "@modelcontextprotocol/server";
@@ -18,10 +23,18 @@ import { cockpit } from "../cockpit.js";
 import { formatWhen, settingsBanner } from "../format.js";
 import { fetchCommitments, type Commitment } from "../commitments.js";
 import { addDays, parseTimeOfDay, utcToWall, wallToUtc } from "../tz.js";
-import type { ScheduleSettings } from "../types.js";
+import { policy, type ScheduleSettings } from "../types.js";
 
 const DAY_MS = 86_400_000;
-const HOUR_MS = 3_600_000;
+/** Nothing may stack this close to an existing post. Not a cadence rule. */
+const MIN_SEPARATION_MS = 3_600_000;
+/** Give up rather than search forever on a pathologically full calendar. */
+const SEARCH_HORIZON_DAYS = 400;
+
+const dayKey = (instant: number, tz: string): string => {
+  const w = utcToWall(instant, tz);
+  return `${w.year}-${pad(w.month)}-${pad(w.day)}`;
+};
 
 export function registerSlotTools(server: McpServer): void {
   server.registerTool(
@@ -29,27 +42,31 @@ export function registerSlotTools(server: McpServer): void {
     {
       title: "Suggest slots for one video",
       description:
-        "Free times for the hooks of a single video, spaced so no two hooks of that video land within " +
-        "min_days of each other — the spacing that stops near-duplicate reels being throttled. Posts of OTHER " +
-        "videos do not block a slot (two different videos can share a day); they are only reported, and a " +
-        "candidate within an hour of any existing post is skipped so nothing stacks. Call get_calendar first if " +
-        "you need to judge how busy the days already are. Read-only: it suggests times, it books nothing.",
+        "Free times for the hooks of a single video, honouring the cockpit's posting policy: hooks of this video " +
+        "stay min_same_video_days apart, no day exceeds max_posts_per_day, and slots are offered at the " +
+        "configured suggested_times. Posts of OTHER videos never block a slot — two different videos may share a " +
+        "day, up to the cap. Call get_calendar first if you want to see the week before choosing. Read-only: it " +
+        "suggests times, it books nothing.",
       inputSchema: z.object({
         video: z
           .string()
           .describe(
-            "The video these slots are for, e.g. the slug. Matched against the `video` tag on existing jobs " +
-              "to find this video's other hooks."
+            "The video these slots are for, e.g. the slug. Matched against the `video` tag on existing jobs."
           ),
         count: z.number().optional().describe("How many slots to find. Defaults to 1."),
         min_days: z
           .number()
           .optional()
-          .describe("Minimum days between two hooks of this video. Defaults to 2."),
-        time_of_day: z
-          .string()
+          .describe(
+            "Override the configured minimum days between two hooks of this video. Omit to use the cockpit's setting."
+          ),
+        times: z
+          .array(z.string())
           .optional()
-          .describe("Preferred wall-clock time in the cockpit's zone, 'HH:MM'. Defaults to 09:30."),
+          .describe(
+            'Override the configured suggested times, as "HH:MM" in the cockpit\'s zone, e.g. ["09:30","18:00"]. ' +
+              "Omit to use the cockpit's setting."
+          ),
         earliest: z
           .string()
           .optional()
@@ -58,7 +75,12 @@ export function registerSlotTools(server: McpServer): void {
       outputSchema: z.object({
         timezone: z.string(),
         video: z.string(),
-        min_days: z.number(),
+        policy: z.object({
+          min_same_video_days: z.number(),
+          max_posts_per_day: z.number(),
+          suggested_times: z.array(z.string()),
+          source: z.string().describe("'cockpit' or 'defaults' when the cockpit supplied none."),
+        }),
         slots: z.array(
           z.object({
             scheduled_at: z
@@ -68,87 +90,116 @@ export function registerSlotTools(server: McpServer): void {
             epoch_ms: z.number(),
           })
         ),
-        same_video_posts: z
-          .array(z.object({ at: z.string(), caption: z.string(), status: z.string() }))
-          .describe("Existing hooks of this video that the slots were spaced from."),
-        other_posts_nearby: z
-          .array(z.object({ at: z.string(), caption: z.string(), video: z.string().optional() }))
-          .describe("Other posts around the suggested slots. Informational — these did not block anything."),
+        same_video_posts: z.array(
+          z.object({ at: z.string(), caption: z.string(), status: z.string() })
+        ),
+        days_at_capacity: z
+          .array(z.string())
+          .describe("Days skipped because they already hold max_posts_per_day posts."),
       }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ video, count = 1, min_days = 2, time_of_day = "09:30", earliest }) => {
+    async ({ video, count = 1, min_days, times, earliest }) => {
       const config = await cockpit<ScheduleSettings>("/api/schedule/settings");
       const tz = config.timezone;
+      const p = policy(config);
 
-      const tod = parseTimeOfDay(time_of_day);
-      if (!tod) throw new Error(`time_of_day must look like "09:30", got "${time_of_day}".`);
+      const wantedTimes = times?.length ? times : p.suggestedTimes;
+      const parsedTimes = wantedTimes.map((t) => {
+        const parsed = parseTimeOfDay(t);
+        if (!parsed) throw new Error(`times entries must look like "09:30", got "${t}".`);
+        return parsed;
+      });
+
+      const minDays = min_days ?? p.minSameVideoDays;
+      const gapMs = minDays * DAY_MS;
 
       const now = Date.now();
       const floor = earliest ? parseInstant(earliest) : now;
       if (floor === null) {
         throw new Error(`Could not read earliest ("${earliest}"). Use ISO-8601 or epoch ms.`);
       }
-
       const start = Math.max(floor, now);
-      const gapMs = min_days * DAY_MS;
-      const from = start - gapMs - DAY_MS;
-      const to = start + 400 * DAY_MS;
 
-      const commitments = await fetchCommitments(from, to);
+      const commitments = await fetchCommitments(
+        start - gapMs - DAY_MS,
+        start + SEARCH_HORIZON_DAYS * DAY_MS
+      );
       const sameVideo = commitments.filter((c) => c.video === video);
 
-      // Hard constraint: this video's own hooks. Soft: everything else, which
-      // only rules out landing on top of another post.
-      const blocking = sameVideo.map((c) => c.at);
-      const everything = commitments.map((c) => c.at);
-
-      const slots: { scheduled_at: string; local: string; epoch_ms: number }[] = [];
-      const startWall = utcToWall(start, tz);
-      let cursor = wallToUtc({ ...startWall, hour: tod.hour, minute: tod.minute }, tz);
-      while (cursor < start) cursor = addDays(cursor, 1, tz);
-
-      const horizon = 400;
-      for (let day = 0; day < horizon && slots.length < count; day++) {
-        const clearOfVideo = blocking.every((t) => Math.abs(cursor - t) >= gapMs);
-        const notStacked = everything.every((t) => Math.abs(cursor - t) >= HOUR_MS);
-        if (clearOfVideo && notStacked) {
-          const w = utcToWall(cursor, tz);
-          slots.push({
-            scheduled_at: `${w.year}-${pad(w.month)}-${pad(w.day)}T${pad(w.hour)}:${pad(w.minute)}`,
-            local: formatWhen(cursor, tz),
-            epoch_ms: cursor,
-          });
-          blocking.push(cursor);
-          everything.push(cursor);
-        }
-        cursor = addDays(cursor, 1, tz);
+      // Running state as slots are chosen, so suggestions are spaced from each
+      // other and count toward their day's capacity too.
+      const sameVideoAt = sameVideo.map((c) => c.at);
+      const everythingAt = commitments.map((c) => c.at);
+      const perDay = new Map<string, number>();
+      for (const c of commitments) {
+        perDay.set(dayKey(c.at, tz), (perDay.get(dayKey(c.at, tz)) ?? 0) + 1);
       }
 
-      const window = slots.length
-        ? { lo: slots[0]!.epoch_ms - DAY_MS, hi: slots.at(-1)!.epoch_ms + DAY_MS }
-        : { lo: start, hi: start + 7 * DAY_MS };
+      const slots: { scheduled_at: string; local: string; epoch_ms: number }[] = [];
+      const fullDays = new Set<string>();
 
-      const others = commitments
-        .filter((c) => c.video !== video && c.at >= window.lo && c.at <= window.hi)
-        .slice(0, 20)
-        .map((c: Commitment) => ({ at: formatWhen(c.at, tz), caption: c.label.slice(0, 60), video: c.video }));
+      const startWall = utcToWall(start, tz);
+      let dayCursor = wallToUtc({ ...startWall, hour: 0, minute: 0 }, tz);
 
-      const same = sameVideo.map((c) => ({
+      for (let day = 0; day < SEARCH_HORIZON_DAYS && slots.length < count; day++) {
+        const key = dayKey(dayCursor, tz);
+        const wall = utcToWall(dayCursor, tz);
+
+        for (const tod of parsedTimes) {
+          if (slots.length >= count) break;
+
+          if ((perDay.get(key) ?? 0) >= p.maxPostsPerDay) {
+            fullDays.add(key);
+            break; // No time of day helps once the day itself is full.
+          }
+
+          const candidate = wallToUtc({ ...wall, hour: tod.hour, minute: tod.minute }, tz);
+          if (candidate < start) continue;
+          if (!sameVideoAt.every((t) => Math.abs(candidate - t) >= gapMs)) continue;
+          if (!everythingAt.every((t) => Math.abs(candidate - t) >= MIN_SEPARATION_MS)) continue;
+
+          const w = utcToWall(candidate, tz);
+          slots.push({
+            scheduled_at: `${w.year}-${pad(w.month)}-${pad(w.day)}T${pad(w.hour)}:${pad(w.minute)}`,
+            local: formatWhen(candidate, tz),
+            epoch_ms: candidate,
+          });
+          sameVideoAt.push(candidate);
+          everythingAt.push(candidate);
+          perDay.set(key, (perDay.get(key) ?? 0) + 1);
+        }
+
+        dayCursor = addDays(dayCursor, 1, tz);
+      }
+
+      const same = sameVideo.map((c: Commitment) => ({
         at: formatWhen(c.at, tz),
         caption: c.label.slice(0, 60),
         status: c.status ?? "published",
       }));
 
       const lines = [settingsBanner(config), ""];
-      if (slots.length < count) {
+      if (p.fromDefaults) {
         lines.push(
-          `Only found ${slots.length} of ${count} requested slot(s) within ${horizon} days at ${time_of_day}. ` +
-            `Try a smaller min_days or a different time_of_day.`,
+          "⚠ The cockpit returned no posting policy (it's running a build without it), so these are this " +
+            "server's own defaults. Rebuild the cockpit to have its settings apply.",
           ""
         );
       }
-      lines.push(`Slots for "${video}", each ≥${min_days}d from this video's other hooks:`);
+      lines.push(
+        `Policy: ≤${p.maxPostsPerDay}/day · hooks of one video ≥${minDays}d apart · ` +
+          `times ${wantedTimes.join(", ")}`,
+        ""
+      );
+
+      if (slots.length < count) {
+        lines.push(
+          `Only found ${slots.length} of ${count} requested slot(s) within ${SEARCH_HORIZON_DAYS} days.`,
+          ""
+        );
+      }
+      lines.push(`Slots for "${video}":`);
       lines.push(...slots.map((s) => `  ${s.local}   →  scheduled_at: "${s.scheduled_at}"`));
 
       if (same.length) {
@@ -158,9 +209,11 @@ export function registerSlotTools(server: McpServer): void {
         lines.push("", `No other hooks of "${video}" are on the calendar yet.`);
       }
 
-      if (others.length) {
-        lines.push("", "Other posts around these slots (did not block anything):");
-        lines.push(...others.map((c) => `  ${c.at} — ${c.caption}${c.video ? ` [${c.video}]` : ""}`));
+      if (fullDays.size) {
+        lines.push(
+          "",
+          `Skipped as already at the ${p.maxPostsPerDay}/day limit: ${[...fullDays].sort().join(", ")}`
+        );
       }
 
       return {
@@ -168,10 +221,15 @@ export function registerSlotTools(server: McpServer): void {
         structuredContent: {
           timezone: tz,
           video,
-          min_days,
+          policy: {
+            min_same_video_days: minDays,
+            max_posts_per_day: p.maxPostsPerDay,
+            suggested_times: wantedTimes,
+            source: p.fromDefaults ? "defaults" : "cockpit",
+          },
           slots,
           same_video_posts: same,
-          other_posts_nearby: others,
+          days_at_capacity: [...fullDays].sort(),
         },
       };
     }
