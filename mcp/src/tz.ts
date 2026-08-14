@@ -82,6 +82,49 @@ export function wallToUtc(w: Wall, timeZone: string): number {
   return ts;
 }
 
+/**
+ * Midnight in `timeZone` on the calendar day containing `instant`, as an instant.
+ *
+ * Mirrors the app's `startOfDay` in `src/lib/schedule/tz.ts` — the boundary a
+ * calendar day is measured from is a wall-clock fact, so it has to be resolved
+ * through the zone rather than by rounding the epoch.
+ */
+export function startOfDay(instant: number, timeZone: string): number {
+  return wallToUtc({ ...utcToWall(instant, timeZone), hour: 0, minute: 0 }, timeZone);
+}
+
+/** "YYYY-MM-DD" for the calendar day `instant` falls on in `timeZone`. */
+export function dayKey(instant: number, timeZone: string): string {
+  const w = utcToWall(instant, timeZone);
+  return `${w.year}-${pad(w.month)}-${pad(w.day)}`;
+}
+
+/**
+ * Day of the week (0 = Sunday) for a wall-clock date.
+ *
+ * Takes the wall reading rather than the instant: the instant of local midnight
+ * can sit on either side of the UTC date line, so asking `Date` for its UTC day
+ * is off by one for every zone at a positive offset.
+ */
+export function wallDayOfWeek(w: Wall): number {
+  return new Date(Date.UTC(w.year, w.month - 1, w.day)).getUTCDay();
+}
+
+/**
+ * An ISO-8601 string or epoch-ms string as an instant, or null if it is neither.
+ *
+ * Everything downstream compares and stores epoch ms; this is the one door
+ * caller-supplied times come through.
+ */
+export function parseInstant(raw: string): number | null {
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Zero-padded to two digits, for the wall-clock strings built from a `Wall`. */
+export const pad = (n: number): string => String(n).padStart(2, "0");
+
 /** Parse "HH:MM" into hour/minute, or null if it isn't one. */
 export function parseTimeOfDay(value: string): { hour: number; minute: number } | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());

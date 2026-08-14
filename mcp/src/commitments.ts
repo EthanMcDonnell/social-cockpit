@@ -11,8 +11,13 @@
  *   the account, from the media cache. Catches posts made outside the scheduler
  *   (by hand, or from the phone) that no job row describes.
  *
- * The two overlap for anything scheduled *and* published; that is harmless for
- * "how busy is this day", and the job row is the one carrying the video tag.
+ * A job that has published appears in *both*, so the media id it produced is
+ * subtracted from the history side and the job row is kept — it is the one
+ * carrying the video tag. Without that, every scheduled post would count twice
+ * the moment it went live and `max_posts_per_day` would halve itself. This
+ * mirrors `src/lib/schedule/capacity.ts`, which is what actually enforces the
+ * cap at booking time; the two have to agree or `suggest_slots` will skip days
+ * the booking route would accept.
  */
 
 import { cockpit } from "./cockpit.js";
@@ -64,6 +69,12 @@ export async function fetchCommitments(from: number, to: number): Promise<Commit
     }),
   ]);
 
+  // Media ids these jobs are responsible for, so history doesn't re-count them.
+  const ownMediaIds = new Set<string>();
+  for (const job of scheduled.jobs) {
+    if (job.result?.media_id) ownMediaIds.add(job.result.media_id);
+  }
+
   const commitments: Commitment[] = [
     ...scheduled.jobs.map((job) => ({
       at: job.scheduled_at,
@@ -73,13 +84,15 @@ export async function fetchCommitments(from: number, to: number): Promise<Commit
       label: firstLine(job.payload.caption ?? job.payload.title),
       id: job.id,
     })),
-    ...history.posts.map((post) => ({
-      at: post.published_at,
-      source: "history" as const,
-      status: "published",
-      label: firstLine(post.title),
-      id: post.id,
-    })),
+    ...history.posts
+      .filter((post) => !ownMediaIds.has(post.id))
+      .map((post) => ({
+        at: post.published_at,
+        source: "history" as const,
+        status: "published",
+        label: firstLine(post.title),
+        id: post.id,
+      })),
   ];
 
   return commitments.sort((a, b) => a.at - b.at);

@@ -13,10 +13,8 @@ import { z } from "zod";
 import { cockpit } from "../cockpit.js";
 import { settingsBanner } from "../format.js";
 import { fetchCommitments } from "../commitments.js";
-import { utcToWall, wallToUtc } from "../tz.js";
+import { addDays, dayKey, pad, parseInstant, startOfDay, utcToWall, wallDayOfWeek } from "../tz.js";
 import type { ScheduleSettings } from "../types.js";
-
-const DAY_MS = 86_400_000;
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
@@ -34,6 +32,8 @@ export function registerCalendarTools(server: McpServer): void {
       inputSchema: z.object({
         days: z
           .number()
+          .int()
+          .min(1)
           .optional()
           .describe("How many days forward from `from`. Defaults to 7."),
         from: z
@@ -42,6 +42,8 @@ export function registerCalendarTools(server: McpServer): void {
           .describe("Start of the window, ISO-8601 or epoch ms. Defaults to the start of today."),
         include_past_days: z
           .number()
+          .int()
+          .min(0)
           .optional()
           .describe(
             "Also show this many days before `from`. Useful for seeing what just went out. Defaults to 2."
@@ -83,19 +85,26 @@ export function registerCalendarTools(server: McpServer): void {
 
       // Snap to midnight in the cockpit's zone so days line up with the calendar
       // the user sees, not with UTC.
-      const anchorWall = utcToWall(anchor, tz);
-      const startOfDay = wallToUtc({ ...anchorWall, hour: 0, minute: 0 }, tz);
+      const anchorDay = startOfDay(anchor, tz);
 
-      const windowStart = startOfDay - include_past_days * DAY_MS;
-      const windowEnd = startOfDay + days * DAY_MS;
+      // Walk the window a wall-clock day at a time. A day is not 24 hours on a
+      // DST boundary, so stepping by 86_400_000 would repeat one date and drop
+      // the last — every boundary in `dayStarts` is resolved through the zone.
+      const dayStarts: number[] = [];
+      let cursor = addDays(anchorDay, -include_past_days, tz);
+      for (let i = 0; i < include_past_days + days; i++) {
+        dayStarts.push(cursor);
+        cursor = addDays(cursor, 1, tz);
+      }
+      const windowStart = dayStarts[0] ?? anchorDay;
+      const windowEnd = cursor; // Midnight after the last day, exclusive.
 
       const commitments = await fetchCommitments(windowStart, windowEnd);
 
       // Bucket by calendar date in the target zone.
       const buckets = new Map<string, typeof commitments>();
       for (const c of commitments) {
-        const w = utcToWall(c.at, tz);
-        const key = `${w.year}-${pad(w.month)}-${pad(w.day)}`;
+        const key = dayKey(c.at, tz);
         const list = buckets.get(key) ?? [];
         list.push(c);
         buckets.set(key, list);
@@ -117,10 +126,10 @@ export function registerCalendarTools(server: McpServer): void {
         }[];
       }[] = [];
 
-      for (let offset = -include_past_days; offset < days; offset++) {
-        const dayStart = startOfDay + offset * DAY_MS;
+      for (const [index, dayStart] of dayStarts.entries()) {
         const w = utcToWall(dayStart, tz);
-        const key = `${w.year}-${pad(w.month)}-${pad(w.day)}`;
+        const key = dayKey(dayStart, tz);
+        const dayEnd = dayStarts[index + 1] ?? windowEnd;
         const entries = (buckets.get(key) ?? []).map((c) => {
           const t = utcToWall(c.at, tz);
           return {
@@ -135,8 +144,8 @@ export function registerCalendarTools(server: McpServer): void {
         });
         out.push({
           date: key,
-          weekday: WEEKDAYS[new Date(dayStart).getUTCDay()] ?? "",
-          is_past: dayStart + DAY_MS <= now,
+          weekday: WEEKDAYS[wallDayOfWeek(w)] ?? "",
+          is_past: dayEnd <= now,
           entries,
         });
       }
@@ -169,12 +178,4 @@ export function registerCalendarTools(server: McpServer): void {
       };
     }
   );
-}
-
-const pad = (n: number) => String(n).padStart(2, "0");
-
-function parseInstant(raw: string): number | null {
-  if (/^\d+$/.test(raw)) return Number(raw);
-  const parsed = Date.parse(raw);
-  return Number.isFinite(parsed) ? parsed : null;
 }

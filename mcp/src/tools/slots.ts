@@ -22,7 +22,16 @@ import { z } from "zod";
 import { cockpit } from "../cockpit.js";
 import { formatWhen, settingsBanner } from "../format.js";
 import { fetchCommitments, type Commitment } from "../commitments.js";
-import { addDays, parseTimeOfDay, utcToWall, wallToUtc } from "../tz.js";
+import {
+  addDays,
+  dayKey,
+  pad,
+  parseInstant,
+  parseTimeOfDay,
+  startOfDay,
+  utcToWall,
+  wallToUtc,
+} from "../tz.js";
 import { policy, type ScheduleSettings } from "../types.js";
 
 const DAY_MS = 86_400_000;
@@ -30,11 +39,6 @@ const DAY_MS = 86_400_000;
 const MIN_SEPARATION_MS = 3_600_000;
 /** Give up rather than search forever on a pathologically full calendar. */
 const SEARCH_HORIZON_DAYS = 400;
-
-const dayKey = (instant: number, tz: string): string => {
-  const w = utcToWall(instant, tz);
-  return `${w.year}-${pad(w.month)}-${pad(w.day)}`;
-};
 
 export function registerSlotTools(server: McpServer): void {
   server.registerTool(
@@ -53,9 +57,10 @@ export function registerSlotTools(server: McpServer): void {
           .describe(
             "The video these slots are for, e.g. the slug. Matched against the `video` tag on existing jobs."
           ),
-        count: z.number().optional().describe("How many slots to find. Defaults to 1."),
+        count: z.number().int().min(1).optional().describe("How many slots to find. Defaults to 1."),
         min_days: z
           .number()
+          .min(0)
           .optional()
           .describe(
             "Override the configured minimum days between two hooks of this video. Omit to use the cockpit's setting."
@@ -105,11 +110,15 @@ export function registerSlotTools(server: McpServer): void {
       const p = policy(config);
 
       const wantedTimes = times?.length ? times : p.suggestedTimes;
-      const parsedTimes = wantedTimes.map((t) => {
-        const parsed = parseTimeOfDay(t);
-        if (!parsed) throw new Error(`times entries must look like "09:30", got "${t}".`);
-        return parsed;
-      });
+      // Sorted, so a day's slots come back in the order they'll actually happen
+      // however the setting happens to be written.
+      const parsedTimes = wantedTimes
+        .map((t) => {
+          const parsed = parseTimeOfDay(t);
+          if (!parsed) throw new Error(`times entries must look like "09:30", got "${t}".`);
+          return parsed;
+        })
+        .sort((a, b) => a.hour - b.hour || a.minute - b.minute);
 
       const minDays = min_days ?? p.minSameVideoDays;
       const gapMs = minDays * DAY_MS;
@@ -133,14 +142,14 @@ export function registerSlotTools(server: McpServer): void {
       const everythingAt = commitments.map((c) => c.at);
       const perDay = new Map<string, number>();
       for (const c of commitments) {
-        perDay.set(dayKey(c.at, tz), (perDay.get(dayKey(c.at, tz)) ?? 0) + 1);
+        const key = dayKey(c.at, tz);
+        perDay.set(key, (perDay.get(key) ?? 0) + 1);
       }
 
       const slots: { scheduled_at: string; local: string; epoch_ms: number }[] = [];
       const fullDays = new Set<string>();
 
-      const startWall = utcToWall(start, tz);
-      let dayCursor = wallToUtc({ ...startWall, hour: 0, minute: 0 }, tz);
+      let dayCursor = startOfDay(start, tz);
 
       for (let day = 0; day < SEARCH_HORIZON_DAYS && slots.length < count; day++) {
         const key = dayKey(dayCursor, tz);
@@ -149,13 +158,16 @@ export function registerSlotTools(server: McpServer): void {
         for (const tod of parsedTimes) {
           if (slots.length >= count) break;
 
+          const candidate = wallToUtc({ ...wall, hour: tod.hour, minute: tod.minute }, tz);
+          // Times already past aren't slots, and a day made of nothing but those
+          // isn't "full" — checking this first keeps today out of `fullDays`.
+          if (candidate < start) continue;
+
           if ((perDay.get(key) ?? 0) >= p.maxPostsPerDay) {
             fullDays.add(key);
             break; // No time of day helps once the day itself is full.
           }
 
-          const candidate = wallToUtc({ ...wall, hour: tod.hour, minute: tod.minute }, tz);
-          if (candidate < start) continue;
           if (!sameVideoAt.every((t) => Math.abs(candidate - t) >= gapMs)) continue;
           if (!everythingAt.every((t) => Math.abs(candidate - t) >= MIN_SEPARATION_MS)) continue;
 
@@ -173,6 +185,9 @@ export function registerSlotTools(server: McpServer): void {
         dayCursor = addDays(dayCursor, 1, tz);
       }
 
+      // Report the times actually searched, in the order they were searched.
+      const searchedTimes = parsedTimes.map((t) => `${pad(t.hour)}:${pad(t.minute)}`);
+
       const same = sameVideo.map((c: Commitment) => ({
         at: formatWhen(c.at, tz),
         caption: c.label.slice(0, 60),
@@ -189,7 +204,7 @@ export function registerSlotTools(server: McpServer): void {
       }
       lines.push(
         `Policy: ≤${p.maxPostsPerDay}/day · hooks of one video ≥${minDays}d apart · ` +
-          `times ${wantedTimes.join(", ")}`,
+          `times ${searchedTimes.join(", ")}`,
         ""
       );
 
@@ -224,7 +239,7 @@ export function registerSlotTools(server: McpServer): void {
           policy: {
             min_same_video_days: minDays,
             max_posts_per_day: p.maxPostsPerDay,
-            suggested_times: wantedTimes,
+            suggested_times: searchedTimes,
             source: p.fromDefaults ? "defaults" : "cockpit",
           },
           slots,
@@ -234,12 +249,4 @@ export function registerSlotTools(server: McpServer): void {
       };
     }
   );
-}
-
-const pad = (n: number) => String(n).padStart(2, "0");
-
-function parseInstant(raw: string): number | null {
-  if (/^\d+$/.test(raw)) return Number(raw);
-  const parsed = Date.parse(raw);
-  return Number.isFinite(parsed) ? parsed : null;
 }
