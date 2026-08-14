@@ -74,8 +74,7 @@ Tools then appear as `mcp__social-cockpit__<tool>`.
 |---|---|
 | `get_calendar` | Day-by-day view of what is published and scheduled, with each post's video. Read-only. |
 | `suggest_slots` | Free slots for one video's hooks, spaced so no two hooks of that video land within `min_days`. Read-only. |
-| `schedule_post` | Book one video/image for a future slot. |
-| `schedule_posts` | Book a batch in one call. Entries are independent; a failure doesn't roll back earlier successes. |
+| `schedule_posts` | Book one post or a whole batch. Entries are independent; a failure doesn't roll back earlier successes. A one-entry batch reports its failure as a tool error instead. |
 | `list_scheduled_posts` | What's booked, filtered by window, status, platform. |
 | `get_scheduled_post` | One job in full, with its event history — why it failed. |
 | `update_scheduled_post` | Reschedule, pause, resume, edit caption or grace window. |

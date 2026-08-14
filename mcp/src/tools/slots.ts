@@ -90,7 +90,7 @@ export function registerSlotTools(server: McpServer): void {
           z.object({
             scheduled_at: z
               .string()
-              .describe("Pass this straight to schedule_post — local wall time in the cockpit's zone."),
+              .describe("Pass this straight to schedule_posts — local wall time in the cockpit's zone."),
             local: z.string(),
             epoch_ms: z.number(),
           })

@@ -50,6 +50,7 @@ Today, Social Cockpit targets **Instagram only**. The architecture is provider-a
 **Also included:**
 
 - **🗓️ Scheduling Calendar:** Plan posts across Instagram and YouTube on a drag-and-drop week/month/day calendar — drop a video straight from your desktop onto a time slot, or schedule from your laptop with `curl`. Media stays on your own disk until the moment it publishes; nothing sits in cloud storage in the meantime. Comment automations attach automatically when the post goes live. See [docs/scheduling.md](docs/scheduling.md).
+- **🔌 MCP Server (optional):** Drive the scheduler from Claude Code or any MCP client — ask what's on the calendar, get free slots that respect your posting policy, and book a batch of hook variants in one call. It talks to this app over HTTP rather than its database, so nothing skips the API's validation or its event log. See [mcp/README.md](mcp/README.md).
 - **💬 Inbox:** Read and reply to comments in threaded view.
 - **🎙️ Video Transcription (optional):** A background worker transcribes your Reels/videos locally with [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) so you can search and rank by script content.
 - **⚡ Smart local caching & token management:** Media and insights are cached in local SQLite with stale-while-revalidate reads; short-lived tokens exchange for long-lived ones in the UI with automatic background refresh before expiry.
@@ -254,6 +255,7 @@ src/
     ├── transcription/  # faster-whisper worker (Python bridge)
     └── automation-*    # engagement automation engine
 scripts/transcribe.py   # Python transcription entrypoint
+mcp/                    # MCP server exposing the scheduler to Claude Code (own package)
 ```
 
 ---
