@@ -10,6 +10,9 @@ import type { ScheduleStatus, SchedulePlatform } from "@/lib/schedule/types";
 
 export const dynamic = "force-dynamic";
 
+/** Hard ceiling on rows per request, whatever `limit` asks for. */
+const MAX_LIMIT = 1000;
+
 const ALL_STATUSES: ScheduleStatus[] = [
   "pending",
   "publishing",
@@ -53,11 +56,25 @@ export async function GET(request: NextRequest) {
   if (platform === "ig" || platform === "yt") filter.platform = platform as SchedulePlatform;
 
   const limit = num(q.get("limit"));
-  if (limit) filter.limit = Math.min(limit, 1000);
+  const effectiveLimit = limit ? Math.min(limit, MAX_LIMIT) : undefined;
+  if (effectiveLimit) filter.limit = effectiveLimit;
+
+  const jobs = hydrateJobs(listJobs(filter));
 
   return NextResponse.json({
     timezone: getTimeZone(),
-    jobs: hydrateJobs(listJobs(filter)),
+    /**
+     * True when the row cap clipped the result, so the caller is holding a
+     * partial view of the window.
+     *
+     * Reported rather than left to be inferred. The MCP server used to compare
+     * the row count against its own copy of this cap, which works only while
+     * the two numbers agree — lower MAX_LIMIT here and that check silently
+     * stops firing, and a *short* calendar is the dangerous kind: slots look
+     * free because the jobs holding them weren't returned.
+     */
+    truncated: effectiveLimit !== undefined && jobs.length >= effectiveLimit,
+    jobs,
   });
 }
 

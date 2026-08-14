@@ -13,7 +13,21 @@ const BASE = (process.env.COCKPIT_URL ?? "http://localhost:3000").replace(/\/+$/
 
 /** How long a single cockpit call may take. `run` publishes inline, so it's slow. */
 const DEFAULT_TIMEOUT_MS = 30_000;
-const RUN_TIMEOUT_MS = 300_000;
+
+/**
+ * Deliberately longer than the cockpit's own AUTOMATION_TIMEOUT_MS (300s, in
+ * `src/lib/publish/execute.ts`).
+ *
+ * These were both 300_000, which left no margin at all: a publish that used its
+ * full server-side budget would time out here at the same instant it succeeded
+ * there, and the model would be told the post failed while it was going live.
+ * Reporting a successful publish as a failure is the worst outcome available —
+ * the obvious next move is to retry, and posting twice cannot be undone.
+ *
+ * The margin covers the request, the response, and the slack between the
+ * server's own deadline and it finishing the work of giving up.
+ */
+const RUN_TIMEOUT_MS = 330_000;
 
 /**
  * A cockpit request that failed in a way the model can act on — a bad path, an

@@ -27,12 +27,17 @@ export type ComposeTab = "REEL" | "PHOTO" | "STORY" | "SHORT" | "VIDEO";
 export const CAPTION_MAX = 2200;
 export const MAX_CAROUSEL = 10;
 
-// YouTube snippet limits (Data API v3): title ≤ 100 chars, description ≤ 5000.
-export const YT_TITLE_MAX = 100;
-export const YT_DESCRIPTION_MAX = 5000;
-// A Short is classified by signal, not a flag: vertical + short + the #Shorts tag.
-// Duration ceiling was raised from 60s to 3 min in late 2024.
-export const YT_SHORT_MAX_SECONDS = 180;
+// Imported and re-exported: this file validates against them, and the compose
+// components already import them from here. The values live in
+// lib/youtube/limits.ts because the server-side classifier needs the same
+// Shorts ceiling, and the two had drifted into separate literals.
+import {
+  YT_TITLE_MAX,
+  YT_DESCRIPTION_MAX,
+  YT_SHORT_MAX_SECONDS,
+} from "@/lib/youtube/limits";
+
+export { YT_TITLE_MAX, YT_DESCRIPTION_MAX, YT_SHORT_MAX_SECONDS };
 
 const TABS_BY_PLATFORM: Record<Platform, { value: ComposeTab; label: string }[]> = {
   ig: [

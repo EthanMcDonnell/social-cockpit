@@ -1,4 +1,5 @@
 import { youtubeFetch } from "../client";
+import { YT_SHORT_MAX_SECONDS } from "@/lib/youtube/limits";
 import { config } from "@/lib/config";
 import { getChannelStats } from "./channel";
 import type {
@@ -8,7 +9,6 @@ import type {
   YoutubeListResponse,
 } from "../types";
 
-const SHORT_MAX_SECONDS = 180;
 
 // Parse an ISO-8601 duration (e.g. "PT1H2M30S", "PT45S") to seconds.
 function parseIsoDuration(iso: string | undefined): number {
@@ -58,7 +58,7 @@ export async function getRecentVideos(limit = 25): Promise<YoutubeVideo[]> {
       publishedAt: v.snippet?.publishedAt ?? "",
       thumbnailUrl: thumbs?.medium?.url ?? thumbs?.default?.url ?? thumbs?.high?.url,
       durationSeconds,
-      isLikelyShort: durationSeconds > 0 && durationSeconds <= SHORT_MAX_SECONDS,
+      isLikelyShort: durationSeconds > 0 && durationSeconds <= YT_SHORT_MAX_SECONDS,
       viewCount: Number(v.statistics?.viewCount ?? 0),
       likeCount: Number(v.statistics?.likeCount ?? 0),
       commentCount: Number(v.statistics?.commentCount ?? 0),

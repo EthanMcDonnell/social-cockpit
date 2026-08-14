@@ -16,7 +16,25 @@ import {
 } from "@/lib/credentials";
 
 const BASE_URL = "https://graph.instagram.com";
-const WARNING_THRESHOLD_DAYS = 7;
+
+/**
+ * When the sidebar starts warning about the token.
+ *
+ * Derived from the refresh threshold rather than fixed at 7, because the two
+ * interact and only one of them was configurable. The refresher renews once the
+ * token is within TOKEN_REFRESH_THRESHOLD_DAYS of expiry (10 by default), so a
+ * warning below that point means something useful: the refresher should already
+ * have run and evidently hasn't. Hard-coding 7 broke that the moment anyone set
+ * the threshold to 5 — the warning would then fire during entirely normal
+ * operation, days before the refresher was due to do anything.
+ *
+ * Clamped to at least 1 so a threshold of 1 doesn't produce a warning state
+ * that can never be reached.
+ */
+const WARNING_THRESHOLD_DAYS = Math.max(
+  1,
+  Math.min(7, config.token.refreshThresholdDays - 1)
+);
 
 // ─── Status ───────────────────────────────────────────────────────────────────
 

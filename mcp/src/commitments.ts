@@ -67,7 +67,7 @@ function firstLine(text: string | undefined | null): string {
 export async function fetchCommitments(from: number, to: number): Promise<Commitment[]> {
   const [history, scheduled] = await Promise.all([
     cockpit<{ posts: HistoryEntry[] }>("/api/schedule/history", { query: { from, to } }),
-    cockpit<{ jobs: ScheduledPostView[] }>("/api/schedule", {
+    cockpit<{ jobs: ScheduledPostView[]; truncated?: boolean }>("/api/schedule", {
       query: { from, to, status: REAL_STATUSES.join(","), limit: JOB_LIMIT },
     }),
   ]);
@@ -76,7 +76,14 @@ export async function fetchCommitments(from: number, to: number): Promise<Commit
   // calendar is the dangerous kind: slots would look free because the jobs
   // holding them weren't returned. Unreachable at max_posts_per_day ≤ 2 over
   // the 400-day horizon, so fail loudly rather than silently under-report.
-  if (scheduled.jobs.length >= JOB_LIMIT) {
+  //
+  // Prefer the cockpit's own `truncated` flag. Comparing the row count against
+  // JOB_LIMIT below only detects truncation while both sides hold the same
+  // number: if the API lowered its cap, it would return fewer rows than we
+  // asked for and this check would never fire. The comparison remains as the
+  // fallback for a cockpit too old to send the flag.
+  const truncated = scheduled.truncated ?? scheduled.jobs.length >= JOB_LIMIT;
+  if (truncated) {
     throw new CockpitError(
       "window_truncated",
       `The calendar window ${new Date(from).toISOString()} — ${new Date(to).toISOString()} holds at least ` +

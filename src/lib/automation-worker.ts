@@ -10,6 +10,7 @@ import {
   type CommentToDmConfig,
   type CommentToFollowDmConfig,
 } from "@/lib/db";
+import { EVENTS_RETENTION_DAYS } from "@/lib/retention";
 import { config } from "@/lib/config";
 
 export const INTERVAL_MS = 60_000;
@@ -40,7 +41,6 @@ import { throttledSend, hasSendBudget, logEvent } from "@/lib/automation-sender"
 const PENDING_TTL_DAYS = 7;   // matches Instagram's 7-day private-reply window
 const MAX_NUDGES = 2;         // nudge messages per non-follower; the next reply
                              //   after this many is culled silently (no message)
-const EVENTS_RETENTION_DAYS = 30;
 const CONFIRM_CURSOR_KEY = "follow_confirm_messages";
 
 // Keyword-match guard: only treat a comment as a trigger if it's short enough
