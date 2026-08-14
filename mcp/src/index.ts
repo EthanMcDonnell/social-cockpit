@@ -17,6 +17,7 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { cockpit, cockpitBase } from "./cockpit.js";
 import { registerScheduleTools } from "./tools/schedule.js";
 import { registerSlotTools } from "./tools/slots.js";
+import { registerCalendarTools } from "./tools/calendar.js";
 import { registerAnalyticsTools } from "./tools/analytics.js";
 import type { ScheduleSettings } from "./types.js";
 
@@ -55,6 +56,7 @@ function build(): McpServer {
   );
 
   registerScheduleTools(server);
+  registerCalendarTools(server);
   registerSlotTools(server);
   registerAnalyticsTools(server);
 

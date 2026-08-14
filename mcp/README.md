@@ -64,7 +64,8 @@ Tools then appear as `mcp__social-cockpit__<tool>`.
 
 | Tool | What it does |
 |---|---|
-| `suggest_slots` | Next free slots on the real calendar, clear of every published and scheduled post by a minimum gap. Read-only. |
+| `get_calendar` | Day-by-day view of what is published and scheduled, with each post's video. Read-only. |
+| `suggest_slots` | Free slots for one video's hooks, spaced so no two hooks of that video land within `min_days`. Read-only. |
 | `schedule_post` | Book one video/image for a future slot. |
 | `schedule_posts` | Book a batch in one call. Entries are independent; a failure doesn't roll back earlier successes. |
 | `list_scheduled_posts` | What's booked, filtered by window, status, platform. |
@@ -79,11 +80,18 @@ enabled or in dry run.
 
 ### Design notes
 
-- **The calendar decides when, not the caller.** `suggest_slots` reads published
-  history *and* booked jobs, then returns times clear of both by a minimum gap —
-  on **both sides**, since a hole two days after the last post can still sit an
-  hour before the next booked one. Callers should ask for slots rather than
-  compute them; only the cockpit knows what is actually there.
+- **Spacing is a same-video rule, not a cadence rule.** Hooks of one video share
+  a body and a voiceover, so two of them close together land as near-duplicates
+  and the later one gets throttled. Two *different* videos on one day are fine.
+  `suggest_slots` therefore blocks only on posts carrying the same `video` tag,
+  and merely reports everything else — with a one-hour floor so nothing stacks.
+- **How busy a day should be is not configured anywhere.** That is a judgement,
+  so `get_calendar` shows the week and the caller decides. Encoding a cadence in
+  config would freeze a policy that ought to respond to what is actually booked.
+- **The calendar is the authority on what exists.** Commitments are read from
+  scheduler jobs *and* the published-post cache, because neither is complete:
+  jobs carry the `video` tag (even after publishing), while the cache is the only
+  place a post made by hand or from the phone shows up.
 - **Media is referenced, never uploaded at schedule time.** `video_path` is an
   absolute path on the *cockpit machine's* disk. This preserves the scheduler's
   core rule: nothing reaches R2 until the publish moment.

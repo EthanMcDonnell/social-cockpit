@@ -49,6 +49,14 @@ const AUTOMATION = z
 
 const POST_SPEC = {
   scheduled_at: SCHEDULED_AT,
+  video: z
+    .string()
+    .optional()
+    .describe(
+      "Which video this post is a hook of, e.g. the slug. Always set it when scheduling hook variants: it is how " +
+        "suggest_slots and get_calendar tell two hooks of one video apart from two unrelated posts, and so how " +
+        "the near-duplicate spacing is enforced. Stored on the job and never sent to the platform."
+    ),
   video_path: z
     .string()
     .optional()
@@ -89,6 +97,7 @@ const JOB_SUMMARY = z.object({
   scheduled_at: z.number().describe("Epoch ms, UTC."),
   scheduled_at_local: z.string().describe("The same instant in the cockpit's timezone."),
   caption: z.string().optional(),
+  video: z.string().optional().describe("The video this post is a hook of, if tagged."),
   files: z.array(z.string()),
   media_missing: z.boolean(),
 });
@@ -121,6 +130,7 @@ function summarize(job: ScheduledPostView, timeZone: string) {
     scheduled_at: job.scheduled_at,
     scheduled_at_local: formatWhen(job.scheduled_at, timeZone),
     caption: job.payload.caption ?? job.payload.title,
+    video: typeof job.payload.video === "string" ? job.payload.video : undefined,
     files: job.media_files.map((m) => m.filename),
     media_missing: job.media_missing,
   };
