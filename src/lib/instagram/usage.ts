@@ -12,7 +12,8 @@
  * are fine via `import type`).
  */
 
-import { config, liveEnv } from "@/lib/config";
+import { config } from "@/lib/config";
+import { getInstagramAccessToken } from "@/lib/credentials";
 
 const BASE_URL = "https://graph.instagram.com/v25.0";
 
@@ -86,10 +87,9 @@ function parseBusinessUsage(
 }
 
 export async function fetchUsageSnapshot(): Promise<UsageSnapshot> {
-  // Read live: the token manager rotates this value while the process runs.
-  const token = liveEnv.instagramAccessToken;
+  const token = getInstagramAccessToken();
   const accountId = config.instagram.accountId;
-  if (!token) throw new Error("INSTAGRAM_ACCESS_TOKEN is not set. Add it to .env.");
+  if (!token) throw new Error("No Instagram access token. Set INSTAGRAM_ACCESS_TOKEN in .env.");
 
   const res = await fetch(`${BASE_URL}/${accountId}?fields=id`, {
     headers: { Authorization: `Bearer ${token}` },

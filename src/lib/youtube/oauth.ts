@@ -9,11 +9,14 @@
  * in `.env`, then mints short-lived access tokens on demand and caches them in
  * process. It is the YouTube analog of ../token/manager.ts.
  *
+ * The refresh token is persisted through lib/credentials.ts, not written back
+ * into .env — see that module for why.
+ *
  * Docs: https://developers.google.com/identity/protocols/oauth2/web-server
  */
 
-import { writeEnvVar } from "@/lib/env-file";
-import { config, liveEnv } from "@/lib/config";
+import { config } from "@/lib/config";
+import { getYoutubeRefreshToken, setYoutubeRefreshToken } from "@/lib/credentials";
 
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
@@ -53,7 +56,7 @@ function clientSecret(): string {
 
 /** True once a refresh token is on hand — i.e. the channel has been connected. */
 export function isConnected(): boolean {
-  return !!liveEnv.youtubeRefreshToken;
+  return !!getYoutubeRefreshToken();
 }
 
 /**
@@ -135,8 +138,7 @@ export async function exchangeCode(code: string, redirectUri: string): Promise<E
     };
   }
 
-  writeEnvVar("YOUTUBE_OAUTH_REFRESH_TOKEN", data.refresh_token);
-  process.env.YOUTUBE_OAUTH_REFRESH_TOKEN = data.refresh_token;
+  setYoutubeRefreshToken(data.refresh_token);
 
   if (data.access_token) {
     _cache = {
@@ -155,7 +157,7 @@ export async function exchangeCode(code: string, redirectUri: string): Promise<E
 export async function getAccessToken(): Promise<string> {
   if (_cache && _cache.expiresAt > Date.now()) return _cache.accessToken;
 
-  const refreshToken = liveEnv.youtubeRefreshToken;
+  const refreshToken = getYoutubeRefreshToken();
   if (!refreshToken) {
     throw new Error(
       "YouTube is not connected. Connect the channel in Settings before uploading."

@@ -7,12 +7,44 @@ const DB_PATH = config.db.main;
 
 let _db: Database.Database | null = null;
 
+/**
+ * Narrow this database to its owner.
+ *
+ * It holds the Instagram access token and the YouTube refresh token (see
+ * `lib/credentials.ts`), and SQLite creates files with the process umask —
+ * typically 0644, world-readable. `.env`, where these secrets used to live, is
+ * 0600, so without this the move from one to the other would quietly widen who
+ * can read them.
+ *
+ * The `-wal` file needs it just as much: freshly written pages land there before
+ * they are checkpointed into the main file, so a rotated token is in the WAL
+ * first. `-shm` is a shared-memory index rather than page data, but it is
+ * covered too rather than reason about the distinction.
+ *
+ * Called after the connection is open and WAL mode is set, so the sidecars
+ * exist. Best-effort: a chmod can fail on a filesystem that has no POSIX modes
+ * (a mounted volume, some containers), and refusing to start over that would be
+ * worse than the exposure it prevents on a single-user box.
+ */
+function restrictPermissions(): void {
+  for (const file of [DB_PATH, `${DB_PATH}-wal`, `${DB_PATH}-shm`]) {
+    try {
+      if (fs.existsSync(file)) fs.chmodSync(file, 0o600);
+    } catch (err) {
+      console.warn(
+        `[db] could not restrict permissions on ${file}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+}
+
 export function getDb(): Database.Database {
   if (_db) return _db;
   const dir = path.dirname(DB_PATH);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   _db = new Database(DB_PATH);
   _db.pragma("journal_mode = WAL");
+  restrictPermissions();
   _db.exec(`
     CREATE TABLE IF NOT EXISTS automations (
       id         TEXT    PRIMARY KEY,

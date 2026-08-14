@@ -73,7 +73,7 @@ export function TokenStatusPanel() {
           </div>
         ) : isError ? (
           <p className="text-sm text-[var(--accent-red)]">
-            Could not read token status. Check that TOKEN_EXPIRES_AT is set in .env.
+            Could not read token status. Set TOKEN_EXPIRES_AT in .env if no token has been refreshed yet.
           </p>
         ) : (
           <>

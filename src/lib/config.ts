@@ -52,6 +52,17 @@ const problems: string[] = [];
 
 // ─── Readers ─────────────────────────────────────────────────────────────────
 
+/**
+ * Read one variable, with the trimming rules below applied.
+ *
+ * Exported for `lib/credentials.ts`, which needs `.env` as a *fallback* source
+ * for the rotating secrets rather than as their home. Nothing else should reach
+ * for this — use the `config` object.
+ */
+export function readEnv(key: string): string | undefined {
+  return raw(key);
+}
+
 function raw(key: string): string | undefined {
   const value = process.env[key];
   // A variable present but empty is the same as absent. `.env` files are full of
@@ -155,8 +166,13 @@ const instagramAccountId = required(
   "the account every Instagram call is made against"
 );
 
-// Presence is checked here, but the value is NOT captured — see `liveEnv` below.
-required("INSTAGRAM_ACCESS_TOKEN", "authenticates every Instagram Graph call");
+// INSTAGRAM_ACCESS_TOKEN is deliberately NOT required here, though it is every
+// bit as necessary as the account id. It rotates, and the current value lives in
+// `app_settings` once it has been refreshed once — so an install that has been
+// running for a while may legitimately have no token in `.env` at all. This
+// module cannot read the database to find out (`db` imports this file), so the
+// check belongs where both sources are visible: `assertCredentialsPresent()` in
+// `lib/credentials.ts`, which `instrumentation.ts` calls straight after this.
 
 const r2 = group("R2 storage", {
   accountId: "R2_ACCOUNT_ID",
@@ -253,34 +269,6 @@ export const config = {
     transcripts: dataPath("TRANSCRIPTS_DB_PATH", "data", "transcripts.db"),
   },
 } as const;
-
-// ─── Runtime-mutated values ──────────────────────────────────────────────────
-
-/**
- * Credentials that change while the process runs, and so must never be cached.
- *
- * `lib/token/manager.ts` refreshes the Instagram token and assigns the new value
- * back onto `process.env`; `lib/youtube/oauth.ts` does the same with the refresh
- * token after the OAuth callback. A snapshot taken at import would go stale at
- * the first refresh and keep serving a dead credential, so these three are read
- * through on every access rather than captured above.
- *
- * Writing rotated secrets back into `.env` is a known anti-pattern — it races
- * with restarts and with anything that regenerates the file. Moving these into
- * `app_settings` is tracked separately; until then, reading live is what keeps
- * the current arrangement correct.
- */
-export const liveEnv = {
-  get instagramAccessToken(): string | undefined {
-    return raw("INSTAGRAM_ACCESS_TOKEN");
-  },
-  get instagramTokenExpiresAt(): string | undefined {
-    return raw("TOKEN_EXPIRES_AT");
-  },
-  get youtubeRefreshToken(): string | undefined {
-    return raw("YOUTUBE_OAUTH_REFRESH_TOKEN");
-  },
-};
 
 // ─── Validation ──────────────────────────────────────────────────────────────
 

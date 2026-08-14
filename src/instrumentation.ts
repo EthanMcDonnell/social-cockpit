@@ -8,6 +8,13 @@ export async function register() {
     const { assertConfigValid } = await import("@/lib/config");
     assertConfigValid();
 
+    // The other half of the same check. config.ts can only see .env, and the
+    // live Instagram token may legitimately be in the database instead, so this
+    // asks the question .env alone cannot answer. It also opens the DB, which
+    // applies the 0600 tightening before any worker writes a secret into it.
+    const { assertCredentialsPresent } = await import("@/lib/credentials");
+    assertCredentialsPresent();
+
     await import("@/lib/automation-register");
     await import("@/lib/transcription/register");
     await import("@/lib/cache/register");

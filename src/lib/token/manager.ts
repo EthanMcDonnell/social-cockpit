@@ -1,22 +1,27 @@
 /**
  * Token manager for Instagram long-lived access tokens.
- * Server-side only. Reads and writes .env (NOT .env.local — the comments here
- * said otherwise for a long time while ENV_FILE below always resolved .env).
+ * The rotated token and its expiry are persisted through `lib/credentials.ts`,
+ * which keeps them in `app_settings`. This file used to rewrite `.env` in place
+ * on every refresh; see that module for why it no longer does.
+ *
+ * Server-side only.
  */
 
-import fs from "fs";
-import path from "path";
 import type { TokenState, RefreshResult, ExchangeResult } from "./types";
-import { config, liveEnv } from "@/lib/config";
+import { config } from "@/lib/config";
+import {
+  getInstagramAccessToken,
+  getInstagramTokenExpiry,
+  setInstagramToken,
+} from "@/lib/credentials";
 
 const BASE_URL = "https://graph.instagram.com";
 const WARNING_THRESHOLD_DAYS = 7;
-const ENV_FILE = path.resolve(process.cwd(), ".env");
 
 // ─── Status ───────────────────────────────────────────────────────────────────
 
 export function getTokenStatus(): TokenState {
-  const expiresAtStr = liveEnv.instagramTokenExpiresAt;
+  const expiresAtStr = getInstagramTokenExpiry();
 
   if (!expiresAtStr) {
     return { status: "unknown", daysRemaining: null, expiresAt: null };
@@ -46,10 +51,10 @@ export function getTokenStatus(): TokenState {
 
 /**
  * Refresh a long-lived Instagram access token.
- * Writes the new token and expiry back to .env.
+ * The new token and expiry are persisted to app_settings.
  */
 export async function refreshAccessToken(): Promise<RefreshResult> {
-  const currentToken = liveEnv.instagramAccessToken;
+  const currentToken = getInstagramAccessToken();
   if (!currentToken) {
     return { success: false, error: "INSTAGRAM_ACCESS_TOKEN is not set" };
   }
@@ -86,13 +91,7 @@ export async function refreshAccessToken(): Promise<RefreshResult> {
   const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
   const expiresAtStr = expiresAt.toISOString().split("T")[0]; // YYYY-MM-DD
 
-  // Write back to .env
-  writeEnvVar(ENV_FILE, "INSTAGRAM_ACCESS_TOKEN", newToken);
-  writeEnvVar(ENV_FILE, "TOKEN_EXPIRES_AT", expiresAtStr);
-
-  // Update process.env so subsequent calls in the same process see the new values
-  process.env.INSTAGRAM_ACCESS_TOKEN = newToken;
-  process.env.TOKEN_EXPIRES_AT = expiresAtStr;
+  setInstagramToken(newToken, expiresAtStr);
 
   return { success: true, expiresAt: expiresAtStr };
 }
@@ -144,41 +143,8 @@ export async function exchangeShortLivedToken(
   const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
   const expiresAtStr = expiresAt.toISOString().split("T")[0];
 
-  writeEnvVar(ENV_FILE, "INSTAGRAM_ACCESS_TOKEN", newToken);
-  writeEnvVar(ENV_FILE, "TOKEN_EXPIRES_AT", expiresAtStr);
-
-  process.env.INSTAGRAM_ACCESS_TOKEN = newToken;
-  process.env.TOKEN_EXPIRES_AT = expiresAtStr;
+  setInstagramToken(newToken, expiresAtStr);
 
   return { success: true, accessToken: newToken, expiresAt: expiresAtStr };
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Update or append an environment variable in the .env file.
- * Uses regex replace — same pattern as the Python client.
- */
-function writeEnvVar(filePath: string, key: string, value: string): void {
-  try {
-    if (!fs.existsSync(filePath)) {
-      fs.writeFileSync(filePath, `${key}=${value}\n`, "utf-8");
-      return;
-    }
-
-    let text = fs.readFileSync(filePath, "utf-8");
-    const pattern = new RegExp(`^${key}=.*$`, "m");
-
-    if (pattern.test(text)) {
-      text = text.replace(pattern, `${key}=${value}`);
-    } else {
-      text = text.replace(/\n?$/, `\n${key}=${value}\n`);
-    }
-
-    fs.writeFileSync(filePath, text, "utf-8");
-  } catch (err) {
-    throw new Error(
-      `Failed to write ${key} to ${filePath}: ${err instanceof Error ? err.message : String(err)}`
-    );
-  }
-}

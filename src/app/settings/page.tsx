@@ -73,7 +73,8 @@ export default function SettingsPage() {
             <p className="text-xs text-[var(--text-muted)] leading-relaxed mb-3">
               Configuration lives in{" "}
               <code className="font-mono text-[var(--amber)]">.env</code>. These two are
-              required — the server refuses to start without them:
+              required — the server refuses to start without them, though the access
+              token may instead be one the app has already refreshed and stored:
             </p>
             <div className="space-y-1.5">
               {REQUIRED_ENV_VARS.map((key) => (
