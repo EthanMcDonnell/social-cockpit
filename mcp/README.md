@@ -64,6 +64,7 @@ Tools then appear as `mcp__social-cockpit__<tool>`.
 
 | Tool | What it does |
 |---|---|
+| `suggest_slots` | Next free slots on the real calendar, clear of every published and scheduled post by a minimum gap. Read-only. |
 | `schedule_post` | Book one video/image for a future slot. |
 | `schedule_posts` | Book a batch in one call. Entries are independent; a failure doesn't roll back earlier successes. |
 | `list_scheduled_posts` | What's booked, filtered by window, status, platform. |
@@ -78,6 +79,11 @@ enabled or in dry run.
 
 ### Design notes
 
+- **The calendar decides when, not the caller.** `suggest_slots` reads published
+  history *and* booked jobs, then returns times clear of both by a minimum gap —
+  on **both sides**, since a hole two days after the last post can still sit an
+  hour before the next booked one. Callers should ask for slots rather than
+  compute them; only the cockpit knows what is actually there.
 - **Media is referenced, never uploaded at schedule time.** `video_path` is an
   absolute path on the *cockpit machine's* disk. This preserves the scheduler's
   core rule: nothing reaches R2 until the publish moment.
