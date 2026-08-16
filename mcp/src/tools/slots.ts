@@ -102,8 +102,9 @@ export function registerSlotTools(server: McpServer): void {
       }
       const start = Math.max(floor, now);
 
-      // Commitments establish daily usage. Posting policy intentionally imposes
-      // no global collision/cadence buffer beyond max_posts_per_day.
+      // Commitments establish daily usage and exact occupied instants. Posting
+      // policy intentionally imposes no minimum-gap/cadence buffer beyond
+      // max_posts_per_day — but two posts never share one exact instant.
       const commitments = await fetchCommitments(
         startOfDay(start, tz),
         start + SEARCH_HORIZON_DAYS * DAY_MS
@@ -112,9 +113,11 @@ export function registerSlotTools(server: McpServer): void {
       // Running state as slots are chosen, so they count toward daily capacity.
 
       const perDay = new Map<string, number>();
+      const occupiedAt = new Set<number>();
       for (const c of commitments) {
         const key = dayKey(c.at, tz);
         perDay.set(key, (perDay.get(key) ?? 0) + 1);
+        occupiedAt.add(c.at);
       }
 
       const slots: { scheduled_at: string; local: string; epoch_ms: number }[] = [];
@@ -138,6 +141,11 @@ export function registerSlotTools(server: McpServer): void {
             fullDays.add(key);
             break; // No time of day helps once the day itself is full.
           }
+
+          // A day under its cap can still have this particular time already
+          // claimed by an existing commitment. Skip it without touching perDay
+          // — that count already includes the commitment sitting here.
+          if (occupiedAt.has(candidate)) continue;
 
           const w = utcToWall(candidate, tz);
           slots.push({

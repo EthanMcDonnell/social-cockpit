@@ -121,7 +121,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     // it *within* a day that is already at capacity isn't blocked by itself.
     const cap = checkDailyCap(ms, timeZone, getMaxPostsPerDay(), job.id);
     if (!cap.allowed) {
-      return NextResponse.json({ error: "day_full", message: cap.message }, { status: 409 });
+      return NextResponse.json({ error: cap.reason ?? "day_full", message: cap.message }, { status: 409 });
     }
 
     patch.scheduledAt = ms;
@@ -225,7 +225,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     // claimed the row between our initial read and conditional update.
     if (patch.scheduledAt != null || becomesOccupying) {
       const cap = checkDailyCap(capacityTime, timeZone, getMaxPostsPerDay(), job.id);
-      if (!cap.allowed) return NextResponse.json({ error: "day_full", message: cap.message }, { status: 409 });
+      if (!cap.allowed) return NextResponse.json({ error: cap.reason ?? "day_full", message: cap.message }, { status: 409 });
     }
     return locked();
   }

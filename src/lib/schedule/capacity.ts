@@ -40,6 +40,8 @@ export interface DayUsage {
   scheduled: number;
   /** Published, and not attributable to one of this day's jobs. */
   external: number;
+  /** Whether some other post already occupies this exact instant. */
+  exactCollision: boolean;
 }
 
 /**
@@ -60,11 +62,12 @@ export function usageForDay(
   const placeholders = OCCUPYING_STATUSES.map(() => "?").join(",");
   const rows = getDb()
     .prepare(
-      `SELECT id, result FROM scheduled_posts
+      `SELECT id, result, scheduled_at FROM scheduled_posts
         WHERE scheduled_at >= ? AND scheduled_at < ?
           AND status IN (${placeholders})`
     )
-    .all(dayStart, dayEnd, ...OCCUPYING_STATUSES) as { id: string; result: string | null }[];
+    .all(dayStart, dayEnd, ...OCCUPYING_STATUSES) as
+    { id: string; result: string | null; scheduled_at: number }[];
 
   const jobs = rows.filter((row) => row.id !== excludeJobId);
 
@@ -82,11 +85,13 @@ export function usageForDay(
   }
 
   let external = 0;
+  let exactCollision = jobs.some((row) => row.scheduled_at === instant);
   for (const media of getAllCachedMedia()) {
     const at = Date.parse(media.timestamp);
     if (!Number.isFinite(at) || at < dayStart || at >= dayEnd) continue;
     if (ownMediaIds.has(media.id)) continue;
     external++;
+    if (at === instant) exactCollision = true;
   }
 
   return {
@@ -94,6 +99,7 @@ export function usageForDay(
     scheduled: jobs.length,
     external,
     total: jobs.length + external,
+    exactCollision,
   };
 }
 
@@ -103,9 +109,16 @@ export interface CapCheck {
   max: number;
   /** Human-readable reason, present only when rejected. */
   message?: string;
+  /** Which rule stopped it, present only when rejected. */
+  reason?: "day_full" | "slot_taken";
 }
 
-/** Whether one more post fits on the day containing `instant`. */
+/**
+ * Whether one more post fits on the day containing `instant` — and, distinctly,
+ * whether `instant` itself is still free. A day under its cap can still have
+ * this exact instant already claimed by another post; that is checked first,
+ * since it's not something raising `max_posts_per_day` would fix.
+ */
 export function checkDailyCap(
   instant: number,
   timeZone: string,
@@ -113,6 +126,17 @@ export function checkDailyCap(
   excludeJobId?: string
 ): CapCheck {
   const usage = usageForDay(instant, timeZone, excludeJobId);
+
+  if (usage.exactCollision) {
+    return {
+      allowed: false,
+      usage,
+      max,
+      reason: "slot_taken",
+      message: "Another post is already scheduled for this exact time. Pick a different time.",
+    };
+  }
+
   if (usage.total < max) return { allowed: true, usage, max };
 
   const date = new Date(usage.dayStart).toLocaleDateString("en-CA", { timeZone });
@@ -125,6 +149,7 @@ export function checkDailyCap(
     allowed: false,
     usage,
     max,
+    reason: "day_full",
     message:
       `${date} already has ${usage.total} post(s) (${breakdown}), which is the limit of ${max} per day. ` +
       `Pick another day, or raise max_posts_per_day in the schedule settings.`,

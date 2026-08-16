@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
   // is acceptable or not depending on what else is booked that day.
   const cap = checkDailyCap(parsed.job.scheduledAt, getTimeZone(), getMaxPostsPerDay());
   if (!cap.allowed) {
-    return NextResponse.json({ error: "day_full", message: cap.message }, { status: 409 });
+    return NextResponse.json({ error: cap.reason ?? "day_full", message: cap.message }, { status: 409 });
   }
 
   const job = createJobWithinScheduledCap(

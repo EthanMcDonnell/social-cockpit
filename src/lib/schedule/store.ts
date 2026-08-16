@@ -162,7 +162,18 @@ export function createJobWithinScheduledCap(
             AND status IN (${CAP_OCCUPYING_STATUSES.map(() => "?").join(",")})`
       )
       .get(dayStart, dayEnd, ...CAP_OCCUPYING_STATUSES) as { count: number }).count;
-    return count >= remainingScheduledCapacity ? null : createJob(input);
+    if (count >= remainingScheduledCapacity) return null;
+
+    const clash = (db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM scheduled_posts
+          WHERE scheduled_at = ?
+            AND status IN (${CAP_OCCUPYING_STATUSES.map(() => "?").join(",")})`
+      )
+      .get(input.scheduledAt, ...CAP_OCCUPYING_STATUSES) as { count: number }).count;
+    if (clash > 0) return null;
+
+    return createJob(input);
   });
   return reserve.immediate();
 }
@@ -348,7 +359,20 @@ export function updateJobWithinScheduledCap(
             AND status IN (${CAP_OCCUPYING_STATUSES.map(() => "?").join(",")})`
       )
       .get(id, dayStart, dayEnd, ...CAP_OCCUPYING_STATUSES) as { count: number }).count;
-    return count >= remainingScheduledCapacity ? null : updateJob(id, patch, expectedStatuses);
+    if (count >= remainingScheduledCapacity) return null;
+
+    if (patch.scheduledAt != null) {
+      const clash = (db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM scheduled_posts
+            WHERE id != ? AND scheduled_at = ?
+              AND status IN (${CAP_OCCUPYING_STATUSES.map(() => "?").join(",")})`
+        )
+        .get(id, patch.scheduledAt, ...CAP_OCCUPYING_STATUSES) as { count: number }).count;
+      if (clash > 0) return null;
+    }
+
+    return updateJob(id, patch, expectedStatuses);
   });
   return reserve.immediate();
 }
