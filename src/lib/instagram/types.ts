@@ -159,6 +159,8 @@ export interface InstagramApiErrorBody {
   code: number;
   error_subcode?: number;
   fbtrace_id?: string;
+  /** Meta's own "this was a blip, try again" marker. See isTransientGraphError. */
+  is_transient?: boolean;
 }
 
 export interface InstagramApiError {
@@ -169,6 +171,7 @@ export class InstagramError extends Error {
   readonly code: number;
   readonly type: string;
   readonly subcode?: number;
+  readonly isTransient: boolean;
 
   constructor(body: InstagramApiErrorBody) {
     super(body.message);
@@ -176,7 +179,28 @@ export class InstagramError extends Error {
     this.code = body.code;
     this.type = body.type;
     this.subcode = body.error_subcode;
+    this.isTransient = body.is_transient === true;
   }
+}
+
+/**
+ * Graph codes 1 and 2 are Meta's "downtime / temporary issue, wait and retry"
+ * pair, and they arrive with `is_transient: true` when Meta bothers to set it.
+ *
+ * Code 1 is worth calling out because its *message* lies. It reads "Please
+ * reduce the amount of data you're asking for", which sounds like a statement
+ * about the query, and it isn't: we have had it come back for a post with
+ * comments_count = 0, where the response could not have been smaller. It is the
+ * generic answer whenever Meta's backend gives up assembling a response, so
+ * treat the code as the signal and the message as a hint that is often wrong.
+ *
+ * Callers reading this as "the query is too big" have shipped real query
+ * rewrites for what was a blip — hence the comment rather than a bare code list.
+ */
+export function isTransientGraphError(err: unknown): err is InstagramError {
+  return (
+    err instanceof InstagramError && (err.isTransient || err.code === 1 || err.code === 2)
+  );
 }
 
 /**

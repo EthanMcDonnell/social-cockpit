@@ -7,6 +7,7 @@ import {
   InstagramError,
   InstagramTransportError,
   RateLimitError,
+  isTransientGraphError,
   type InstagramApiError,
 } from "./types";
 import { parseRateLimit } from "./rate-limit";
@@ -16,6 +17,10 @@ const BASE_URL = "https://graph.instagram.com/v25.0";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_GET_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 750;
+// A Graph-level transient is Meta telling us its own backend just failed, so it
+// gets a longer pause than a network blip — 750ms is short enough that the retry
+// tends to land in the same bad moment that produced the first failure.
+const TRANSIENT_RETRY_DELAY_MS = 2_000;
 const SNIPPET_LEN = 200;
 
 export interface FetchOptions {
@@ -81,24 +86,30 @@ export async function instagramFetch<T>(
 
   // Only GETs are retried. A POST that failed in transport may still have landed
   // — retrying one could send the same DM twice, and the fired_automations dedupe
-  // upstream can't catch that because it never sees the second attempt.
+  // upstream can't catch that because it never sees the second attempt. That
+  // reasoning covers Graph-level transients too: code 1 on a publish or a DM says
+  // nothing about whether the write took effect.
   const maxAttempts = method === "GET" ? MAX_GET_ATTEMPTS : 1;
 
   for (let attempt = 1; ; attempt++) {
     try {
       return await attemptFetch<T>(path, options);
     } catch (err) {
-      if (
-        attempt >= maxAttempts ||
-        !(err instanceof InstagramTransportError) ||
-        !err.retryable
-      ) {
+      // Two different blips, both worth one more attempt: we never reached Graph
+      // (network fault, our timeout, a 5xx HTML page), or we reached it and it
+      // answered with one of its own "temporary issue" codes.
+      const transport = err instanceof InstagramTransportError && err.retryable;
+      const transient = isTransientGraphError(err);
+      if (attempt >= maxAttempts || !(transport || transient)) {
         throw err;
       }
+      const delay = transient ? TRANSIENT_RETRY_DELAY_MS : RETRY_DELAY_MS;
       console.warn(
-        `[instagram] ${method} ${path} — ${err.message}; retrying once in ${RETRY_DELAY_MS}ms`
+        `[instagram] ${method} ${path} — ${
+          err instanceof Error ? err.message : String(err)
+        }; retrying once in ${delay}ms`
       );
-      await sleep(RETRY_DELAY_MS);
+      await sleep(delay);
     }
   }
 }

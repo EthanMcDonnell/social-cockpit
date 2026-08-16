@@ -48,6 +48,11 @@ const MAX_CONVERSATION_PAGES = 5;
 // reduce the amount of data you're asking for" once the account has enough
 // message volume. At a 60s cadence 10×10 is ample, and the cursor short-circuit
 // plus MAX_CONVERSATION_PAGES still cover a burst.
+// Caveat on that diagnosis: the same message also arrives as Meta's generic
+// code-1 transient, where it says nothing about request size — see
+// isTransientGraphError. Bounding these edges is worth doing on its own merits,
+// but don't read a fresh occurrence of that text as "shrink the query" without
+// checking the code first.
 // Meta documents no max for the conversations `limit`, and caps message *detail*
 // at the 20 newest per conversation regardless — so the win is trimming the
 // message expansion, not the conversation count. 25×5 is ~4x less nested data
