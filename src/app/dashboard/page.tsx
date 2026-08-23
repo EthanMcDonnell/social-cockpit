@@ -3,7 +3,7 @@ import { CockpitShell } from "@/components/dashboard/cockpit/CockpitShell";
 import { Readouts } from "@/components/dashboard/cockpit/Readouts";
 import { FollowerLineChart } from "@/components/dashboard/cockpit/FollowerLineChart";
 import { VideoViewsChart } from "@/components/dashboard/cockpit/VideoViewsChart";
-import { BestTimeHeatmap } from "@/components/dashboard/cockpit/BestTimeHeatmap";
+import { BestTimeChart } from "@/components/dashboard/cockpit/BestTimeChart";
 import { PostsPerDayChart } from "@/components/dashboard/cockpit/PostsPerDayChart";
 
 export const metadata = {
@@ -28,7 +28,7 @@ export default function DashboardPage() {
               <VideoViewsChart />
             </Suspense>
             <Suspense>
-              <BestTimeHeatmap />
+              <BestTimeChart />
             </Suspense>
           </div>
 
