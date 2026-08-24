@@ -1,5 +1,6 @@
 import { getTokenStatus, refreshAccessToken } from "@/lib/token/manager";
 import { config } from "@/lib/config";
+import { reportError, reportWarn } from "@/lib/observability";
 
 // Proactively refresh the Instagram long-lived token before it expires.
 // Instagram's ig_refresh_token only works on a still-valid token (>24h old) and
@@ -14,16 +15,20 @@ const tick = async () => {
     const { status, daysRemaining } = getTokenStatus();
 
     if (status === "expired") {
-      console.error(
-        "[token] Access token has expired and cannot be auto-refreshed. " +
+      reportError(
+        "token",
+        "token_expired",
+        "Access token has expired and cannot be auto-refreshed. " +
           "Exchange a new short-lived token in Settings."
       );
       return;
     }
 
     if (status === "unknown") {
-      console.warn(
-        "[token] Token expiry unknown (TOKEN_EXPIRES_AT not set) — skipping auto-refresh."
+      reportWarn(
+        "token",
+        "expiry_unknown",
+        "Token expiry unknown (TOKEN_EXPIRES_AT not set) — skipping auto-refresh."
       );
       return;
     }
@@ -40,10 +45,10 @@ const tick = async () => {
     if (result.success) {
       console.log(`[token] Refreshed. New expiry: ${result.expiresAt}`);
     } else {
-      console.error(`[token] Refresh failed: ${result.error}`);
+      reportError("token", "refresh_failed", `Refresh failed: ${result.error}`);
     }
   } catch (err) {
-    console.error("[token] refresh cycle error:", err);
+    reportError("token", "cycle_error", "refresh cycle error", { error: err });
   }
 };
 

@@ -169,7 +169,7 @@ function LogsLink() {
   const { data: issues } = useEventIssueCount();
   return (
     <Link
-      href="/automations/logs"
+      href="/logs?source=automation"
       className="flex items-center gap-1.5 text-xs font-medium text-text-muted hover:text-text-primary transition-colors"
     >
       Logs

@@ -1,12 +1,10 @@
-import { CockpitShell } from "@/components/dashboard/cockpit/CockpitShell";
-import { AutomationLogsClient } from "./AutomationLogsClient";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Automation Logs" };
-
+/**
+ * The automation-only log was folded into /logs, which carries every worker's
+ * warnings and errors rather than the two that happened to have a table. Kept
+ * as a redirect so existing links and bookmarks still land somewhere useful.
+ */
 export default function AutomationLogsPage() {
-  return (
-    <CockpitShell fill>
-      <AutomationLogsClient />
-    </CockpitShell>
-  );
+  redirect("/logs?source=automation");
 }

@@ -8,6 +8,7 @@ import {
   type MediaInsightMetric,
 } from "@/lib/instagram/types";
 import * as store from "./store";
+import { reportError, reportWarn } from "@/lib/observability";
 
 // How long cached data is considered fresh before a read triggers a background
 // refresh (stale-while-revalidate). Defaults to 30 min.
@@ -67,7 +68,9 @@ async function refreshInsightsOrTombstone(media: InstagramMedia): Promise<boolea
   } catch (err) {
     if (isMediaGoneError(err)) {
       store.tombstoneMedia(media.id, "cache insights 100/33");
-      console.warn(`[cache] tombstoned gone media ${media.id} (insights 100/33)`);
+      reportWarn("cache", "media_tombstoned", `tombstoned gone media ${media.id} (insights 100/33)`, {
+        meta: { mediaId: media.id },
+      });
       return false;
     }
     throw err;
@@ -86,7 +89,7 @@ export async function runCacheSync(): Promise<void> {
       "error",
       err instanceof Error ? err.message : String(err)
     );
-    console.error("[cache] media sync failed:", err);
+    reportError("cache", "media_sync_failed", "media sync failed", { error: err });
     return;
   }
 
@@ -97,12 +100,18 @@ export async function runCacheSync(): Promise<void> {
     } catch (err) {
       if (err instanceof RateLimitError) {
         store.setSyncState("insights", "throttled", `stopped after ${ok}`);
-        console.warn(
-          `[cache] insights sync throttled after ${ok}/${media.length} — backing off`
+        reportWarn(
+          "cache",
+          "insights_throttled",
+          `insights sync throttled after ${ok}/${media.length} — backing off`,
+          { meta: { synced: ok, total: media.length } }
         );
         return;
       }
-      console.error(`[cache] insights failed for ${m.id}:`, err);
+      reportError("cache", "insights_failed", `insights failed for ${m.id}`, {
+        error: err,
+        meta: { mediaId: m.id },
+      });
     }
   }
   store.setSyncState("insights", "ok", `${ok}/${media.length}`);
@@ -118,7 +127,11 @@ function background(key: string, fn: () => Promise<unknown>): void {
   inFlight.add(key);
   void Promise.resolve()
     .then(fn)
-    .catch((e) => console.error(`[cache] background refresh ${key} failed:`, e))
+    .catch((e) =>
+      reportError("cache", "background_refresh_failed", `background refresh ${key} failed`, {
+        error: e,
+      })
+    )
     .finally(() => inFlight.delete(key));
 }
 

@@ -43,6 +43,7 @@ import {
 import { getStagedMediaMany, releaseStaged, sweepOrphanedStaged } from "./media";
 import { schedulerEnabled as configuredSchedulerEnabled, dryRunActive } from "./settings";
 import type { FailureKind, ScheduleResult, ScheduledPost, YoutubeJobPayload } from "./types";
+import { reportError } from "@/lib/observability";
 
 export const INTERVAL_MS = config.schedule.intervalMs;
 const FINALIZE_POLL_MS = 30_000;
@@ -60,8 +61,10 @@ export function schedulerEnabled(): boolean {
   if (hasSchedulerLeaseSchema()) return true;
   if (!warnedMissingLeaseSchema) {
     warnedMissingLeaseSchema = true;
-    console.error(
-      "[schedule] worker disabled: the reviewed scheduler integrity migration is missing. Run it before enabling publishing."
+    reportError(
+      "schedule",
+      "worker_disabled",
+      "worker disabled: the reviewed scheduler integrity migration is missing. Run it before enabling publishing."
     );
   }
   return false;

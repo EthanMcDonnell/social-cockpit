@@ -2,12 +2,13 @@ import {
   runTranscriptionCycle,
   TRANSCRIPTION_INTERVAL_MS,
 } from "@/lib/transcription/worker";
+import { reportError } from "@/lib/observability";
 
 const tick = async () => {
   try {
     await runTranscriptionCycle();
   } catch (err) {
-    console.error("[transcription] cycle error:", err);
+    reportError("transcription", "cycle_error", "cycle error", { error: err });
   }
 };
 

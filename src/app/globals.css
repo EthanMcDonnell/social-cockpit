@@ -249,6 +249,42 @@ body {
   border-color: var(--amber-dim);
   background: rgba(255, 179, 36, 0.06);
 }
+/* Health indicator, sitting beside the settings cog on every page. Errors and
+   warnings used to reach stdout only, so noticing one meant already suspecting
+   it; this is the passive signal that removes that step. */
+.cockpit .ck-health {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  margin-left: 14px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--mut);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  flex-shrink: 0;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.cockpit .ck-health:hover {
+  color: var(--txt);
+  border-color: var(--hair-2);
+}
+.cockpit .ck-health.on {
+  color: var(--amber-hi);
+  border-color: var(--amber-dim);
+  background: rgba(255, 179, 36, 0.06);
+}
+/* Only the count is tinted red. The glyph staying neutral keeps the control
+   readable as "logs" rather than reading as an alert that cannot be dismissed. */
+.cockpit .ck-health .ck-health-count {
+  color: var(--accent-red);
+  font-weight: 600;
+}
+
 .cockpit .ck-window {
   display: inline-flex;
   gap: 2px;

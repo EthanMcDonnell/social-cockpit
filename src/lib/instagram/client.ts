@@ -12,6 +12,7 @@ import {
 } from "./types";
 import { parseRateLimit } from "./rate-limit";
 import { getInstagramAccessToken } from "@/lib/credentials";
+import { reportWarn } from "@/lib/observability";
 
 const BASE_URL = "https://graph.instagram.com/v25.0";
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -104,10 +105,13 @@ export async function instagramFetch<T>(
         throw err;
       }
       const delay = transient ? TRANSIENT_RETRY_DELAY_MS : RETRY_DELAY_MS;
-      console.warn(
-        `[instagram] ${method} ${path} — ${
+      reportWarn(
+        "instagram",
+        "request_retry",
+        `${method} ${path} — ${
           err instanceof Error ? err.message : String(err)
-        }; retrying once in ${delay}ms`
+        }; retrying once in ${delay}ms`,
+        { meta: { method, path, delayMs: delay } }
       );
       await sleep(delay);
     }

@@ -5,6 +5,7 @@ import {
   isTranscriptionEnabled,
   queueTranscription,
 } from "./service";
+import { reportWarn } from "@/lib/observability";
 
 // Re-scan the account for new videos every 30 minutes. The first cycle runs
 // immediately on server boot (see register.ts).
@@ -18,8 +19,10 @@ export const TRANSCRIPTION_INTERVAL_MS = 30 * 60 * 1000;
 export async function runTranscriptionCycle(): Promise<void> {
   if (!isTranscriptionEnabled()) return;
   if (!isTranscriptionConfigured()) {
-    console.warn(
-      "[transcription] TRANSCRIPTION_PYTHON is not set — skipping cycle. " +
+    reportWarn(
+      "transcription",
+      "python_not_configured",
+      "TRANSCRIPTION_PYTHON is not set — skipping cycle. " +
         "Set it to a Python interpreter with faster-whisper to enable transcription."
     );
     return;

@@ -22,6 +22,7 @@ import type {
   ScheduleResult,
   AutomationSpec,
 } from "./types";
+import { reportError } from "@/lib/observability";
 
 /**
  * How long a claimed job may stay `publishing` before another tick assumes the
@@ -607,7 +608,9 @@ export function logScheduleEvent(
       );
   } catch (err) {
     // Never let observability break the thing it observes.
-    console.error("[schedule] could not log event:", err);
+    reportError("schedule", "event_log_write_failed", "could not write to schedule_events", {
+      error: err,
+    });
   }
 }
 

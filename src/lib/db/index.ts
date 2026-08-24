@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { config } from "@/lib/config";
 import path from "path";
 import fs from "fs";
+import { reportWarn } from "@/lib/observability";
 
 const DB_PATH = config.db.main;
 
@@ -33,8 +34,11 @@ function restrictPermissions(): void {
     try {
       if (fs.existsSync(file)) fs.chmodSync(file, 0o600);
     } catch (err) {
-      console.warn(
-        `[db] could not restrict permissions on ${file}: ${err instanceof Error ? err.message : String(err)}`
+      reportWarn(
+        "db",
+        "permissions_not_restricted",
+        `could not restrict permissions on ${file}: ${err instanceof Error ? err.message : String(err)}`,
+        { meta: { file } }
       );
     }
   }

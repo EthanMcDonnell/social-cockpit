@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { runAutomationCycle, runFollowConfirmPoll } from "@/lib/automation-worker";
+import { reportError } from "@/lib/observability";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,9 @@ export async function POST(request: Request) {
     // Also run the comment_to_follow_dm confirm poll so a manual trigger
     // processes confirm taps too (isolated so a poll failure won't fail here).
     await runFollowConfirmPoll().catch((err) =>
-      console.error("[automation/trigger] follow-confirm poll error:", err)
+      reportError("api", "follow_confirm_poll_failed", "manual trigger: follow-confirm poll error", {
+        error: err,
+      })
     );
     return NextResponse.json({ ok: true, message: "Automation cycle complete. Check server logs for details." });
   } catch (err) {

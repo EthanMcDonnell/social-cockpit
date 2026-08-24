@@ -36,6 +36,7 @@ import {
 import { instagramFetch } from "@/lib/instagram/client";
 import { getTombstonedIds, tombstoneMedia } from "@/lib/cache/store";
 import { throttledSend, hasSendBudget, logEvent } from "@/lib/automation-sender";
+import { reportError, reportWarn } from "@/lib/observability";
 
 // ─── comment_to_follow_dm tunables (top of module, easy to tune) ─────────────
 const PENDING_TTL_DAYS = 7;   // matches Instagram's 7-day private-reply window
@@ -313,7 +314,12 @@ export async function processFlows(
           username: placeholders.username,
           comment: comment.text ?? "",
         });
-        if (!replyText) console.warn(`[automation] comment_reply_fn "${flow.config.comment_reply_fn}" not found`);
+        if (!replyText) reportWarn(
+            "automation",
+            "reply_fn_missing",
+            `comment_reply_fn "${flow.config.comment_reply_fn}" not found`,
+            { meta: { flowId: flow.id, fn: flow.config.comment_reply_fn } }
+          );
       } else if (flow.config.comment_replies && flow.config.comment_replies.length > 0) {
         const replies = flow.config.comment_replies;
         replyText = replies[Math.floor(Math.random() * replies.length)];
@@ -325,7 +331,10 @@ export async function processFlows(
           const result = await replyToComment(comment.id, resolveTemplate(replyText, placeholders));
           console.log(`[automation] comment reply posted OK, id=${result.id}`);
         } catch (err) {
-          console.error(`[automation] comment reply FAILED:`, err);
+          reportError("automation", "comment_reply_failed", `public reply to comment ${comment.id} failed`, {
+            error: err,
+            meta: { flowId: flow.id, commentId: comment.id },
+          });
         }
       } else {
         console.log(`[automation] no comment reply configured — skipping public reply`);
@@ -658,7 +667,7 @@ export async function runAutomationCycle() {
       const media = await listMedia(50);
       for (const m of media.data) postIds.add(m.id);
     } catch (err) {
-      console.error("[automation] failed to fetch media list:", err);
+      reportError("automation", "media_list_failed", "failed to fetch media list", { error: err });
     }
   }
 

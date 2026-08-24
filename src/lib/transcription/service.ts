@@ -12,6 +12,7 @@ import {
   type TranscriptRow,
   type TranscriptSummary,
 } from "./db";
+import { reportError } from "@/lib/observability";
 
 // How many leading characters of a transcript to include as a list preview.
 const PREVIEW_CHARS = 200;
@@ -273,9 +274,11 @@ async function drainQueue(): Promise<void> {
       } catch (err) {
         const attempts = (failed.get(job.mediaId) ?? 0) + 1;
         failed.set(job.mediaId, attempts);
-        console.error(
-          `[transcription] job ${job.mediaId} failed (attempt ${attempts}/${MAX_ATTEMPTS}):`,
-          err
+        reportError(
+          "transcription",
+          "job_failed",
+          `job ${job.mediaId} failed (attempt ${attempts}/${MAX_ATTEMPTS})`,
+          { error: err, meta: { mediaId: job.mediaId, attempts, maxAttempts: MAX_ATTEMPTS } }
         );
       } finally {
         queued.delete(job.mediaId);

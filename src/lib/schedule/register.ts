@@ -1,4 +1,5 @@
 import { runScheduleCycle, schedulerEnabled, isDryRun, INTERVAL_MS } from "@/lib/schedule/worker";
+import { reportError } from "@/lib/observability";
 
 // Boot tick plus a fixed cadence, mirroring the automation/cache/transcription
 // workers. 30s rather than their 60s because a scheduled slot should land within
@@ -13,7 +14,7 @@ const tick = async () => {
   try {
     await runScheduleCycle();
   } catch (err) {
-    console.error("[schedule] cycle error:", err);
+    reportError("schedule", "cycle_error", "cycle error", { error: err });
   } finally {
     cycleInProgress = false;
   }

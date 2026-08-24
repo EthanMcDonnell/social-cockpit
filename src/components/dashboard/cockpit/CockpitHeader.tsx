@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { RadarScope } from "./RadarScope";
 import { usePeriod, type PeriodDays } from "@/hooks/usePeriod";
 import { usePlatform } from "@/hooks/usePlatform";
@@ -64,6 +65,45 @@ function SettingsGlyph({ size = 15 }: { size?: number }) {
   );
 }
 
+function LogsGlyph({ size = 15 }: { size?: number }) {
+  return (
+    // Stacked lines with a leading tick — a log, not a document.
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 6h16M4 12h16M4 18h10"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Unfiltered warn+error tally across every worker.
+ *
+ * Cheap on purpose: limit=1 discards the rows, and the route computes its counts
+ * over the whole of each table regardless of the limit, so this costs three
+ * GROUP BYs and nothing else. Polled rather than pushed — a minute of staleness
+ * on a number you glance at is not worth a socket.
+ */
+function useIssueCount(): number {
+  const { data } = useQuery<{ counts: { warn: number; error: number } }>({
+    queryKey: ["logs-health"],
+    queryFn: async () => {
+      const res = await fetch("/api/logs?limit=1");
+      if (!res.ok) throw new Error("health check failed");
+      return res.json();
+    },
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    // A failed health check must not paint the header red: that would report a
+    // problem with the log reader as a problem with the workers.
+    retry: false,
+  });
+  return (data?.counts.warn ?? 0) + (data?.counts.error ?? 0);
+}
+
 export function CockpitHeader() {
   const pathname = usePathname();
   const [platform] = usePlatform();
@@ -72,6 +112,8 @@ export function CockpitHeader() {
   );
   const isDashboard = active?.href === "/dashboard";
   const isSettings = pathname === "/settings" || pathname.startsWith("/settings/");
+  const isLogs = pathname === "/logs" || pathname.startsWith("/logs/");
+  const issues = useIssueCount();
 
   return (
     <header className="ck-header">
@@ -113,10 +155,23 @@ export function CockpitHeader() {
         ) : (
           <span>
             SECTION <b>{(active?.label ?? "SYSTEM").toUpperCase()}</b> · STATUS{" "}
-            <b>NOMINAL</b>
+            {issues > 0 ? (
+              <b className="warn">▲ {issues} LOGGED</b>
+            ) : (
+              <b>NOMINAL</b>
+            )}
           </span>
         )}
       </div>
+      <Link
+        href="/logs"
+        aria-label={issues > 0 ? `System logs — ${issues} issues` : "System logs"}
+        title={issues > 0 ? `${issues} warnings/errors logged` : "System logs"}
+        className={`ck-health${isLogs ? " on" : ""}`}
+      >
+        <LogsGlyph />
+        {issues > 0 && <span className="ck-health-count">{issues > 99 ? "99+" : issues}</span>}
+      </Link>
       <Link href="/settings" aria-label="Settings" className={`ck-settings${isSettings ? " on" : ""}`}>
         <SettingsGlyph />
       </Link>

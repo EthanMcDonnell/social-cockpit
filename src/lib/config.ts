@@ -267,6 +267,11 @@ export const config = {
     main: dataPath("DB_PATH", "data", "automations.db"),
     cache: dataPath("CACHE_DB_PATH", "data", "cache.db"),
     transcripts: dataPath("TRANSCRIPTS_DB_PATH", "data", "transcripts.db"),
+    // Warnings and errors from every worker, in their own file. Deliberately
+    // NOT in automations.db: that file holds the access tokens and the funnel's
+    // real state, and a log nobody's funnel depends on has no business sharing
+    // a write path with it. Disposable — delete it and you lose only history.
+    events: dataPath("EVENTS_DB_PATH", "data", "events.db"),
   },
 } as const;
 

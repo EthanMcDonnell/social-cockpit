@@ -1,4 +1,5 @@
 import { runAutomationCycle, runFollowConfirmPoll, INTERVAL_MS } from "@/lib/automation-worker";
+import { reportError, reportWarn } from "@/lib/observability";
 
 // A cycle that overruns the 60s interval would otherwise have the next tick
 // start on top of it: setInterval doesn't wait for an async callback. The
@@ -10,21 +11,21 @@ let cycleInProgress = false;
 
 const tick = async () => {
   if (cycleInProgress) {
-    console.warn("[automation] previous cycle still running — skipping this tick");
+    reportWarn("automation", "cycle_overlap", "previous cycle still running — skipping this tick");
     return;
   }
   cycleInProgress = true;
   try {
     await runAutomationCycle();
   } catch (err) {
-    console.error("[automation] cycle error:", err);
+    reportError("automation", "cycle_error", "cycle error", { error: err });
   }
   // comment_to_follow_dm confirm poll shares the same 60s cadence. Isolated in
   // its own try so a poll failure never affects the main comment cycle.
   try {
     await runFollowConfirmPoll();
   } catch (err) {
-    console.error("[automation] follow-confirm poll error:", err);
+    reportError("automation", "follow_confirm_poll_failed", "follow-confirm poll error", { error: err });
   } finally {
     cycleInProgress = false;
   }

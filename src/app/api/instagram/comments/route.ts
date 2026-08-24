@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { listComments } from "@/lib/instagram/endpoints/comments";
 import { InstagramError, RateLimitError } from "@/lib/instagram/types";
 import { processFlows } from "@/lib/automation-worker";
+import { reportError } from "@/lib/observability";
 
 export async function GET(request: NextRequest) {
   const postId = request.nextUrl.searchParams.get("post_id");
@@ -12,7 +13,12 @@ export async function GET(request: NextRequest) {
   try {
     const result = await listComments(postId);
     console.log(`[comments] post=${postId} total=${result.data.length} hasMore=${!!result.paging?.next} firstCommentUsername=${result.data[0]?.username ?? result.data[0]?.from?.username ?? "(none)"}`);
-    await processFlows(postId, result.data).catch(console.error);
+    await processFlows(postId, result.data).catch((err) =>
+      reportError("api", "process_flows_failed", `processFlows failed for post ${postId}`, {
+        error: err,
+        meta: { postId },
+      })
+    );
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof RateLimitError) {
