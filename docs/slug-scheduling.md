@@ -39,6 +39,15 @@ slug three times gives one candidate with three posting records, not three
 candidates. Nothing is ever copied or uploaded — a pool holds a reference to
 your own library, exactly as a scheduled post does.
 
+Two things a pool refuses:
+
+- **Anything that isn't a video.** Every method treats a pool's members as
+  interchangeable, so a photo among them would surface as a failed publish at
+  3am. It fails the enrolment instead.
+- **A browser upload.** A dropped file is a copy in `data/staged/` that the
+  scheduler deletes once the job finishes, so enrolling it would point the pool
+  at a path that stops existing. Schedule the file by path and it joins.
+
 ### The ledger
 
 Every enrolment writes to `slug_video_posts`: *this local file became this
@@ -55,10 +64,21 @@ before this feature, and everything here depends on it:
 At fire time, under the worker's lease, the pool is filtered and ranked.
 
 **Eligibility.** A candidate is out if it has already been posted to the target
-platform, or if its file has gone missing from disk. The first rule is what
-makes a recurring slug booking work through a library rather than posting its
-best performer forever. Pools drain per platform: exhausting Instagram leaves
-YouTube untouched.
+platform, if its file has gone missing from disk, or if another slot is
+publishing it *right now*. The first rule is what makes a recurring slug booking
+work through a library rather than posting its best performer forever; pools
+drain per platform, so exhausting Instagram leaves YouTube untouched.
+
+The third rule closes a window. The ledger row that retires a candidate is
+written only once a post is live, and Instagram can spend minutes processing a
+reel — so between one slot picking a video and that post existing, a second slot
+on the same slug would rank the same candidate top and post it twice. Picks made
+by jobs that are `publishing` or `finalizing` count as taken. A job that picked
+and then *failed* never posted, so its candidate returns to the pool.
+
+The same three filters back the counts shown on the Slugs page, the calendar
+card, and the composer's slug picker — a card reading "3 left" over a slot that
+then finds nothing would be worse than no count at all.
 
 **Ranking.**
 
@@ -81,9 +101,12 @@ not `created_at`, which has one-second resolution and would leave a batch of
 videos added together in arbitrary order.
 
 **Where the numbers come from.** Instagram is free: `cache.db` already holds
-insights for every post. YouTube costs one bounded `videos.list`, memoised for
-ten minutes, and a failure degrades to "no YouTube metrics" rather than failing
-the publish. A slot is never missed because a stats call timed out.
+insights for every post, with reach standing in where views were never reported.
+YouTube is fetched by video id — never by recency, or a pool's older clips would
+be invisible — one `videos.list` per 50 ids, memoised per video for ten minutes.
+A failure degrades to "no YouTube metrics" rather than failing the publish, and
+is not retried until the TTL is up. A slot is never missed because a stats call
+timed out.
 
 ## 3. Which method runs
 
@@ -124,8 +147,15 @@ Notes:
   the candidate's label or filename. YouTube refuses an untitled upload, so this
   can never resolve to empty.
 - **An empty pool fails the job** with `error_kind: "no_candidate"`, and the
-  reason names whether the pool was empty or merely exhausted for that platform.
-  It is not retryable: the fix is to add a video, not to wait.
+  reason names whether the pool was empty, exhausted for that platform, missing
+  from disk, or entirely spoken for. It is not retryable: the fix is to add a
+  video, not to wait.
+- **The resolved payload is validated before anything is uploaded.** Every other
+  route into a publish validates at booking; a slug job cannot, because there is
+  no video to validate against until now. `publishFromR2` does not check, so
+  this is the only chance.
+- **The pool is only created once a booking is accepted**, so a request rejected
+  for the typo in its own slug leaves no phantom pool behind.
 - **A dry run resolves and picks, but records nothing.** Its media id is a stub,
   and recording it would retire a candidate that never posted.
 

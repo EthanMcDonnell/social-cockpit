@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
-import { getVideo, removeVideo, updateVideo } from "@/lib/slugs/store";
+import { getVideo, normalizeSlug, removeVideo, updateVideo } from "@/lib/slugs/store";
 import { toView } from "@/lib/slugs/select";
 import type { SlugVideoPayload } from "@/lib/slugs/types";
 
@@ -9,19 +9,18 @@ export const dynamic = "force-dynamic";
 /** PATCH /api/slugs/:slug/videos/:id — rename, or change its payload defaults. */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { slug: string; id: string } }
 ) {
   const denied = requireScheduleAuth(request);
   if (denied) return denied;
+  if (!owns(params)) return notFound();
 
   const body = await request.json().catch(() => ({}));
   const updated = updateVideo(params.id, {
     ...(body?.label !== undefined ? { label: body.label } : {}),
     ...(body?.payload !== undefined ? { payload: body.payload as SlugVideoPayload } : {}),
   });
-  if (!updated) {
-    return NextResponse.json({ error: "not_found", message: "No such video." }, { status: 404 });
-  }
+  if (!updated) return notFound();
   return NextResponse.json({ video: toView(updated) });
 }
 
@@ -33,14 +32,23 @@ export async function PATCH(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: { slug: string; id: string } }
 ) {
   const denied = requireScheduleAuth(request);
   if (denied) return denied;
+  if (!owns(params) || !removeVideo(params.id)) return notFound();
 
-  const video = getVideo(params.id);
-  if (!video || !removeVideo(params.id)) {
-    return NextResponse.json({ error: "not_found", message: "No such video." }, { status: 404 });
-  }
   return NextResponse.json({ deleted: params.id });
 }
+
+/**
+ * The id alone is enough to find a candidate, but not enough to authorise the
+ * change: a request must come through the slug that actually holds it, or a
+ * stale page could quietly edit another pool's video.
+ */
+function owns(params: { slug: string; id: string }): boolean {
+  return getVideo(params.id)?.slug === normalizeSlug(params.slug);
+}
+
+const notFound = () =>
+  NextResponse.json({ error: "not_found", message: "No such video." }, { status: 404 });

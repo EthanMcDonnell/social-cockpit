@@ -8,15 +8,16 @@
  *
  * Instagram is free — `cache.db` already holds insights for every post, synced
  * by the cache worker. YouTube is not cached anywhere, so it costs API units;
- * the fetch is one bounded `videos.list` for the whole pool, memoised for the
- * TTL below, and a failure degrades to "no YouTube metrics" rather than failing
- * the publish. A slot must never be missed because a stats call timed out.
+ * stats are fetched by id (never by recency, or a pool's older clips would be
+ * invisible), memoised per video for the TTL below, and a failure degrades to
+ * "no YouTube metrics" rather than failing the publish. A slot must never be
+ * missed because a stats call timed out.
  *
  * Server-side only.
  */
 
 import { getCachedInsightsMany } from "@/lib/cache/store";
-import { getRecentVideos } from "@/lib/youtube/endpoints/videos";
+import { getVideoStats } from "@/lib/youtube/endpoints/videos";
 import { reportWarn } from "@/lib/observability";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import type { SlugVideo } from "./types";
@@ -35,49 +36,69 @@ export interface CandidateMetrics {
 }
 
 /**
- * How long a YouTube stats fetch is reused. Long enough that resolving a pool,
+ * How long a YouTube figure is reused. Long enough that resolving a pool,
  * previewing it in the UI, and firing the job minutes later cost one call;
  * short enough that "most views" means today's views, not last week's.
  */
 const YT_TTL_MS = 10 * 60 * 1000;
-/** The uploads page `getRecentVideos` reads. One `videos.list`, capped at 50. */
-const YT_WINDOW = 50;
 
-let ytCache: { at: number; stats: Map<string, PostMetrics> } | null = null;
+const ytCache = new Map<string, { at: number; metrics: PostMetrics }>();
+/** After a failed fetch, don't retry until the TTL is up. */
+let ytFailedAt = 0;
 
-async function youtubeStats(): Promise<Map<string, PostMetrics>> {
-  if (ytCache && Date.now() - ytCache.at < YT_TTL_MS) return ytCache.stats;
+async function youtubeStats(ids: string[]): Promise<Map<string, PostMetrics>> {
+  const now = Date.now();
+  const stale = ids.filter((id) => {
+    const hit = ytCache.get(id);
+    return !hit || now - hit.at >= YT_TTL_MS;
+  });
 
-  const stats = new Map<string, PostMetrics>();
-  try {
-    for (const video of await getRecentVideos(YT_WINDOW)) {
-      const views = video.viewCount ?? 0;
-      const interactions = (video.likeCount ?? 0) + (video.commentCount ?? 0);
-      stats.set(video.id, {
-        views,
-        engagement: views > 0 ? interactions / views : undefined,
-      });
+  if (stale.length && now - ytFailedAt >= YT_TTL_MS) {
+    try {
+      const fetched = await getVideoStats(stale);
+      for (const id of stale) {
+        const stats = fetched.get(id);
+        // Cache the miss too: a video that has been deleted, or belongs to
+        // another channel, must not be re-requested on every preview.
+        const views = stats?.viewCount ?? 0;
+        const interactions = (stats?.likeCount ?? 0) + (stats?.commentCount ?? 0);
+        ytCache.set(id, {
+          at: now,
+          metrics: stats
+            ? { views, engagement: views > 0 ? interactions / views : undefined }
+            : { views: 0 },
+        });
+      }
+    } catch (err) {
+      // Degrade, never block. Without YouTube numbers a cross-posted candidate
+      // is ranked on its Instagram half; with nothing at all it falls back to
+      // add order. Either is better than a missed slot.
+      ytFailedAt = now;
+      reportWarn(
+        "slugs",
+        "youtube_metrics_unavailable",
+        `could not read YouTube stats for slug selection: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
-    ytCache = { at: Date.now(), stats };
-  } catch (err) {
-    // Degrade, never block. Without YouTube numbers a cross-posted candidate is
-    // ranked on its Instagram half; with nothing at all it falls back to add
-    // order. Either is better than a missed slot.
-    reportWarn(
-      "slugs",
-      "youtube_metrics_unavailable",
-      `could not read YouTube stats for slug selection: ${err instanceof Error ? err.message : String(err)}`
-    );
-    // Cache the empty result too, so one broken token doesn't mean a fresh
-    // failing call for every candidate in every preview.
-    ytCache = { at: Date.now(), stats };
   }
-  return stats;
+
+  const out = new Map<string, PostMetrics>();
+  for (const id of ids) {
+    const hit = ytCache.get(id);
+    // A post with no usable figure is left out entirely rather than scored as a
+    // zero, so it falls back to add order instead of ranking last on a number
+    // nobody measured.
+    if (hit && hit.metrics.views > 0) out.set(id, hit.metrics);
+  }
+  return out;
 }
 
 function instagramStats(mediaIds: string[]): Map<string, PostMetrics> {
   const out = new Map<string, PostMetrics>();
   for (const [mediaId, insights] of Array.from(getCachedInsightsMany(mediaIds))) {
+    // Reach stands in when views are absent — an older post, or a media type
+    // that never reported them. They are not the same measure, but ranking one
+    // clip against another needs a comparable number more than an exact one.
     const views = insights.views ?? insights.reach ?? 0;
     const interactions =
       insights.total_interactions ??
@@ -111,7 +132,9 @@ export async function scoreCandidates(
   }
 
   const ig = byPlatform.ig.length ? instagramStats(byPlatform.ig) : new Map<string, PostMetrics>();
-  const yt = byPlatform.yt.length ? await youtubeStats() : new Map<string, PostMetrics>();
+  const yt = byPlatform.yt.length
+    ? await youtubeStats(byPlatform.yt)
+    : new Map<string, PostMetrics>();
 
   for (const video of videos) {
     let views = 0;
@@ -144,5 +167,6 @@ export async function scoreCandidates(
 
 /** Drop the memoised YouTube stats — used by tests and after a token change. */
 export function resetMetricsCache(): void {
-  ytCache = null;
+  ytCache.clear();
+  ytFailedAt = 0;
 }

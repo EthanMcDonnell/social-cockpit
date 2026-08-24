@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
 import {
   deleteSlug,
+  eligibleVideos,
   getSlug,
   linkedAutomation,
   normalizeSlug,
@@ -48,8 +49,8 @@ export async function GET(
       ...record,
       video_count: videos.length,
       eligible: {
-        ig: videos.filter((v) => !v.posts.some((p) => p.platform === "ig")).length,
-        yt: videos.filter((v) => !v.posts.some((p) => p.platform === "yt")).length,
+        ig: eligibleVideos(slug, "ig", videos).length,
+        yt: eligibleVideos(slug, "yt", videos).length,
       },
       automation: linkedAutomation(slug),
       videos,

@@ -13,7 +13,7 @@ import {
   attachAutomationStrict,
 } from "@/lib/publish/execute";
 import { uploadLocalFile, CapError, PathError } from "@/lib/publish/local-source";
-import { getContainerStatus, type R2Sources } from "@/lib/instagram/publish-flow";
+import { getContainerStatus, validatePublish, type R2Sources } from "@/lib/instagram/publish-flow";
 import {
   publishContainer,
   ContainerFailedError,
@@ -149,6 +149,8 @@ async function runJob(job: ClaimedScheduledPost): Promise<void> {
 
 /** No video in the pool can go out on this platform right now. */
 class NoCandidateError extends Error {}
+/** A resolved slug job produced a payload the platform would reject. */
+class InvalidPayloadError extends Error {}
 
 /**
  * Turn a slug job into an ordinary one: pick a candidate, register its file,
@@ -180,6 +182,20 @@ async function resolveSlugJob(job: ClaimedScheduledPost): Promise<boolean> {
   const staged = await registerLocalPath(selection.video.path);
   const media: ScheduledMediaRef[] = [{ role: "video", staged_id: staged.id }];
   const payload = mergeSlugPayload(job, selection.video.payload, selection.video.label ?? selection.video.filename);
+
+  // Every other route into a publish validates its payload before booking. A
+  // slug job cannot: there is no video to validate against until now. This is
+  // the only chance, and `publishFromR2` does not check for us.
+  if (job.platform === "ig") {
+    const problem = validatePublish({
+      ...(payload as IgPublishInput),
+      r2: { video_url: staged.id },
+    });
+    if (problem) {
+      await releaseStaged([staged.id]);
+      throw new InvalidPayloadError(`#${slug} picked ${selection.video.filename}, but: ${problem}`);
+    }
+  }
 
   const resolved = updateClaimedJob(job, "publishing", {
     media,
@@ -415,6 +431,10 @@ async function holdAttachmentRetry(
     result: {
       media_id: result.media_id,
       permalink: result.permalink,
+      // Carried explicitly rather than by spreading the old result, which would
+      // resurrect an r2_keys ledger that publishFromR2 has already reclaimed.
+      slug_video_id: job.result?.slug_video_id,
+      slug_reason: job.result?.slug_reason,
       error: message,
       error_kind: "network",
     },
@@ -642,35 +662,39 @@ async function recordSlugPost(job: ScheduledPost, result: ScheduleResult): Promi
   if (!job.content_slug || !externalId || result.dry_run) return;
 
   try {
-    let videoId = result.slug_video_id;
-    if (!videoId) {
-      const source = videoSourceOf(job);
-      if (!source) return;
-      if (source.owned) {
-        // A browser upload lives in data/staged and is deleted the moment this
-        // job finishes. Enrolling it would put a path in the pool that stops
-        // existing seconds later. A pool references your own library, so only a
-        // file that was already yours can join one.
-        logScheduleEvent(
-          "warn",
-          "slug_enrol_skipped",
-          `#${job.content_slug} — an uploaded file can't join a pool; schedule it by path instead`,
-          { jobId: job.id, meta: { slug: job.content_slug } }
-        );
-        return;
-      }
-      const enrolled = await enrolVideo({
-        slug: job.content_slug,
-        path: source.path,
-        payload: payloadDefaultsOf(job),
-      });
-      videoId = enrolled.id;
-      logScheduleEvent("info", "slug_enrolled", `Added to #${job.content_slug}`, {
-        jobId: job.id,
-        meta: { slug: job.content_slug, video_id: videoId },
-      });
+    // The pick made at fire time, when its candidate is still in the pool. One
+    // removed since then is treated as no pick at all — the enrolment below
+    // puts the file back, so the post is recorded either way.
+    if (result.slug_video_id && recordPost(result.slug_video_id, job.platform, externalId, job.id)) {
+      return;
     }
-    recordPost(videoId, job.platform, externalId, job.id);
+
+    const source = videoSourceOf(job);
+    if (!source) return;
+    if (source.owned) {
+      // A browser upload lives in data/staged and is deleted the moment this
+      // job finishes. Enrolling it would point the pool at a path that stops
+      // existing seconds later — a pool references your own library, so only a
+      // file that was already yours can join one.
+      logScheduleEvent(
+        "warn",
+        "slug_enrol_skipped",
+        `#${job.content_slug} — an uploaded file can't join a pool; schedule it by path instead`,
+        { jobId: job.id, meta: { slug: job.content_slug } }
+      );
+      return;
+    }
+
+    const enrolled = await enrolVideo({
+      slug: job.content_slug,
+      path: source.path,
+      payload: payloadDefaultsOf(job),
+    });
+    recordPost(enrolled.id, job.platform, externalId, job.id);
+    logScheduleEvent("info", "slug_enrolled", `Added to #${job.content_slug}`, {
+      jobId: job.id,
+      meta: { slug: job.content_slug, video_id: enrolled.id },
+    });
   } catch (err) {
     // The post is live; losing the ledger row costs a future selection its
     // metrics and lets this candidate come round again. Worth an alert, not
@@ -805,6 +829,7 @@ function classify(err: unknown): FailureKind {
   if (err instanceof RateLimitError) return "rate_limit";
   if (err instanceof CapError) return "storage_cap";
   if (err instanceof NoCandidateError) return "no_candidate";
+  if (err instanceof InvalidPayloadError) return "invalid_param";
   if (err instanceof MissingSourceError || err instanceof PathError) return "missing_file";
   if (err instanceof ContainerFailedError) return "processing_failed";
   if (err instanceof AutomationAttachError) return "network";

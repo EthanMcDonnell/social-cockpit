@@ -237,11 +237,7 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
     "children_paths",
   ]);
 
-  // ── slug pool jobs ──
-  // A slug job books the *slot*; the video is chosen when the slot arrives. The
-  // two paths diverge entirely here rather than sharing a half-populated job:
-  // there is no media to resolve, and no payload to validate against a media
-  // type nobody has picked yet.
+  // ── slug ──
   if (body.slug !== undefined && typeof body.slug !== "string") {
     return fail("invalid_param", "slug must be a string.");
   }
@@ -259,10 +255,19 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
   if (body.slug?.trim() && !slug) {
     return fail("invalid_param", "A slug needs at least one letter or digit.");
   }
-  // Create the pool on first mention, mirroring how a new automation_key
-  // creates its flow. Booking must not require a separate setup call for what
-  // is one obvious intent.
-  if (slug) ensureSlug(slug);
+
+  /**
+   * Create the pool on first mention, mirroring how a new automation_key
+   * creates its flow — booking should not need a separate setup call for what
+   * is one obvious intent.
+   *
+   * Called only once a request is known to be good. Doing it up front would
+   * leave a phantom pool behind every rejected booking, including one rejected
+   * for the typo in its own slug.
+   */
+  const claimSlug = () => {
+    if (slug) ensureSlug(slug);
+  };
 
   const hasSource =
     !!body.media?.length ||
@@ -272,13 +277,14 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
     !!body.children_paths?.length;
 
   // A slug with a file means "post this one, and it belongs to the pool" — it
-  // is enrolled when it publishes. A slug on its own means "post something from
-  // the pool", and only that case defers the choice to fire time.
+  // is enrolled when it publishes. A slug on its own books the *slot*, and only
+  // that case defers the choice of video to fire time: there is no media to
+  // resolve, and no payload to validate against a media type nobody has picked.
   if (slug && !hasSource) {
-
     const checked = checkAutomation(platform === "ig" ? withSlugKey(automation, slug) : undefined);
     if (isFailure(checked)) return checked;
 
+    claimSlug();
     return {
       job: {
         platform,
@@ -317,6 +323,7 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
       tags: yt.tags,
       publish_at: yt.publish_at,
     };
+    claimSlug();
     return {
       job: {
         platform,
@@ -343,6 +350,7 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
   const checked = checkAutomation(withSlugKey(automation, slug));
   if (isFailure(checked)) return checked;
 
+  claimSlug();
   return {
     job: {
       platform,

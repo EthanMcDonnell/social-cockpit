@@ -274,6 +274,39 @@ export function listJobs(filter: ListJobsFilter = {}): ScheduledPost[] {
   return (getDb().prepare(sql).all(...params) as ScheduledPostRow[]).map(rowToPost);
 }
 
+/**
+ * Slug candidates spoken for by a job that is mid-publish.
+ *
+ * The ledger row that takes a candidate out of its pool is written only once a
+ * post is actually live. Between a worker picking a video and that happening
+ * there is a window — minutes wide, while Instagram processes a reel — in which
+ * a second job on the same slug would rank the same candidate top and post it
+ * twice. These are the picks that have not reached the ledger yet, and
+ * selection treats them as already taken.
+ *
+ * Deliberately limited to in-flight statuses: a job that picked a video and
+ * then *failed* never posted it, so that candidate must stay in the pool.
+ */
+export function reservedSlugVideoIds(
+  slug: string,
+  platform: SchedulePlatform
+): Set<string> {
+  const rows = getDb()
+    .prepare(
+      `SELECT result FROM scheduled_posts
+        WHERE content_slug = ? AND platform = ?
+          AND status IN ('publishing', 'finalizing')`
+    )
+    .all(slug, platform) as { result: string | null }[];
+
+  const reserved = new Set<string>();
+  for (const row of rows) {
+    const id = parseJson<ScheduleResult>(row.result, {}).slug_video_id;
+    if (id) reserved.add(id);
+  }
+  return reserved;
+}
+
 /** Every staged-media id still referenced by a job — used by the sweep. */
 export function referencedStagedIds(): Set<string> {
   const rows = getDb().prepare("SELECT media FROM scheduled_posts").all() as {

@@ -283,6 +283,11 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
                   ? "Books the slot, not the file. The video is chosen from the slug's pool when the slot arrives."
                   : "Posts this exact file. Add a slug below to also enrol it in that pool."}
               </p>
+              {usingSlug && !!media.length && (
+                <p className="cal-msg warn">
+                  The file you dropped won&apos;t be used — a slug job picks its own video.
+                </p>
+              )}
             </div>
           )}
 

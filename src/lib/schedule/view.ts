@@ -7,9 +7,9 @@
  */
 
 import { getStagedMediaMany, withStatus } from "./media";
-import { listVideos } from "@/lib/slugs/store";
+import { eligibleVideos, listVideos } from "@/lib/slugs/store";
 import { resolveSelectionMethod } from "@/lib/slugs/settings";
-import type { SchedulePlatform } from "./types";
+import { TERMINAL_STATUSES } from "./types";
 import type { ScheduledPost, ScheduledPostView } from "./types";
 
 export function hydrateJobs(jobs: ScheduledPost[]): ScheduledPostView[] {
@@ -31,18 +31,23 @@ export function hydrateJobs(jobs: ScheduledPost[]): ScheduledPostView[] {
 
     // A media row that vanished from the table counts as missing too — the job
     // references something we can no longer resolve to a file at all.
-    const unresolved = job.media.length !== media_files.length;
+    //
+    // Except once the job is over: publishing releases its staged rows while
+    // the refs stay on the row, so every finished job would otherwise report a
+    // missing source. The badge is a warning about a slot that has not run yet.
+    const settled = TERMINAL_STATUSES.includes(job.status);
+    const unresolved = !settled && job.media.length !== media_files.length;
 
     return {
       ...job,
       media_files,
-      media_missing: unresolved || media_files.some((m) => m.missing),
+      media_missing: unresolved || (!settled && media_files.some((m) => m.missing)),
       // Only for a job still waiting on its pool. Once it has resolved, the
       // card shows the file it actually chose.
       ...(job.content_slug && !job.media.length
         ? {
             selection_effective: resolveSelectionMethod(job.content_slug, job.selection_method),
-            slug_eligible: countEligible(poolFor(job.content_slug), job.platform),
+            slug_eligible: eligibleVideos(job.content_slug, job.platform, poolFor(job.content_slug)).length,
           }
         : {}),
     };
@@ -51,12 +56,4 @@ export function hydrateJobs(jobs: ScheduledPost[]): ScheduledPostView[] {
 
 export function hydrateJob(job: ScheduledPost): ScheduledPostView {
   return hydrateJobs([job])[0];
-}
-
-/** Candidates in the pool that have not yet been posted to this platform. */
-function countEligible(
-  pool: ReturnType<typeof listVideos>,
-  platform: SchedulePlatform
-): number {
-  return pool.filter((video) => !video.posts.some((post) => post.platform === platform)).length;
 }

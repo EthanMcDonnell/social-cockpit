@@ -17,7 +17,8 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 import path from "path";
 import { getDb } from "@/lib/db";
-import { statLocalFile } from "@/lib/publish/local-source";
+import { reservedSlugVideoIds } from "@/lib/schedule/store";
+import { statLocalFile, PathError } from "@/lib/publish/local-source";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import {
   isSelectionMethod,
@@ -175,9 +176,7 @@ export function listSlugs(): SlugSummary[] {
     const videos = listVideos(row.slug);
     const eligible = {} as Record<SchedulePlatform, number>;
     for (const platform of PLATFORMS) {
-      eligible[platform] = videos.filter(
-        (video) => !video.posts.some((post) => post.platform === platform)
-      ).length;
+      eligible[platform] = eligibleVideos(row.slug, platform, videos).length;
     }
     return {
       ...rowToSlug(row),
@@ -274,32 +273,61 @@ export interface EnrolInput {
  */
 export async function enrolVideo(input: EnrolInput): Promise<SlugVideo> {
   const info = await statLocalFile(input.path);
-  const slug = normalizeSlug(input.slug);
-  ensureSlug(slug);
-
-  const db = getDb();
-  const existing = db
-    .prepare("SELECT rowid AS seq, * FROM slug_videos WHERE slug = ? AND path = ?")
-    .get(slug, info.path) as VideoRow | undefined;
-
-  if (existing) {
-    const merged: SlugVideoPayload = {
-      ...parseJson<SlugVideoPayload>(existing.payload, {}),
-      ...(input.payload ?? {}),
-    };
-    db.prepare("UPDATE slug_videos SET label = COALESCE(?, label), payload = ? WHERE id = ?").run(
-      input.label?.trim() || null,
-      JSON.stringify(merged),
-      existing.id
+  // A pool exists to be posted from, and every method that draws on one treats
+  // its members as interchangeable videos. Catching a photo (or a .txt) here
+  // makes it a failed enrolment rather than a failed publish at 3am.
+  if (!info.contentType.startsWith("video/")) {
+    throw new PathError(
+      `A slug pool holds videos — ${info.path} is ${info.contentType === "application/octet-stream" ? "not a recognised video file" : info.contentType}.`
     );
-    return getVideo(existing.id)!;
   }
 
-  const id = randomUUID();
-  db.prepare(
-    "INSERT INTO slug_videos (id, slug, path, label, payload) VALUES (?, ?, ?, ?, ?)"
-  ).run(id, slug, info.path, input.label?.trim() || null, JSON.stringify(input.payload ?? {}));
-  return getVideo(id)!;
+  const slug = normalizeSlug(input.slug);
+  if (!slug) throw new Error("A slug needs at least one letter or digit.");
+
+  const db = getDb();
+  // Serialize the read-then-write: two callers enrolling the same file at once
+  // (a publish finishing while the pool page adds it by hand) must converge on
+  // one candidate, not race and lose one to the unique index.
+  const enrol = db.transaction(() => {
+    ensureSlug(slug);
+
+    const existing = db
+      .prepare("SELECT rowid AS seq, * FROM slug_videos WHERE slug = ? AND path = ?")
+      .get(slug, info.path) as VideoRow | undefined;
+
+    if (existing) {
+      const merged: SlugVideoPayload = {
+        ...parseJson<SlugVideoPayload>(existing.payload, {}),
+        ...(input.payload ?? {}),
+      };
+      db.prepare("UPDATE slug_videos SET label = COALESCE(?, label), payload = ? WHERE id = ?").run(
+        input.label?.trim() || null,
+        JSON.stringify(merged),
+        existing.id
+      );
+      return existing.id;
+    }
+
+    const id = randomUUID();
+    db.prepare(
+      "INSERT INTO slug_videos (id, slug, path, label, payload) VALUES (?, ?, ?, ?, ?)"
+    ).run(id, slug, info.path, input.label?.trim() || null, JSON.stringify(input.payload ?? {}));
+    return id;
+  });
+
+  try {
+    return getVideo(enrol.immediate())!;
+  } catch (err) {
+    // The unique index is the cross-process backstop. Another writer got there
+    // first; its candidate is the one that exists, so adopt it.
+    if (!(err instanceof Error) || !/UNIQUE constraint failed/.test(err.message)) throw err;
+    const row = db
+      .prepare("SELECT rowid AS seq, * FROM slug_videos WHERE slug = ? AND path = ?")
+      .get(slug, info.path) as VideoRow | undefined;
+    if (!row) throw err;
+    return rowToVideo(row, postsFor([row.id]).get(row.id) ?? []);
+  }
 }
 
 export function updateVideo(
@@ -355,14 +383,53 @@ export function recordPost(
   platform: SchedulePlatform,
   externalId: string,
   jobId?: string
-): void {
-  getDb()
-    .prepare(
+): boolean {
+  const db = getDb();
+  const write = db.transaction(() => {
+    // The candidate can be removed from the pool between a worker picking it
+    // and the post going live. Recording against it then would leave a row
+    // nothing can reach, so report the miss and let the caller re-enrol.
+    const exists = db.prepare("SELECT 1 FROM slug_videos WHERE id = ?").get(videoId);
+    if (!exists) return false;
+
+    db.prepare(
       `INSERT INTO slug_video_posts (video_id, platform, external_id, job_id)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(video_id, platform, external_id) DO NOTHING`
-    )
-    .run(videoId, platform, externalId, jobId ?? null);
+    ).run(videoId, platform, externalId, jobId ?? null);
+    return true;
+  });
+  return write.immediate();
+}
+
+// ─── Eligibility ─────────────────────────────────────────────────────────────
+
+/** Has this candidate already gone out on this platform? */
+export function postedTo(video: SlugVideo, platform: SchedulePlatform): boolean {
+  return video.posts.some((post) => post.platform === platform);
+}
+
+/**
+ * The candidates that could go out on this platform right now: not already
+ * posted there, file still on disk, and not spoken for by a job mid-publish.
+ *
+ * One definition, shared by the pool page, the calendar badge and the count in
+ * the composer's slug picker. A card that says "3 left" over a slot that then
+ * finds nothing is worse than no count at all, so they all ask the same
+ * question the selector does.
+ */
+export function eligibleVideos(
+  slug: string,
+  platform: SchedulePlatform,
+  pool?: SlugVideo[]
+): SlugVideo[] {
+  const videos = pool ?? listVideos(slug);
+  if (!videos.length) return [];
+
+  const reserved = reservedSlugVideoIds(slug, platform);
+  return videos.filter(
+    (video) => !postedTo(video, platform) && !isMissing(video) && !reserved.has(video.id)
+  );
 }
 
 // ─── Display helpers ─────────────────────────────────────────────────────────

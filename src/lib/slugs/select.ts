@@ -16,8 +16,9 @@
  * Server-side only.
  */
 
+import { reservedSlugVideoIds } from "@/lib/schedule/store";
 import { scoreCandidates, type CandidateMetrics } from "./metrics";
-import { filenameOf, isMissing, listVideos } from "./store";
+import { filenameOf, isMissing, listVideos, postedTo } from "./store";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import {
   SELECTION_LABELS,
@@ -80,9 +81,9 @@ export async function selectVideo(
     return { error: `Slug "${opts.slug}" has no videos in its pool.`, exhausted: false };
   }
 
-  const unposted = pool.filter(
-    (video) => !video.posts.some((post) => post.platform === opts.platform)
-  );
+  // The same three filters `eligibleVideos` composes, applied one at a time so
+  // a pool that produces nothing can say which of them emptied it.
+  const unposted = pool.filter((video) => !postedTo(video, opts.platform));
   if (!unposted.length) {
     return {
       error: `Every video in "${opts.slug}" has already been posted to ${platformName(opts.platform)}.`,
@@ -90,11 +91,24 @@ export async function selectVideo(
     };
   }
 
-  const eligible = unposted.filter((video) => !isMissing(video));
-  if (!eligible.length) {
+  const onDisk = unposted.filter((video) => !isMissing(video));
+  if (!onDisk.length) {
     return {
       error: `Every remaining video in "${opts.slug}" is missing from disk.`,
       exhausted: false,
+    };
+  }
+
+  // A candidate another job is publishing right now has not reached the ledger
+  // yet, but it is spoken for — picking it again would post it twice.
+  const reserved = reservedSlugVideoIds(opts.slug, opts.platform);
+  const eligible = reserved.size
+    ? onDisk.filter((video) => !reserved.has(video.id))
+    : onDisk;
+  if (!eligible.length) {
+    return {
+      error: `Every remaining video in "${opts.slug}" is already being published by another slot.`,
+      exhausted: true,
     };
   }
 
