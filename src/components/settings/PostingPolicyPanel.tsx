@@ -5,6 +5,12 @@ import { Card } from "@/components/ui/Card";
 import { useScheduleSettings, useUpdateScheduleSettings } from "@/hooks/useSchedule";
 import { systemTimeZone, zoneAbbreviation } from "@/lib/schedule/tz";
 import { COMMON_ZONES } from "@/lib/schedule/zones";
+import {
+  SELECTION_DESCRIPTIONS,
+  SELECTION_LABELS,
+  SELECTION_METHODS,
+  type SelectionMethod,
+} from "@/lib/slugs/types";
 
 /**
  * The posting policy: where slots are offered and how many a day may hold.
@@ -140,6 +146,29 @@ export function PostingPolicyPanel() {
             onChange={(e) => setMaxPerDay(e.target.value)}
             className="w-20 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 text-xs text-[var(--text-primary)]"
           />
+        </Field>
+
+        <Field
+          title="Slug selection"
+          description="How a slot booked against a slug picks its video. A slug may override this, and a single job may override the slug. Read when the slot fires, so changing it also changes what is already on the calendar."
+        >
+          <div className="space-y-1.5 text-right">
+            <select
+              value={data?.default_selection ?? "most_views"}
+              disabled={busy || !data}
+              onChange={(e) => update.mutate({ default_selection: e.target.value as SelectionMethod })}
+              className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] px-3 py-1.5 text-xs text-[var(--text-primary)] disabled:opacity-50"
+            >
+              {SELECTION_METHODS.map((method) => (
+                <option key={method} value={method}>
+                  {SELECTION_LABELS[method]}
+                </option>
+              ))}
+            </select>
+            <p className="max-w-[15rem] text-[11px] leading-relaxed text-[var(--text-muted)]">
+              {SELECTION_DESCRIPTIONS[data?.default_selection ?? "most_views"]}
+            </p>
+          </div>
         </Field>
       </div>
 

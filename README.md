@@ -50,6 +50,7 @@ Today, Social Cockpit targets **Instagram only**. The architecture is provider-a
 **Also included:**
 
 - **🗓️ Scheduling Calendar:** Plan posts across Instagram and YouTube on a drag-and-drop week/month/day calendar — drop a video straight from your desktop onto a time slot, or schedule from your laptop with `curl`. Media stays on your own disk until the moment it publishes; nothing sits in cloud storage in the meantime. Comment automations attach automatically when the post goes live. See [docs/scheduling.md](docs/scheduling.md).
+- **🎯 Slug Pools:** Book a calendar slot against a *slug* instead of a file, and let the video be chosen when the slot arrives — the highest-viewed clip in the pool, the one that has waited longest, or whatever rule you pick. A slug is one string with two facets: the pool of videos it can post, and the comment automation it fires. Pools fill up as you post, drain per platform so a recurring slot works through your library, and never copy your files. See [docs/slug-scheduling.md](docs/slug-scheduling.md).
 - **🔌 MCP Server (optional):** Drive the scheduler from Claude Code or any MCP client — ask what's on the calendar, get free slots that respect your posting policy, and book a batch of hook variants in one call. It talks to this app over HTTP rather than its database, so nothing skips the API's validation or its event log. See [mcp/README.md](mcp/README.md).
 - **💬 Inbox:** Read and reply to comments in threaded view.
 - **🎙️ Video Transcription (optional):** A background worker transcribes your Reels/videos locally with [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) so you can search and rank by script content.
@@ -257,6 +258,7 @@ src/
     ├── instagram/  # Graph API client, endpoints, rate limiting
     ├── cache/      # local media/insights cache + background sync
     ├── token/      # long-lived token manager & auto-refresh
+    ├── slugs/       # content pools: enrolment, metrics, video selection
     ├── transcription/  # faster-whisper worker (Python bridge)
     └── automation-*    # engagement automation engine
 scripts/transcribe.py   # Python transcription entrypoint

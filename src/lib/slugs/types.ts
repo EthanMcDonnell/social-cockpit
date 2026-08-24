@@ -1,0 +1,152 @@
+/**
+ * Wire types for slug content pools, shared by the worker, the API routes, the
+ * calendar composer, and the slugs page.
+ *
+ * `import type` only, so this module is erased at runtime and can be pulled into
+ * the browser bundle without dragging better-sqlite3 along (same discipline as
+ * src/lib/schedule/types.ts).
+ */
+
+import type { SchedulePlatform } from "@/lib/schedule/types";
+
+/**
+ * How a slug job picks its video when the slot arrives.
+ *
+ * Everything except `oldest_unposted`, `newest` and `random` needs metrics, and
+ * metrics only exist for a candidate that has already been posted somewhere. A
+ * candidate with no metrics is never discarded for that — it ranks below every
+ * scored candidate and falls back to add order. A brand-new slug therefore still
+ * posts on its first slot instead of failing at 3am.
+ */
+export type SelectionMethod =
+  | "most_views"
+  | "most_engagement"
+  | "least_views"
+  | "oldest_unposted"
+  | "newest"
+  | "random";
+
+export const SELECTION_METHODS: SelectionMethod[] = [
+  "most_views",
+  "most_engagement",
+  "least_views",
+  "oldest_unposted",
+  "newest",
+  "random",
+];
+
+export const SELECTION_LABELS: Record<SelectionMethod, string> = {
+  most_views: "Most views",
+  most_engagement: "Most engagement",
+  least_views: "Fewest views",
+  oldest_unposted: "Oldest first",
+  newest: "Newest first",
+  random: "Random",
+};
+
+export const SELECTION_DESCRIPTIONS: Record<SelectionMethod, string> = {
+  most_views: "The candidate whose existing posts have the most views.",
+  most_engagement: "The candidate with the highest interactions-per-view rate.",
+  least_views: "The candidate with the fewest views — give the underdog a second run.",
+  oldest_unposted: "The candidate that has waited longest since it was added.",
+  newest: "The most recently added candidate.",
+  random: "Any eligible candidate, chosen at random.",
+};
+
+export function isSelectionMethod(value: unknown): value is SelectionMethod {
+  return typeof value === "string" && (SELECTION_METHODS as string[]).includes(value);
+}
+
+/** Re-exported so route handlers can name a platform without reaching across. */
+export type SchedulePlatformParam = SchedulePlatform;
+
+/** Per-platform payload defaults stored against a candidate. */
+export interface SlugVideoPayload {
+  ig?: { caption?: string };
+  yt?: { title?: string; description?: string; tags?: string[]; isShort?: boolean };
+}
+
+/** Where a candidate has already been posted. */
+export interface SlugVideoPost {
+  platform: SchedulePlatform;
+  external_id: string;
+  job_id?: string;
+  posted_at: string;
+}
+
+export interface SlugVideo {
+  id: string;
+  /**
+   * Insertion order, from the table's rowid.
+   *
+   * `created_at` cannot carry it: SQLite's `datetime('now')` has one-second
+   * resolution, so a batch of videos added together all share a timestamp and
+   * "oldest first" would fall through to whatever order the rows happened to
+   * come back in. This is the tie-break that makes every method deterministic.
+   */
+  seq: number;
+  slug: string;
+  path: string;
+  /** Display name. Defaults to the file's basename when unset. */
+  label?: string;
+  payload: SlugVideoPayload;
+  created_at: string;
+  posts: SlugVideoPost[];
+}
+
+/** A candidate plus everything the pool view and the selector need to rank it. */
+export interface SlugVideoView extends SlugVideo {
+  filename: string;
+  /** The source file has been moved or deleted since it was enrolled. */
+  missing: boolean;
+  /** Summed across every platform this candidate has been posted to. */
+  views?: number;
+  /** Interactions per view, 0–1. Undefined when nothing is known. */
+  engagement?: number;
+  /** True when metrics were found for at least one of its posts. */
+  scored: boolean;
+}
+
+export interface ContentSlug {
+  slug: string;
+  name?: string;
+  /** Overrides the global default. Unset means "use the default". */
+  selection_method?: SelectionMethod;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SlugSummary extends ContentSlug {
+  video_count: number;
+  /** Candidates still eligible for each platform (not yet posted there). */
+  eligible: Record<SchedulePlatform, number>;
+  /** The automation flow sharing this slug, when there is one. */
+  automation?: { flow_id: string; name: string; is_active: boolean };
+}
+
+export interface SlugDetail extends SlugSummary {
+  videos: SlugVideoView[];
+}
+
+/** The outcome of running a selection against a pool. */
+export interface SlugSelection {
+  video: SlugVideoView;
+  method: SelectionMethod;
+  /** Human-readable "why this one", stored on the job and shown in the log. */
+  reason: string;
+  /** Candidates that were eligible at the moment of the pick. */
+  considered: number;
+}
+
+/** Why a pool could not produce a candidate. */
+export interface SlugSelectionFailure {
+  error: string;
+  /** The pool has candidates, but every one has already run on this platform. */
+  exhausted: boolean;
+}
+
+export function isSelectionFailure(
+  result: SlugSelection | SlugSelectionFailure
+): result is SlugSelectionFailure {
+  return "error" in result;
+}

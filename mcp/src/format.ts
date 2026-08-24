@@ -44,7 +44,13 @@ export function formatJob(job: ScheduledPostView, timeZone: string): string {
     `[${job.status}]`,
     formatWhen(job.scheduled_at, timeZone),
     `${job.platform === "yt" ? "YouTube" : "Instagram"} —`,
-    firstLine(job.payload.caption ?? job.payload.title),
+    // A slug job usually has no caption of its own: the pool it draws from is
+    // the honest headline, not "(no caption)".
+    job.payload.caption ?? job.payload.title
+      ? firstLine(job.payload.caption ?? job.payload.title)
+      : job.content_slug
+        ? `#${job.content_slug}`
+        : firstLine(undefined),
     `(${job.id})`,
   ];
 
@@ -52,6 +58,16 @@ export function formatJob(job: ScheduledPostView, timeZone: string): string {
   const files = job.media_files.map((m) => m.filename).join(", ");
   if (files) notes.push(files);
   if (job.media_missing) notes.push("⚠ source file missing on disk");
+  if (job.content_slug) {
+    // A slug job with no media has not picked its video yet — say which pool it
+    // will draw from and how, rather than showing an empty file list.
+    notes.push(
+      job.media.length
+        ? `slug: ${job.content_slug}`
+        : `slug: ${job.content_slug} (picks by ${job.selection_effective ?? "default"} at fire time)`
+    );
+  }
+  if (job.result?.slug_reason) notes.push(`picked ${job.result.slug_reason}`);
   if (job.automation?.key) notes.push(`automation: ${job.automation.key}`);
   if (job.attempts > 0 && job.status !== "published") {
     notes.push(`attempt ${job.attempts}/${job.max_attempts}`);

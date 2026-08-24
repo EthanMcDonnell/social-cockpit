@@ -15,6 +15,8 @@ import {
   type AutomationSpec,
   type AutomationPlan,
 } from "@/lib/automation/attach";
+import { enrolVideo, normalizeSlug, recordPost } from "@/lib/slugs/store";
+import { reportError } from "@/lib/observability";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +49,11 @@ export interface LocalSources {
  * media_id); with automation present and no explicit timeout, the publish waits
  * up to 5 minutes so a slow reel still resolves synchronously.
  *
+ * An optional `slug` enrols this video in that slug's content pool and records
+ * where it landed. That posting record is what later lets a calendar slot be
+ * booked against the slug itself and the video be chosen when the slot arrives
+ * — see docs/slug-scheduling.md.
+ *
  * To publish this same body *later*, POST it to /api/schedule with a
  * `scheduled_at` — the file stays on disk until the slot arrives.
  *
@@ -61,6 +68,7 @@ export async function POST(request: NextRequest) {
       timeoutMs?: number;
       intervalMs?: number;
       automation?: AutomationSpec;
+      slug?: string;
     };
   try {
     body = await request.json();
@@ -80,8 +88,20 @@ export async function POST(request: NextRequest) {
     timeoutMs,
     intervalMs,
     automation,
+    slug: rawSlug,
     ...input
   } = body;
+
+  const slug = typeof rawSlug === "string" && rawSlug.trim() ? normalizeSlug(rawSlug) : "";
+  if (rawSlug !== undefined && !slug) {
+    return NextResponse.json(
+      { error: "invalid_param", message: "A slug needs at least one letter or digit." },
+      { status: 400 }
+    );
+  }
+  // One slug, two facets: an automation block naming no key of its own inherits
+  // the slug, so the pool a video joins and the flow it fires are one string.
+  const spec = automation && slug && !automation.key?.trim() ? { ...automation, key: slug } : automation;
 
   // A lone video_path almost always means a reel; save the caller the field.
   if (!input.media_type && video_path) input.media_type = "REELS";
@@ -89,8 +109,8 @@ export async function POST(request: NextRequest) {
   // Validate + resolve the automation (create vs append) before uploading a big
   // file, so a bad automation spec fails fast without a wasted R2 upload.
   let plan: AutomationPlan | undefined;
-  if (automation) {
-    const planned = planAutomation(getDb(), automation);
+  if (spec) {
+    const planned = planAutomation(getDb(), spec);
     if ("error" in planned) {
       return NextResponse.json({ error: "invalid_param", message: planned.error }, { status: 400 });
     }
@@ -145,8 +165,36 @@ export async function POST(request: NextRequest) {
       intervalMs,
       plan,
     });
+    if (slug && video_path && result.published && result.media_id) {
+      await enrolPublished(slug, video_path, input.caption, result.media_id);
+    }
     return NextResponse.json(attach ? { ...result, automation: attach } : result, { status });
   } catch (err) {
     return handlePublishError(err);
+  }
+}
+
+/**
+ * Add a just-published video to its slug's pool and record where it landed.
+ *
+ * Enrolment is idempotent on (slug, path), so posting the same file under the
+ * same slug a second time adds a ledger row rather than a second candidate.
+ * A failure here is reported, never thrown: the post is already live, and
+ * losing a pool row is not worth turning a successful publish into a 500.
+ */
+async function enrolPublished(
+  slug: string,
+  videoPath: string,
+  caption: string | undefined,
+  mediaId: string
+): Promise<void> {
+  try {
+    const video = await enrolVideo({ slug, path: videoPath, payload: { ig: { caption } } });
+    recordPost(video.id, "ig", mediaId);
+  } catch (err) {
+    reportError("slugs", "enrol_failed", "could not add a published video to its slug pool", {
+      error: err,
+      meta: { slug, path: videoPath, media_id: mediaId },
+    });
   }
 }

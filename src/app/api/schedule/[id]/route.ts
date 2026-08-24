@@ -15,6 +15,7 @@ import { addDays, parseScheduledAt } from "@/lib/schedule/tz";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
 import { validatePublish } from "@/lib/instagram/publish-flow";
 import { planAutomation } from "@/lib/automation/attach";
+import { isSelectionMethod, SELECTION_METHODS } from "@/lib/slugs/types";
 import { getDb } from "@/lib/db";
 import type { PublishInput } from "@/lib/instagram/endpoints/publish";
 import type { JobPatch } from "@/lib/schedule/store";
@@ -85,7 +86,14 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       { status: 400 }
     );
   }
-  const allowed = new Set(["scheduled_at", "status", "grace_minutes", "automation", "payload"]);
+  const allowed = new Set([
+    "scheduled_at",
+    "status",
+    "grace_minutes",
+    "automation",
+    "payload",
+    "selection_method",
+  ]);
   const unknown = Object.keys(body).filter((key) => !allowed.has(key));
   if (unknown.length) {
     return NextResponse.json(
@@ -177,6 +185,25 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
   }
 
+  if (body.selection_method !== undefined) {
+    if (!job.content_slug) {
+      return NextResponse.json(
+        { error: "invalid_param", message: "selection_method only applies to a job booked against a slug." },
+        { status: 400 }
+      );
+    }
+    if (body.selection_method !== null && !isSelectionMethod(body.selection_method)) {
+      return NextResponse.json(
+        {
+          error: "invalid_param",
+          message: `selection_method must be null or one of: ${SELECTION_METHODS.join(", ")}.`,
+        },
+        { status: 400 }
+      );
+    }
+    patch.selectionMethod = body.selection_method;
+  }
+
   // Payload edits: merge, then re-validate exactly as the create path does.
   if (body.payload !== undefined) {
     if (!body.payload || typeof body.payload !== "object" || Array.isArray(body.payload)) {
@@ -186,7 +213,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       );
     }
     const merged = { ...job.payload, ...body.payload };
-    if (job.platform === "ig") {
+    // An unresolved slug job has no media to validate against, and its payload
+    // is an override rather than the finished thing — the candidate fills the
+    // rest in at fire time. Validation happens then, with a video in hand.
+    const awaitingSlug = !!job.content_slug && !job.media.length;
+    if (awaitingSlug) {
+      patch.payload = merged;
+    } else if (job.platform === "ig") {
       const problem = validatePublish({
         ...(merged as PublishInput),
         r2: previewFrom(job),
@@ -274,5 +307,8 @@ function describePatch(patch: JobPatch): string {
   if (patch.payload) bits.push("payload edited");
   if (patch.automation !== undefined) bits.push("automation edited");
   if (patch.graceMinutes != null) bits.push(`grace → ${patch.graceMinutes}m`);
+  if (patch.selectionMethod !== undefined) {
+    bits.push(`selection → ${patch.selectionMethod ?? "default"}`);
+  }
   return bits.join(", ") || "no-op";
 }

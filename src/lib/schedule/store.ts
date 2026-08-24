@@ -22,6 +22,7 @@ import type {
   ScheduleResult,
   AutomationSpec,
 } from "./types";
+import type { SelectionMethod } from "@/lib/slugs/types";
 import { reportError } from "@/lib/observability";
 
 /**
@@ -41,6 +42,8 @@ interface ScheduledPostRow {
   payload: string;
   media: string;
   automation: string | null;
+  content_slug: string | null;
+  selection_method: string | null;
   attempts: number;
   max_attempts: number;
   next_attempt_at: number | null;
@@ -78,6 +81,8 @@ export function rowToPost(row: ScheduledPostRow): ScheduledPost {
     payload: parseJson<SchedulePayload>(row.payload, {} as SchedulePayload),
     media: parseJson<ScheduledMediaRef[]>(row.media, []),
     automation: row.automation ? parseJson<AutomationSpec>(row.automation, {}) : undefined,
+    content_slug: row.content_slug ?? undefined,
+    selection_method: (row.selection_method as SelectionMethod | null) ?? undefined,
     attempts: row.attempts,
     max_attempts: row.max_attempts,
     next_attempt_at: row.next_attempt_at ?? undefined,
@@ -102,6 +107,8 @@ export interface CreateJobInput {
   payload: SchedulePayload;
   media: ScheduledMediaRef[];
   automation?: AutomationSpec;
+  contentSlug?: string;
+  selectionMethod?: SelectionMethod;
   graceMinutes?: number;
   maxAttempts?: number;
   status?: ScheduleStatus;
@@ -114,8 +121,8 @@ export function createJob(input: CreateJobInput): ScheduledPost {
   db.prepare(
     `INSERT INTO scheduled_posts
        (id, platform, status, scheduled_at, payload, media, automation,
-        max_attempts, grace_minutes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        content_slug, selection_method, max_attempts, grace_minutes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.platform,
@@ -124,6 +131,8 @@ export function createJob(input: CreateJobInput): ScheduledPost {
     JSON.stringify(input.payload),
     JSON.stringify(input.media),
     input.automation ? JSON.stringify(input.automation) : null,
+    input.contentSlug ?? null,
+    input.selectionMethod ?? null,
     input.maxAttempts ?? 3,
     input.graceMinutes ?? defaultGraceMinutes()
   );
@@ -289,6 +298,8 @@ export interface JobPatch {
   payload?: SchedulePayload;
   media?: ScheduledMediaRef[];
   automation?: AutomationSpec | null;
+  contentSlug?: string | null;
+  selectionMethod?: SelectionMethod | null;
   graceMinutes?: number;
   maxAttempts?: number;
   nextAttemptAt?: number | null;
@@ -320,6 +331,8 @@ export function updateJob(
   if (patch.automation !== undefined) {
     put("automation", patch.automation ? JSON.stringify(patch.automation) : null);
   }
+  if (patch.contentSlug !== undefined) put("content_slug", patch.contentSlug);
+  if (patch.selectionMethod !== undefined) put("selection_method", patch.selectionMethod);
   if (patch.graceMinutes !== undefined) put("grace_minutes", patch.graceMinutes);
   if (patch.maxAttempts !== undefined) put("max_attempts", patch.maxAttempts);
   if (patch.nextAttemptAt !== undefined) put("next_attempt_at", patch.nextAttemptAt);
@@ -472,6 +485,8 @@ export function updateClaimedJob(
   if (patch.payload !== undefined) put("payload", JSON.stringify(patch.payload));
   if (patch.media !== undefined) put("media", JSON.stringify(patch.media));
   if (patch.automation !== undefined) put("automation", patch.automation ? JSON.stringify(patch.automation) : null);
+  if (patch.contentSlug !== undefined) put("content_slug", patch.contentSlug);
+  if (patch.selectionMethod !== undefined) put("selection_method", patch.selectionMethod);
   if (patch.graceMinutes !== undefined) put("grace_minutes", patch.graceMinutes);
   if (patch.maxAttempts !== undefined) put("max_attempts", patch.maxAttempts);
   if (patch.nextAttemptAt !== undefined) put("next_attempt_at", patch.nextAttemptAt);

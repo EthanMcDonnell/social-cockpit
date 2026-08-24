@@ -10,6 +10,7 @@
 import type { PublishInput } from "@/lib/instagram/endpoints/publish";
 import type { AutomationSpec } from "@/lib/automation/attach";
 import type { AttachResult } from "@/lib/automation/attach";
+import type { SelectionMethod } from "@/lib/slugs/types";
 
 export type { AutomationSpec };
 
@@ -100,6 +101,7 @@ export type FailureKind =
   | "invalid_param"
   | "missing_file"
   | "storage_cap"
+  | "no_candidate"
   | "internal";
 
 export interface ScheduleResult {
@@ -113,6 +115,9 @@ export interface ScheduleResult {
   privacy_status?: string;
   /** Automation attach outcome, when the job carried a spec. */
   automation?: AttachResult | { skipped: true; reason: string };
+  /** Slug jobs: which candidate was chosen at fire time, and why. */
+  slug_video_id?: string;
+  slug_reason?: string;
   /** Set on failure. */
   error?: string;
   error_kind?: FailureKind;
@@ -140,6 +145,14 @@ export interface ScheduledPost {
   payload: SchedulePayload;
   media: ScheduledMediaRef[];
   automation?: AutomationSpec;
+  /**
+   * Booked against a slug rather than a file. `media` stays empty until the
+   * worker resolves the pool at fire time and writes the chosen source back
+   * onto the row.
+   */
+  content_slug?: string;
+  /** Overrides the slug's own method and the global default. */
+  selection_method?: SelectionMethod;
   attempts: number;
   max_attempts: number;
   next_attempt_at?: number;
@@ -155,6 +168,14 @@ export interface ScheduledPostView extends ScheduledPost {
   media_files: StagedMediaStatus[];
   /** Any referenced source file has gone missing since scheduling. */
   media_missing: boolean;
+  /**
+   * Slug jobs: the method that will actually run, after the job → slug →
+   * default fallback has been applied. The card shows this rather than the
+   * stored value, which is usually null and means "whatever the default is".
+   */
+  selection_effective?: SelectionMethod;
+  /** Candidates left in the pool for this job's platform, at read time. */
+  slug_eligible?: number;
 }
 
 export interface ScheduleEvent {

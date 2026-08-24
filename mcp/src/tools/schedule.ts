@@ -63,6 +63,21 @@ const POST_SPEC = {
       "Absolute path to the video on the machine running social-cockpit. The file is referenced in place and " +
         "stays on local disk until the slot arrives — nothing is uploaded at schedule time."
     ),
+  slug: z
+    .string()
+    .optional()
+    .describe(
+      "A content pool. WITH a media path, publishing enrols that file in the pool. WITHOUT one, the slot is booked " +
+        "against the pool itself and the video is chosen when the slot arrives — by views, by longest wait, or " +
+        "whatever selection_method says. A slug shares its name with the automation flow it fires."
+    ),
+  selection_method: z
+    .enum(["most_views", "most_engagement", "least_views", "oldest_unposted", "newest", "random"])
+    .optional()
+    .describe(
+      "How a slug-only post picks its video at fire time. Defaults to the slug's own setting, then the cockpit's. " +
+        "A video already posted to the target platform is never picked again for it."
+    ),
   image_path: z.string().optional().describe("Absolute path to an image, for a non-video post."),
   cover_path: z.string().optional().describe("Absolute path to a reel cover image."),
   caption: z.string().optional().describe("Post caption (Instagram)."),
@@ -97,6 +112,11 @@ const JOB_SUMMARY = z.object({
   scheduled_at_local: z.string().describe("The same instant in the cockpit's timezone."),
   caption: z.string().optional(),
   video: z.string().optional().describe("The video this post is a hook of, if tagged."),
+  slug: z.string().optional().describe("The content pool this post draws from or joins."),
+  selection: z
+    .string()
+    .optional()
+    .describe("How this slug post will pick its video, when it has not picked one yet."),
   files: z.array(z.string()),
   media_missing: z.boolean(),
 });
@@ -110,7 +130,8 @@ function toRequestBody(spec: PostSpec): Record<string, unknown> {
 
   // The cockpit infers media_type: REELS from a lone video source, so the only
   // thing worth translating is the trial-reel shorthand.
-  const wantsTrial = trial_reel ?? (spec.platform !== "yt" && !!spec.video_path);
+  const wantsTrial =
+    trial_reel ?? (spec.platform !== "yt" && (!!spec.video_path || (!!spec.slug && !spec.image_path)));
   if (wantsTrial && spec.platform !== "yt") {
     body.trial_params = { graduation_strategy: "MANUAL" };
   }
@@ -130,6 +151,9 @@ function summarize(job: ScheduledPostView, timeZone: string) {
     scheduled_at_local: formatWhen(job.scheduled_at, timeZone),
     caption: job.payload.caption ?? job.payload.title,
     video: typeof job.payload.video === "string" ? job.payload.video : undefined,
+    slug: job.content_slug,
+    // Only a slug job still waiting on its pool has no files of its own.
+    selection: job.media.length ? undefined : job.selection_effective,
     files: job.media_files.map((m) => m.filename),
     media_missing: job.media_missing,
   };

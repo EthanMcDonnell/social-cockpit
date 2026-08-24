@@ -12,7 +12,15 @@ import {
   useUpdateScheduledPost,
   type StagedUpload,
 } from "@/hooks/useSchedule";
+import { useSlugDetail, useSlugs } from "@/hooks/useSlugs";
 import { suggestKeywords } from "@/lib/schedule/keywords";
+import {
+  SELECTION_LABELS,
+  SELECTION_METHODS,
+  type SelectionMethod,
+  type SlugSelection,
+  type SlugSelectionFailure,
+} from "@/lib/slugs/types";
 import { parseScheduledAt, toLocalInputValue } from "@/lib/schedule/tz";
 import type { PublishInput } from "@/lib/instagram/endpoints/publish";
 import type {
@@ -63,6 +71,12 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
   const [title, setTitle] = useState(() => (job?.payload as YoutubeJobPayload)?.title ?? "");
   const [media, setMedia] = useState<PendingMedia[]>([]);
   const [localPath, setLocalPath] = useState("");
+  // A booked-but-unresolved slug job is the only kind with a slug and no media.
+  const [source, setSource] = useState<"video" | "slug">(
+    job?.content_slug && !job.media.length ? "slug" : "video"
+  );
+  const [slug, setSlug] = useState(job?.content_slug ?? "");
+  const [method, setMethod] = useState<SelectionMethod | "">(job?.selection_method ?? "");
   const [automationKey, setAutomationKey] = useState(job?.automation?.key ?? "");
   const [keywords, setKeywords] = useState(
     () => job?.automation?.trigger_keywords?.join(", ") ?? ""
@@ -105,6 +119,12 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
   const uploading = media.some((m) => !m.staged && !m.error);
   const keyedFlows = (flows.data ?? []).filter((f) => f.automation_key);
 
+  const slugs = useSlugs();
+  const usingSlug = source === "slug";
+  // Preview the real selector rather than a description of it, so what the
+  // drawer promises and what fires at 9:30 cannot drift apart.
+  const preview = useSlugDetail(usingSlug && slug ? slug : null, platform);
+
   async function submit() {
     setError(null);
     const at = parseScheduledAt(when, timeZone);
@@ -115,6 +135,7 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
         await update.mutateAsync({
           id: job!.id,
           scheduled_at: at,
+          ...(job!.content_slug ? { selection_method: method || null } : {}),
           payload: platform === "yt" ? { title } : { caption },
           automation: automationKey
             ? {
@@ -124,14 +145,29 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
             : null,
         });
       } else {
-        const staged = media.filter((m) => m.staged);
+        if (usingSlug && !slug.trim()) return setError("Pick a slug, or switch back to a video.");
+
+        const staged = usingSlug ? [] : media.filter((m) => m.staged);
         await create.mutateAsync({
           scheduled_at: at,
           platform,
+          // A slug job sends its payload as an override — anything left blank
+          // is filled from the candidate the selector picks at fire time.
           ...(platform === "yt"
-            ? { title, description: caption, isShort: true }
-            : { caption }),
-          ...(localPath ? { video_path: localPath } : {}),
+            ? usingSlug
+              ? { ...(title.trim() ? { title } : {}), ...(caption.trim() ? { description: caption } : {}) }
+              : { title, description: caption, isShort: true }
+            : { ...(usingSlug && !caption.trim() ? {} : { caption }) }),
+          // A slug with a file enrols it in the pool on the way out; a slug on
+          // its own is what the pool gets picked from.
+          ...(slug.trim() ? { slug: slug.trim() } : {}),
+          ...(usingSlug
+            ? method
+              ? { selection_method: method }
+              : {}
+            : localPath
+              ? { video_path: localPath }
+              : {}),
           media: staged.map((m, i) => ({
             role: staged.length > 1 ? "child" : mediaRoleFor(m),
             staged_id: m.staged!.id,
@@ -225,6 +261,85 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
 
           {!editing && (
             <div className="cal-field">
+              <label>What goes out</label>
+              <div className="cal-seg">
+                <button
+                  type="button"
+                  className={source === "video" ? "on" : undefined}
+                  onClick={() => setSource("video")}
+                >
+                  A video
+                </button>
+                <button
+                  type="button"
+                  className={source === "slug" ? "on" : undefined}
+                  onClick={() => setSource("slug")}
+                >
+                  A slug
+                </button>
+              </div>
+              <p className="cal-hint">
+                {usingSlug
+                  ? "Books the slot, not the file. The video is chosen from the slug's pool when the slot arrives."
+                  : "Posts this exact file. Add a slug below to also enrol it in that pool."}
+              </p>
+            </div>
+          )}
+
+          {(usingSlug || (editing && !!job!.content_slug)) && (
+            <div className="cal-field">
+              <label htmlFor="cal-slug">Slug</label>
+              {editing ? (
+                <p className="cal-static">#{job!.content_slug}</p>
+              ) : (
+                <>
+                  <CalSelect
+                    id="cal-slug"
+                    value={slug}
+                    onChange={setSlug}
+                    options={[
+                      { value: "", label: "Pick a slug…" },
+                      ...(slugs.data?.slugs ?? []).map((entry) => ({
+                        value: entry.slug,
+                        label: `${entry.name ?? entry.slug} · ${entry.eligible[platform]} left`,
+                      })),
+                      ...(slug && !(slugs.data?.slugs ?? []).some((entry) => entry.slug === slug)
+                        ? [{ value: slug, label: `${slug} (new)` }]
+                        : []),
+                    ]}
+                  />
+                  <input
+                    value={slug}
+                    onChange={(e) => setSlug(e.target.value)}
+                    placeholder="or a new slug, e.g. gym-tips"
+                  />
+                </>
+              )}
+
+              <CalSelect
+                id="cal-method"
+                value={method}
+                onChange={(value) => setMethod(value as SelectionMethod | "")}
+                options={[
+                  {
+                    value: "",
+                    label: `Default${slugs.data ? ` (${SELECTION_LABELS[slugs.data.default_selection]})` : ""}`,
+                  },
+                  ...SELECTION_METHODS.map((m) => ({ value: m, label: SELECTION_LABELS[m] })),
+                ]}
+              />
+
+              <SlugPreview
+                loading={preview.isLoading}
+                nextUp={preview.data?.next_up ?? null}
+                blocked={preview.data?.blocked ?? null}
+                enabled={!!slug || !!job?.content_slug}
+              />
+            </div>
+          )}
+
+          {!editing && !usingSlug && (
+            <div className="cal-field">
               <label>Media</label>
               {media.map((m) => (
                 <div key={m.name} className={`cal-upload${m.error ? " is-err" : ""}`}>
@@ -251,6 +366,29 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
                   </p>
                 </>
               )}
+            </div>
+          )}
+
+          {!editing && !usingSlug && (
+            <div className="cal-field">
+              <label htmlFor="cal-slug-tag">Slug (optional)</label>
+              <input
+                id="cal-slug-tag"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="gym-tips"
+                list="cal-slug-list"
+              />
+              <datalist id="cal-slug-list">
+                {(slugs.data?.slugs ?? []).map((entry) => (
+                  <option key={entry.slug} value={entry.slug} />
+                ))}
+              </datalist>
+              <p className="cal-hint">
+                {media.length
+                  ? "A dropped file can't join a pool — it's a copy this app deletes after posting. Give a path instead and it joins when it publishes."
+                  : "Adds this video to that slug's pool when it publishes, so a later slot can be booked against the slug instead of a file."}
+              </p>
             </div>
           )}
 
@@ -372,6 +510,46 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
         </footer>
       </aside>
     </>
+  );
+}
+
+/**
+ * What this slug would post if it fired right now.
+ *
+ * The value comes from the same selector the worker runs, so the drawer can
+ * never promise one video and the 9:30 slot deliver another. It is a *preview*,
+ * not a reservation — a pool that changes before the slot does changes this too.
+ */
+function SlugPreview({
+  loading,
+  nextUp,
+  blocked,
+  enabled,
+}: {
+  loading: boolean;
+  nextUp: SlugSelection | null;
+  blocked: SlugSelectionFailure | null;
+  enabled: boolean;
+}) {
+  if (!enabled) return null;
+  if (loading) return <p className="cal-hint">Checking the pool…</p>;
+
+  if (blocked) {
+    return (
+      <p className={`cal-msg ${blocked.exhausted ? "warn" : "err"}`}>
+        {blocked.error}
+        {blocked.exhausted && " Add another video, or pick a different slug."}
+      </p>
+    );
+  }
+  if (!nextUp) return null;
+
+  return (
+    <div className="cal-preview">
+      <span className="cal-preview-tag">Next up</span>
+      <b>{nextUp.video.label ?? nextUp.video.filename}</b>
+      <span className="cal-preview-why">{nextUp.reason}</span>
+    </div>
   );
 }
 

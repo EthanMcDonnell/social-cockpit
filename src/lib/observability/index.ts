@@ -22,6 +22,7 @@ export type EventSource =
   | "cache"
   | "token"
   | "transcription"
+  | "slugs"
   | "instagram"
   | "db"
   | "api";

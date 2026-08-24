@@ -36,6 +36,10 @@ reimplement any of it.
 | `src/lib/automation-register.ts` pattern | Copied for `src/lib/schedule/register.ts` — boot tick + `setInterval`, wired via `src/instrumentation.ts`. |
 | `src/lib/db/index.ts` | New tables appended to the same additive `CREATE TABLE IF NOT EXISTS` list. No `ALTER` on existing tables. |
 
+> **Booking a slug instead of a file:** a slot can be booked against a pool of
+> videos and the one to post chosen when the slot arrives — by views, by longest
+> wait, or whatever you pick. See [Slug scheduling](./slug-scheduling.md).
+
 ### Refactors required (behaviour-preserving)
 
 1. **`src/lib/publish/local-source.ts`** — move `CONTENT_TYPES`, `contentTypeFor`,

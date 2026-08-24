@@ -40,9 +40,20 @@ import {
   updateClaimedJob,
   type ClaimedScheduledPost,
 } from "./store";
-import { getStagedMediaMany, releaseStaged, sweepOrphanedStaged } from "./media";
+import { getStagedMediaMany, registerLocalPath, releaseStaged, sweepOrphanedStaged } from "./media";
+import { selectVideo } from "@/lib/slugs/select";
+import { enrolVideo, recordPost } from "@/lib/slugs/store";
+import { resolveSelectionMethod } from "@/lib/slugs/settings";
+import { isSelectionFailure, type SlugVideoPayload } from "@/lib/slugs/types";
 import { schedulerEnabled as configuredSchedulerEnabled, dryRunActive } from "./settings";
-import type { FailureKind, ScheduleResult, ScheduledPost, YoutubeJobPayload } from "./types";
+import type {
+  FailureKind,
+  ScheduleResult,
+  ScheduledPost,
+  ScheduledMediaRef,
+  YoutubeJobPayload,
+} from "./types";
+import type { PublishInput as IgPublishInput } from "@/lib/instagram/endpoints/publish";
 import { reportError } from "@/lib/observability";
 
 export const INTERVAL_MS = config.schedule.intervalMs;
@@ -125,11 +136,112 @@ async function runJob(job: ClaimedScheduledPost): Promise<void> {
     jobId: job.id,
   });
   try {
+    // A slug job has no video until now. Resolving under the lease is the whole
+    // point of the feature: the pick reflects the state of the pool at the
+    // moment the slot arrives, not at the moment it was booked.
+    if (job.content_slug && !job.media.length && !(await resolveSlugJob(job))) return;
     if (job.platform === "yt") await runYoutubeJob(job);
     else await runInstagramJob(job);
   } catch (err) {
     await handlePublishingFailure(job, err);
   }
+}
+
+/** No video in the pool can go out on this platform right now. */
+class NoCandidateError extends Error {}
+
+/**
+ * Turn a slug job into an ordinary one: pick a candidate, register its file,
+ * and write the resolved media and payload back onto the row. After this
+ * returns true the job is indistinguishable from one booked against a file, and
+ * takes the unchanged publish path.
+ *
+ * Returns false when the lease was lost mid-resolution — the caller must then
+ * stop without side effects, exactly as everywhere else in this worker.
+ */
+async function resolveSlugJob(job: ClaimedScheduledPost): Promise<boolean> {
+  const slug = job.content_slug!;
+  const method = resolveSelectionMethod(slug, job.selection_method);
+
+  // An earlier attempt may have registered a source before failing. Drop it
+  // rather than leaking a row per retry — and re-pick, since the reason the
+  // last attempt failed may be the very candidate it chose. The row is cleared
+  // in the same breath: if the pick below fails, the job must not be left
+  // pointing at media rows that no longer exist.
+  if (job.media.length) {
+    await releaseStaged(job.media.map((media) => media.staged_id));
+    if (!updateClaimedJob(job, "publishing", { media: [] })) return false;
+    job.media = [];
+  }
+
+  const selection = await selectVideo({ slug, platform: job.platform, method });
+  if (isSelectionFailure(selection)) throw new NoCandidateError(selection.error);
+
+  const staged = await registerLocalPath(selection.video.path);
+  const media: ScheduledMediaRef[] = [{ role: "video", staged_id: staged.id }];
+  const payload = mergeSlugPayload(job, selection.video.payload, selection.video.label ?? selection.video.filename);
+
+  const resolved = updateClaimedJob(job, "publishing", {
+    media,
+    payload,
+    result: {
+      ...(job.result ?? {}),
+      slug_video_id: selection.video.id,
+      slug_reason: selection.reason,
+    },
+  });
+  if (!resolved) {
+    // Another worker owns the job now. Release what this attempt registered so
+    // the row does not outlive the attempt that created it.
+    await releaseStaged([staged.id]);
+    return false;
+  }
+
+  job.media = media;
+  job.payload = payload;
+  job.result = {
+    ...(job.result ?? {}),
+    slug_video_id: selection.video.id,
+    slug_reason: selection.reason,
+  };
+
+  logScheduleEvent("info", "slug_resolved", `#${slug} → ${selection.reason}`, {
+    jobId: job.id,
+    meta: { slug, method, video_id: selection.video.id, considered: selection.considered },
+  });
+  return true;
+}
+
+/**
+ * The job's own payload wins over the candidate's stored defaults — a slot
+ * booked with a caption meant that caption, whichever video turns up.
+ */
+function mergeSlugPayload(
+  job: ScheduledPost,
+  defaults: SlugVideoPayload,
+  fallbackTitle: string
+) {
+  if (job.platform === "yt") {
+    const booked = job.payload as Partial<YoutubeJobPayload>;
+    const stored = defaults.yt ?? {};
+    return {
+      // YouTube refuses an untitled upload, so this can never be left empty:
+      // the candidate's label (or its filename) is the last resort.
+      title: booked.title?.trim() || stored.title?.trim() || fallbackTitle,
+      description: booked.description ?? stored.description,
+      isShort: booked.isShort ?? stored.isShort !== false,
+      tags: booked.tags ?? stored.tags,
+      publish_at: booked.publish_at,
+    } satisfies YoutubeJobPayload;
+  }
+
+  const booked = job.payload as Partial<IgPublishInput>;
+  return {
+    ...booked,
+    caption: booked.caption ?? defaults.ig?.caption,
+    // A slug pool holds videos, so the media type is never in question.
+    media_type: booked.media_type ?? "REELS",
+  } as IgPublishInput;
 }
 
 function resolveSources(job: ScheduledPost): {
@@ -466,30 +578,143 @@ export function youtubeAuditPassed(): boolean {
 
 async function succeed(job: ClaimedScheduledPost, result: ScheduleResult): Promise<void> {
   const expected = job.status === "finalizing" ? "finalizing" : "publishing";
+  const final = withSlugTrace(job, result);
   const completed = updateClaimedJob(job, expected, {
     status: "published",
     leaseUntil: null,
     leaseToken: null,
-    result,
+    result: final,
     containerId: null,
   });
   if (!completed) return;
 
+  await recordSlugPost(job, final);
   await releaseStaged(job.media.map((media) => media.staged_id));
-  logScheduleEvent("info", "published", describeSuccess(result), {
+  logScheduleEvent("info", "published", describeSuccess(final), {
     jobId: job.id,
-    meta: { media_id: result.media_id, video_id: result.video_id },
+    meta: { media_id: final.media_id, video_id: final.video_id },
   });
-  if (result.automation && "action" in result.automation) {
+  if (final.automation && "action" in final.automation) {
     logScheduleEvent(
       "info",
       "automation_attached",
-      `Automation ${result.automation.action} (flow ${result.automation.flow_id})`,
+      `Automation ${final.automation.action} (flow ${final.automation.flow_id})`,
       { jobId: job.id }
     );
-  } else if (result.automation) {
-    logScheduleEvent("warn", "automation_skipped", result.automation.reason, { jobId: job.id });
+  } else if (final.automation) {
+    logScheduleEvent("warn", "automation_skipped", final.automation.reason, { jobId: job.id });
   }
+}
+
+/**
+ * Carry the slug decision onto the final result.
+ *
+ * Each outcome builds its own result object from the platform response, so
+ * without this the record of *why this video* would be dropped at the last
+ * step — including across the finalizing hand-off, where the trace is read back
+ * from the stored row rather than from memory.
+ */
+function withSlugTrace(job: ScheduledPost, result: ScheduleResult): ScheduleResult {
+  if (!job.content_slug || !job.result?.slug_video_id) return result;
+  return {
+    ...result,
+    slug_video_id: job.result.slug_video_id,
+    slug_reason: job.result.slug_reason,
+  };
+}
+
+/**
+ * Write the local file → published post link that every future selection reads:
+ * it is both the metrics key for ranking and the record that takes this
+ * candidate out of the platform's pool.
+ *
+ * This is also where a pool fills up. A job booked against a *file* and tagged
+ * with a slug enrols that file here, on the way out — the same bargain the
+ * automation key already makes, where posting under a key is what joins the
+ * flow. Enrolment is idempotent on (slug, path), so a video posted three times
+ * under its slug is one candidate with three ledger rows.
+ *
+ * A dry run is deliberately excluded — its media id is a stub, and recording it
+ * would silently retire a candidate that never actually posted.
+ */
+async function recordSlugPost(job: ScheduledPost, result: ScheduleResult): Promise<void> {
+  const externalId = job.platform === "yt" ? result.video_id : result.media_id;
+  if (!job.content_slug || !externalId || result.dry_run) return;
+
+  try {
+    let videoId = result.slug_video_id;
+    if (!videoId) {
+      const source = videoSourceOf(job);
+      if (!source) return;
+      if (source.owned) {
+        // A browser upload lives in data/staged and is deleted the moment this
+        // job finishes. Enrolling it would put a path in the pool that stops
+        // existing seconds later. A pool references your own library, so only a
+        // file that was already yours can join one.
+        logScheduleEvent(
+          "warn",
+          "slug_enrol_skipped",
+          `#${job.content_slug} — an uploaded file can't join a pool; schedule it by path instead`,
+          { jobId: job.id, meta: { slug: job.content_slug } }
+        );
+        return;
+      }
+      const enrolled = await enrolVideo({
+        slug: job.content_slug,
+        path: source.path,
+        payload: payloadDefaultsOf(job),
+      });
+      videoId = enrolled.id;
+      logScheduleEvent("info", "slug_enrolled", `Added to #${job.content_slug}`, {
+        jobId: job.id,
+        meta: { slug: job.content_slug, video_id: videoId },
+      });
+    }
+    recordPost(videoId, job.platform, externalId, job.id);
+  } catch (err) {
+    // The post is live; losing the ledger row costs a future selection its
+    // metrics and lets this candidate come round again. Worth an alert, not
+    // worth failing an already-published job over.
+    reportError("slugs", "ledger_write_failed", "could not record a slug post", {
+      error: err,
+      meta: { job: job.id, slug: job.content_slug, video: result.slug_video_id },
+    });
+  }
+}
+
+/**
+ * The job's video source, still resolvable because cleanup runs after this.
+ *
+ * `owned` is the part that matters to enrolment: an owned file is a copy this
+ * app made and is about to delete, a referenced one is the user's own file
+ * sitting where it always was.
+ */
+function videoSourceOf(job: ScheduledPost): { path: string; owned: boolean } | undefined {
+  const ref = job.media.find((media) => media.role === "video");
+  if (!ref) return undefined;
+  const staged = getStagedMediaMany([ref.staged_id]).get(ref.staged_id);
+  return staged ? { path: staged.path, owned: staged.owned } : undefined;
+}
+
+/**
+ * Seed the new candidate with the payload it just published under, so a later
+ * slug job that picks it has a caption or a title to use without one being
+ * written twice.
+ */
+function payloadDefaultsOf(job: ScheduledPost): SlugVideoPayload {
+  if (job.platform === "yt") {
+    const payload = job.payload as YoutubeJobPayload;
+    return {
+      yt: {
+        title: payload.title,
+        description: payload.description,
+        tags: payload.tags,
+        isShort: payload.isShort,
+      },
+    };
+  }
+  const payload = job.payload as IgPublishInput;
+  return { ig: { caption: payload.caption } };
 }
 
 async function handlePublishingFailure(job: ClaimedScheduledPost, err: unknown): Promise<void> {
@@ -579,6 +804,7 @@ async function handleFinalizingFailure(job: ClaimedScheduledPost, err: unknown):
 function classify(err: unknown): FailureKind {
   if (err instanceof RateLimitError) return "rate_limit";
   if (err instanceof CapError) return "storage_cap";
+  if (err instanceof NoCandidateError) return "no_candidate";
   if (err instanceof MissingSourceError || err instanceof PathError) return "missing_file";
   if (err instanceof ContainerFailedError) return "processing_failed";
   if (err instanceof AutomationAttachError) return "network";

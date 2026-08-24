@@ -13,6 +13,11 @@ import {
   setDryRunStored,
 } from "@/lib/schedule/settings";
 import { isValidTimeZone, zoneAbbreviation } from "@/lib/schedule/tz";
+import {
+  getDefaultSelectionMethod,
+  setDefaultSelectionMethod,
+} from "@/lib/slugs/settings";
+import { isSelectionMethod, SELECTION_METHODS } from "@/lib/slugs/types";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
 import { schedulerEnabled } from "@/lib/schedule/worker";
 
@@ -36,6 +41,10 @@ function payload() {
     // Posting policy — stored, and editable without restarting the server.
     suggested_times: getSuggestedTimes(),
     max_posts_per_day: getMaxPostsPerDay(),
+    // How a slug job picks its video when neither the job nor the slug says.
+    // Read at fire time, so changing it also changes what every unspecified job
+    // already on the calendar will do.
+    default_selection: getDefaultSelectionMethod(),
   };
 }
 
@@ -84,6 +93,13 @@ export async function PUT(request: NextRequest) {
     } catch (err) {
       return invalid(err instanceof Error ? err.message : "Bad suggested_times.");
     }
+  }
+
+  if (body?.default_selection !== undefined) {
+    if (!isSelectionMethod(body.default_selection)) {
+      return invalid(`default_selection must be one of: ${SELECTION_METHODS.join(", ")}.`);
+    }
+    setDefaultSelectionMethod(body.default_selection);
   }
 
   if (body?.max_posts_per_day !== undefined) {

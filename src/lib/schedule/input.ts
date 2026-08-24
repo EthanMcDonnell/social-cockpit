@@ -27,9 +27,12 @@ import { defaultGraceMinutes } from "./store";
 import type {
   MediaRole,
   ScheduledMediaRef,
+  SchedulePayload,
   SchedulePlatform,
   YoutubeJobPayload,
 } from "./types";
+import { ensureSlug, normalizeSlug } from "@/lib/slugs/store";
+import { isSelectionMethod, SELECTION_METHODS, type SelectionMethod } from "@/lib/slugs/types";
 
 /** Filesystem-path sources, mirroring POST /api/publish/local. */
 export interface ScheduleSources {
@@ -55,6 +58,12 @@ export type ScheduleRequestBody = Partial<PublishInput> &
     max_attempts?: number;
     media?: StagedRefInput[];
     automation?: AutomationSpec;
+    /**
+     * Book the slot against a slug's content pool instead of a file. The video
+     * is chosen when the slot arrives — see docs/slug-scheduling.md.
+     */
+    slug?: string;
+    selection_method?: string;
   };
 
 export interface ParseFailure {
@@ -152,6 +161,42 @@ function previewSources(media: ScheduledMediaRef[]): R2Sources {
   return r2;
 }
 
+/**
+ * Validate an automation spec at booking time so a bad one is a 400 on this
+ * call. The resolved plan is deliberately DISCARDED: create-vs-append must be
+ * decided at fire time, because another post may claim this key between now and
+ * then. We store the raw spec and re-plan in the worker.
+ */
+function checkAutomation(
+  automation: AutomationSpec | undefined
+): { automation?: AutomationSpec } | ParseFailure {
+  if (!automation) return {};
+
+  const planned = planAutomation(getDb(), automation);
+  if ("error" in planned) return fail("invalid_param", planned.error);
+
+  // Preserve the scheduling-time contract for a key-only/append request. If its
+  // owner is later deleted, publishing must not silently create a new flow from
+  // fields that were ignored on the original append.
+  if (planned.plan.mode === "append") {
+    return { automation: { ...automation, existing_key_required: true } };
+  }
+  return { automation };
+}
+
+/**
+ * One slug, two facets: an automation block that names no key of its own
+ * inherits the slug, so the pool a video belongs to and the flow it fires stay
+ * the same string rather than drifting into two things to keep straight.
+ */
+function withSlugKey(
+  automation: AutomationSpec | undefined,
+  slug: string
+): AutomationSpec | undefined {
+  if (!automation || !slug || automation.key?.trim()) return automation;
+  return { ...automation, key: slug };
+}
+
 export async function parseScheduleBody(body: ScheduleRequestBody): Promise<ParseResult> {
   const timeZone = getTimeZone();
 
@@ -184,11 +229,74 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
     "max_attempts",
     "media",
     "automation",
+    "slug",
+    "selection_method",
     "video_path",
     "image_path",
     "cover_path",
     "children_paths",
   ]);
+
+  // ── slug pool jobs ──
+  // A slug job books the *slot*; the video is chosen when the slot arrives. The
+  // two paths diverge entirely here rather than sharing a half-populated job:
+  // there is no media to resolve, and no payload to validate against a media
+  // type nobody has picked yet.
+  if (body.slug !== undefined && typeof body.slug !== "string") {
+    return fail("invalid_param", "slug must be a string.");
+  }
+  if (body.selection_method !== undefined && !isSelectionMethod(body.selection_method)) {
+    return fail(
+      "invalid_param",
+      `selection_method must be one of: ${SELECTION_METHODS.join(", ")}.`
+    );
+  }
+  const selectionMethod: SelectionMethod | undefined = isSelectionMethod(body.selection_method)
+    ? body.selection_method
+    : undefined;
+
+  const slug = body.slug?.trim() ? normalizeSlug(body.slug) : "";
+  if (body.slug?.trim() && !slug) {
+    return fail("invalid_param", "A slug needs at least one letter or digit.");
+  }
+  // Create the pool on first mention, mirroring how a new automation_key
+  // creates its flow. Booking must not require a separate setup call for what
+  // is one obvious intent.
+  if (slug) ensureSlug(slug);
+
+  const hasSource =
+    !!body.media?.length ||
+    !!body.video_path ||
+    !!body.image_path ||
+    !!body.cover_path ||
+    !!body.children_paths?.length;
+
+  // A slug with a file means "post this one, and it belongs to the pool" — it
+  // is enrolled when it publishes. A slug on its own means "post something from
+  // the pool", and only that case defers the choice to fire time.
+  if (slug && !hasSource) {
+
+    const checked = checkAutomation(platform === "ig" ? withSlugKey(automation, slug) : undefined);
+    if (isFailure(checked)) return checked;
+
+    return {
+      job: {
+        platform,
+        scheduledAt,
+        // Whatever payload came with the request is kept as an override — the
+        // rest is filled from the chosen candidate at fire time.
+        payload: (platform === "yt"
+          ? (rest as Partial<YoutubeJobPayload>)
+          : (rest as PublishInput)) as SchedulePayload,
+        media: [],
+        automation: checked.automation,
+        contentSlug: slug,
+        selectionMethod,
+        graceMinutes: grace_minutes ?? defaultGraceMinutes(),
+        maxAttempts: max_attempts,
+      },
+    };
+  }
 
   // ── media ──
   const resolved = await resolveMedia(body);
@@ -215,6 +323,7 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
         scheduledAt,
         payload,
         media,
+        contentSlug: slug || undefined,
         graceMinutes: grace_minutes ?? defaultGraceMinutes(),
         maxAttempts: max_attempts,
       },
@@ -231,21 +340,8 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
   if (problem) return fail("invalid_param", problem);
 
   // ── automation ──
-  // Validated now so a bad spec is a 400 on this call. The resolved plan is
-  // deliberately DISCARDED: create-vs-append must be decided at fire time,
-  // because another post may claim this key between now and then. We store the
-  // raw spec and re-plan in the worker.
-  let storedAutomation = automation;
-  if (automation) {
-    const planned = planAutomation(getDb(), automation);
-    if ("error" in planned) return fail("invalid_param", planned.error);
-    // Preserve the scheduling-time contract for a key-only/append request. If
-    // its owner is later deleted, publishing must not silently create a new
-    // flow from fields that were ignored on the original append.
-    if (planned.plan.mode === "append") {
-      storedAutomation = { ...automation, existing_key_required: true };
-    }
-  }
+  const checked = checkAutomation(withSlugKey(automation, slug));
+  if (isFailure(checked)) return checked;
 
   return {
     job: {
@@ -253,7 +349,10 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
       scheduledAt,
       payload: input,
       media,
-      automation: storedAutomation,
+      automation: checked.automation,
+      // Carried even though this job has its own file: publishing it enrols the
+      // video in the pool, which is how a pool fills up in the first place.
+      contentSlug: slug || undefined,
       graceMinutes: grace_minutes ?? defaultGraceMinutes(),
       maxAttempts: max_attempts,
     },

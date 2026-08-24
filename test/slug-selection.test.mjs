@@ -1,0 +1,110 @@
+/**
+ * Slug selection, end to end against real SQLite stores.
+ *
+ * The selector is the part of slug scheduling with no user in the loop: it runs
+ * at 3am and whatever it returns is what goes out. So this exercises the actual
+ * modules rather than a description of their rules.
+ */
+
+import assert from "node:assert/strict";
+import { writeFileSync, unlinkSync } from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { loadLib } from "./helpers/lib-under-test.mjs";
+
+const { load, mediaRoot, cleanup } = loadLib(["src/lib/slugs/**/*.ts"]);
+const store = load("lib/slugs/store.js");
+const select = load("lib/slugs/select.js");
+const settings = load("lib/slugs/settings.js");
+const cache = load("lib/cache/store.js");
+
+function clip(name) {
+  const file = path.join(mediaRoot, name);
+  writeFileSync(file, "not really a video");
+  return file;
+}
+
+const SLUG = "gym-tips";
+let a;
+let b;
+let c;
+
+test("a pool is built by enrolment, and enrolment is idempotent", async () => {
+  a = await store.enrolVideo({ slug: "Gym Tips!", path: clip("a.mp4"), label: "A" });
+  assert.equal(a.slug, SLUG, "the slug is normalised on the way in");
+
+  const again = await store.enrolVideo({ slug: SLUG, path: a.path });
+  assert.equal(again.id, a.id, "re-enrolling a path must not clone the candidate");
+
+  b = await store.enrolVideo({ slug: SLUG, path: clip("b.mp4"), label: "B" });
+  c = await store.enrolVideo({ slug: SLUG, path: clip("c.mp4"), label: "C" });
+  assert.equal(store.listVideos(SLUG).length, 3);
+});
+
+test("a pool with no metrics still picks, in add order", async () => {
+  const pick = await select.selectVideo({ slug: SLUG, platform: "ig", method: "most_views" });
+  assert.ok(!("error" in pick), "a brand-new slug must still fire on its first slot");
+  assert.equal(pick.video.id, a.id);
+  assert.match(pick.reason, /no candidate had metrics/);
+});
+
+test("metric methods rank on the posts a candidate already has", async () => {
+  store.recordPost(a.id, "ig", "ig-a");
+  store.recordPost(b.id, "ig", "ig-b");
+  cache.upsertMediaInsights("ig-a", { views: 500, total_interactions: 50 });
+  cache.upsertMediaInsights("ig-b", { views: 9000, total_interactions: 180 });
+
+  const most = await select.selectVideo({ slug: SLUG, platform: "yt", method: "most_views" });
+  assert.equal(most.video.id, b.id, "9k beats 500");
+
+  const engaged = await select.selectVideo({ slug: SLUG, platform: "yt", method: "most_engagement" });
+  assert.equal(engaged.video.id, a.id, "10% beats 2%, regardless of raw views");
+
+  const least = await select.selectVideo({ slug: SLUG, platform: "yt", method: "least_views" });
+  assert.equal(least.video.id, a.id);
+});
+
+test("a candidate already posted to a platform is out of that platform's pool", async () => {
+  const pick = await select.selectVideo({ slug: SLUG, platform: "ig", method: "most_views" });
+  assert.equal(pick.video.id, c.id, "A and B already ran on Instagram");
+  assert.equal(pick.considered, 1);
+});
+
+test("the pool drains per platform, and reports exhaustion", async () => {
+  store.recordPost(c.id, "ig", "ig-c");
+
+  const blocked = await select.selectVideo({ slug: SLUG, platform: "ig", method: "most_views" });
+  assert.ok(blocked.error && blocked.exhausted, "an exhausted pool must say so");
+
+  const yt = await select.selectVideo({ slug: SLUG, platform: "yt", method: "most_views" });
+  assert.equal(yt.video.id, b.id, "draining Instagram must not drain YouTube");
+});
+
+test("a candidate whose file has vanished is skipped, not fatal", async () => {
+  unlinkSync(b.path);
+  const pick = await select.selectVideo({ slug: SLUG, platform: "yt", method: "most_views" });
+  assert.equal(pick.video.id, a.id);
+});
+
+test("add-order methods are deterministic within the same second", async () => {
+  const oldest = await select.selectVideo({ slug: SLUG, platform: "yt", method: "oldest_unposted" });
+  const newest = await select.selectVideo({ slug: SLUG, platform: "yt", method: "newest" });
+  assert.equal(oldest.video.id, a.id);
+  assert.equal(newest.video.id, c.id);
+});
+
+test("the method resolves job → slug → default", async () => {
+  assert.equal(settings.resolveSelectionMethod(SLUG), "most_views");
+
+  store.updateSlug(SLUG, { selection_method: "newest" });
+  assert.equal(settings.resolveSelectionMethod(SLUG), "newest", "a slug override beats the default");
+  assert.equal(settings.resolveSelectionMethod(SLUG, "random"), "random", "the job beats the slug");
+});
+
+test("an empty pool is reported differently from an exhausted one", async () => {
+  store.ensureSlug("brand-new");
+  const none = await select.selectVideo({ slug: "brand-new", platform: "ig", method: "most_views" });
+  assert.ok(none.error && !none.exhausted);
+});
+
+test.after(cleanup);

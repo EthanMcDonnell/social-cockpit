@@ -28,6 +28,9 @@ export interface StagedMediaStatus {
 
 export interface ScheduleResult {
   media_id?: string;
+  /** Slug jobs: which candidate was chosen at fire time, and why. */
+  slug_video_id?: string;
+  slug_reason?: string;
   permalink?: string;
   video_id?: string;
   watch_url?: string;
@@ -43,6 +46,12 @@ export interface ScheduledPostView {
   /** Epoch ms, UTC. */
   scheduled_at: number;
   payload: { caption?: string; title?: string; media_type?: string } & Record<string, unknown>;
+  /** Booked against a content pool rather than a file. */
+  content_slug?: string;
+  /** The method that will actually run, after the job → slug → default fallback. */
+  selection_effective?: string;
+  /** Empty on a slug job until the worker resolves its pool at fire time. */
+  media: { role: string; staged_id: string }[];
   media_files: StagedMediaStatus[];
   media_missing: boolean;
   attempts: number;

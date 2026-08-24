@@ -191,6 +191,60 @@ export function getDb(): Database.Database {
     )`,
     "CREATE INDEX IF NOT EXISTS idx_sched_events_created ON schedule_events(created_at)",
     "CREATE INDEX IF NOT EXISTS idx_sched_events_job ON schedule_events(job_id)",
+    // ── slug content pools (see docs/slug-scheduling.md) ────────────────────
+    // A slug is one string with two facets. The automation facet already exists
+    // as `automation_flows.automation_key`; this is the content facet — the pool
+    // of videos that slug can post. Both are optional: a pool with no automation
+    // and a keyed flow with an empty pool are equally valid.
+    //
+    // The pool exists so a calendar slot can book a *slug* rather than a file,
+    // and the video be chosen when the slot arrives (highest views, oldest
+    // unposted, …). That choice needs metrics, and metrics need to know which
+    // local file became which published post — which is what slug_video_posts
+    // records and nothing else in this schema did.
+    `CREATE TABLE IF NOT EXISTS content_slugs (
+      slug             TEXT PRIMARY KEY,
+      name             TEXT,
+      selection_method TEXT,
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // One candidate video. `path` is an absolute path on this machine and is
+    // never copied or uploaded by enrolment — same discipline as scheduled_media
+    // with owned=0. `payload` holds per-platform defaults ({"ig":{"caption":…},
+    // "yt":{"title":…}}) so a slug job needs no payload of its own.
+    `CREATE TABLE IF NOT EXISTS slug_videos (
+      id         TEXT PRIMARY KEY,
+      slug       TEXT NOT NULL,
+      path       TEXT NOT NULL,
+      label      TEXT,
+      payload    TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_slug_videos_slug ON slug_videos(slug)",
+    // A path may only be enrolled in a given slug once — re-enrolling the same
+    // file after a second post must not clone the candidate and double its odds.
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_slug_videos_unique ON slug_videos(slug, path)",
+    // The missing link: local file → the post it became. Written when a publish
+    // that carried a slug succeeds. Selection reads it for both halves of its
+    // job: ranking by metrics, and excluding what this platform already had.
+    `CREATE TABLE IF NOT EXISTS slug_video_posts (
+      video_id    TEXT NOT NULL,
+      platform    TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      job_id      TEXT,
+      posted_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (video_id, platform, external_id)
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_slug_posts_video ON slug_video_posts(video_id)",
+    // ── slug jobs ───────────────────────────────────────────────────────────
+    // A job booked against a slug rather than a file. `media` stays empty until
+    // the worker resolves the slug at fire time and writes the chosen source
+    // back onto the row, after which the job is indistinguishable from any
+    // other and takes the unchanged publish path.
+    "ALTER TABLE scheduled_posts ADD COLUMN content_slug TEXT",
+    "ALTER TABLE scheduled_posts ADD COLUMN selection_method TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_sched_slug ON scheduled_posts(content_slug)",
     // Generic key→value app settings. Introduced for the calendar's display
     // timezone, which must not require an app restart to change (unlike the
     // .env-backed settings) since it silently changes what every slot means.

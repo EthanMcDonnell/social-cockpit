@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { SelectionMethod } from "@/lib/slugs/types";
 import type {
   ScheduledPostView,
   ScheduleStatus,
@@ -34,6 +35,8 @@ export interface ScheduleSettings {
   dry_run_stored: boolean;
   suggested_times: string[];
   max_posts_per_day: number;
+  /** How a slug job picks its video when neither the job nor the slug says. */
+  default_selection: SelectionMethod;
 }
 
 /** The subset a client may write. Everything else on the payload is read-only. */
@@ -43,6 +46,7 @@ export type ScheduleSettingsPatch = Partial<{
   max_posts_per_day: number;
   paused: boolean;
   dry_run: boolean;
+  default_selection: SelectionMethod;
 }>;
 
 async function asJson<T>(res: Response): Promise<T> {
