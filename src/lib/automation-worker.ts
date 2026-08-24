@@ -49,6 +49,67 @@ const CONFIRM_CURSOR_KEY = "follow_confirm_messages";
 // misfires when someone happens to mention the keyword in normal conversation.
 const MAX_KEYWORD_COMMENT_WORDS = 10;
 
+// ─── per-post failure backoff ────────────────────────────────────────────────
+// A post that keeps failing for a reason we don't recognise as terminal is
+// otherwise re-tried every cycle forever, logging an error row each time —
+// ~1,440 a day, ~43,000 before retention prunes them, which buries the logs
+// screen and spends quota on a call that cannot succeed. `isMediaGoneError`
+// only tombstones the one shape we know is permanent (100/33); everything else
+// — a code 100 with no subcode, a persistent 4xx — lands here instead.
+//
+// The first few failures are retried at full cadence, so an ordinary blip (a
+// transient code 1, a minute of lost network) costs nothing. Only a *run* of
+// them slows the post down.
+const FAILURE_GRACE = 3;
+const FAILURE_BACKOFF_MS = [5 * 60_000, 15 * 60_000, 30 * 60_000];
+// Past the grace window the backoff alone thins a stuck post to ~48 rows/day;
+// sampling takes it to ~5, still enough to show the run is ongoing. The failure
+// that *enters* backoff always logs — that transition is the whole signal, and
+// waiting for the next sampled row would hide it for hours.
+const FAILURE_LOG_EVERY = 10;
+
+interface PostFailure {
+  consecutive: number;
+  /** Epoch ms before which this post is skipped entirely. */
+  nextAttemptAt: number;
+}
+
+/**
+ * Deliberately in memory rather than a table. This is a fact about right now,
+ * not about the post: after a restart every target deserves an immediate
+ * re-probe rather than inheriting a backoff from the previous process, and the
+ * cost of finding out is one call.
+ */
+const postFailures = new Map<string, PostFailure>();
+
+function failureBackoffFor(consecutive: number): number {
+  if (consecutive <= FAILURE_GRACE) return 0;
+  const i = Math.min(consecutive - FAILURE_GRACE - 1, FAILURE_BACKOFF_MS.length - 1);
+  return FAILURE_BACKOFF_MS[i];
+}
+
+function notePostFailure(postId: string): {
+  consecutive: number;
+  backoffMs: number;
+  shouldLog: boolean;
+} {
+  const consecutive = (postFailures.get(postId)?.consecutive ?? 0) + 1;
+  const backoffMs = failureBackoffFor(consecutive);
+  postFailures.set(postId, { consecutive, nextAttemptAt: Date.now() + backoffMs });
+  return {
+    consecutive,
+    backoffMs,
+    shouldLog: consecutive <= FAILURE_GRACE + 1 || consecutive % FAILURE_LOG_EVERY === 0,
+  };
+}
+
+/** Clears the streak on success; returns how long it had been running. */
+function clearPostFailure(postId: string): number {
+  const prev = postFailures.get(postId)?.consecutive ?? 0;
+  postFailures.delete(postId);
+  return prev;
+}
+
 /**
  * Whether firing this flow puts an outbound DM on the wire — i.e. whether it's
  * subject to the shared send budget. comment_to_reply posts a public reply only,
@@ -607,7 +668,18 @@ export async function runAutomationCycle() {
   const tombstoned = getTombstonedIds();
   const targets = Array.from(postIds).filter((id) => !tombstoned.has(id));
 
+  // Drop failure state for anything we no longer poll (flow retargeted, post
+  // tombstoned) so the map tracks the live target set and nothing else.
+  for (const id of Array.from(postFailures.keys())) {
+    if (!targets.includes(id)) postFailures.delete(id);
+  }
+
   for (const postId of targets) {
+    // Still inside a backoff window from an earlier run of failures — skip it
+    // entirely rather than spending a call and a log row on it.
+    const backoff = postFailures.get(postId);
+    if (backoff && backoff.nextAttemptAt > Date.now()) continue;
+
     try {
       const floor = commentFloorFor(db, postId, activeFlows);
       const comments = await listRecentComments(postId, floor);
@@ -620,12 +692,25 @@ export async function runAutomationCycle() {
         undefined
       );
       setCursor(db, postId, deferredOldest ?? newest);
+      // Only worth announcing if the post had actually gone into backoff —
+      // otherwise every ordinary blip would log a second time on the way out.
+      const recovered = clearPostFailure(postId);
+      if (recovered > FAILURE_GRACE) {
+        console.log(`[automation] post ${postId} recovered after ${recovered} consecutive failures`);
+        logEvent(db, {
+          level: "info",
+          kind: "post_recovered",
+          message: `Post ${postId} recovered after ${recovered} consecutive failures`,
+          meta: { postId, consecutive: recovered },
+        });
+      }
     } catch (err) {
       // Terminal "media gone" (deleted post / lost access): retrying can never
       // succeed, so tombstone it (skipped from here on) and prune it from every
       // flow instead of erroring each cycle.
       if (isMediaGoneError(err)) {
         tombstoneMedia(postId, "automation listAllComments 100/33");
+        clearPostFailure(postId);
         const changed = pruneMediaFromFlows(db, postId);
         const deactivated = changed.filter((f) => f.deactivated);
         const tail = deactivated.length
@@ -649,17 +734,30 @@ export async function runAutomationCycle() {
         // instead of JSON. The cursor stays put either way, so these comments
         // come back next cycle; log it so a *run* of them is visible on the logs
         // screen instead of only in the terminal. Retention prunes the rows.
-        console.error(`[automation] failed to process post ${postId}:`, err);
-        logEvent(db, {
-          level: "error",
-          kind: "post_error",
-          message: `Post ${postId}: ${err instanceof Error ? err.message : String(err)}`,
-          meta: {
-            postId,
-            status: err instanceof InstagramTransportError ? err.status : undefined,
-            code: err instanceof InstagramError ? err.code : undefined,
-          },
-        });
+        const { consecutive, backoffMs, shouldLog } = notePostFailure(postId);
+        const pause = backoffMs ? `, next attempt in ${Math.round(backoffMs / 60_000)}m` : "";
+        console.error(
+          `[automation] failed to process post ${postId} (failure ${consecutive}${pause}):`,
+          err
+        );
+        // Sampled once past the grace window: a stuck post should leave enough
+        // of a trail to see the run is ongoing, not 1,440 rows a day of it.
+        if (shouldLog) {
+          const detail = err instanceof Error ? err.message : String(err);
+          const tail = backoffMs ? ` (failure ${consecutive}${pause})` : "";
+          logEvent(db, {
+            level: "error",
+            kind: "post_error",
+            message: `Post ${postId}: ${detail}${tail}`,
+            meta: {
+              postId,
+              consecutive,
+              backoffMs: backoffMs || undefined,
+              status: err instanceof InstagramTransportError ? err.status : undefined,
+              code: err instanceof InstagramError ? err.code : undefined,
+            },
+          });
+        }
       }
     }
   }
