@@ -32,6 +32,7 @@ first.
 |---|---|
 | Publish or schedule anything with `slug` **and** a file | The file joins that slug's pool when it publishes, and where it landed is recorded. |
 | Add a video on the **Slugs** page (or `POST /api/slugs/:slug/videos`) | The file joins the pool immediately, with no posting history yet. |
+| Start a pool on the **Slugs** page (or `POST /api/slugs`) | An empty pool, ready to fill before anything is booked against it. |
 | Publish or schedule with `slug` **and no file** | The slot is booked against the pool — this is the feature. |
 
 Enrolment is idempotent on (slug, path): posting the same file under the same
@@ -47,6 +48,15 @@ Two things a pool refuses:
 - **A browser upload.** A dropped file is a copy in `data/staged/` that the
   scheduler deletes once the job finishes, so enrolling it would point the pool
   at a path that stops existing. Schedule the file by path and it joins.
+
+### Payload defaults
+
+A slug job usually carries no caption of its own — the point is that it does not
+know which video it will get. It falls back to the candidate's stored defaults,
+so a video that arrives by *publishing* brings the caption or title it went out
+with, and one added **by hand has none until you set it** on the Slugs page.
+Without one it would post blank, which is why the pool row opens into an editor
+for exactly those two fields.
 
 ### The ledger
 

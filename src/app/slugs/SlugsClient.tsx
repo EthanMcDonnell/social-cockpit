@@ -5,11 +5,13 @@ import Link from "next/link";
 import { PlatformGlyph } from "@/components/dashboard/cockpit/PlatformGlyph";
 import {
   useAddSlugVideo,
+  useCreateSlug,
   useDeleteSlug,
   useRemoveSlugVideo,
   useSlugDetail,
   useSlugs,
   useUpdateSlug,
+  useUpdateSlugVideo,
 } from "@/hooks/useSlugs";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import {
@@ -17,6 +19,7 @@ import {
   SELECTION_LABELS,
   SELECTION_METHODS,
   type SelectionMethod,
+  type SlugVideoPayload,
   type SlugVideoView,
 } from "@/lib/slugs/types";
 
@@ -75,10 +78,11 @@ export function SlugsClient() {
 
       <div className="slugs-body">
         <nav className="slugs-list">
+          <NewSlugForm onCreated={setSelected} />
           {slugs.isLoading && <p className="slugs-empty">Loading…</p>}
           {!slugs.isLoading && !list.length && (
             <p className="slugs-empty">
-              No pools yet. Publish or schedule anything with a slug and it appears here.
+              No pools yet. Start one above, or publish anything with a slug and it appears here.
             </p>
           )}
           {list.map((entry) => (
@@ -121,6 +125,50 @@ export function SlugsClient() {
   );
 }
 
+/**
+ * Start a pool before anything has been posted to it.
+ *
+ * Publishing with a slug creates one too, but a pool you can fill *first* is
+ * the whole point of being able to book a slot against it — otherwise the only
+ * way to get a slug onto the calendar is to post something manually first.
+ */
+function NewSlugForm({ onCreated }: { onCreated: (slug: string) => void }) {
+  const create = useCreateSlug();
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setError(null);
+    try {
+      const { slug } = await create.mutateAsync({ slug: trimmed, name: trimmed });
+      setName("");
+      onCreated(slug.slug);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create that slug.");
+    }
+  }
+
+  return (
+    <div className="slugs-new">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") submit();
+        }}
+        placeholder="New pool, e.g. Gym tips"
+        aria-label="New slug"
+      />
+      <button type="button" onClick={submit} disabled={!name.trim() || create.isPending}>
+        {create.isPending ? "…" : "+"}
+      </button>
+      {error && <p className="slugs-err">{error}</p>}
+    </div>
+  );
+}
+
 function SlugDetail({
   slug,
   platform,
@@ -137,12 +185,21 @@ function SlugDetail({
   const remove = useDeleteSlug();
   const addVideo = useAddSlugVideo();
   const removeVideo = useRemoveSlugVideo();
+  const updateVideo = useUpdateSlugVideo();
 
   const [path, setPath] = useState("");
   const [label, setLabel] = useState("");
+  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const data = detail.data;
+
+  // Re-seed from the server rather than only on mount, so switching slugs — or
+  // an edit made in another tab — doesn't leave this field showing the old one.
+  useEffect(() => {
+    setName(data?.slug.name ?? "");
+  }, [data?.slug.name, slug]);
+
   const pool = data?.slug.videos ?? [];
   const override = data?.slug.selection_method ?? "";
 
@@ -161,8 +218,21 @@ function SlugDetail({
   return (
     <section className="slugs-detail">
       <header className="slugs-head">
-        <div>
-          <h2>{data?.slug.name ?? slug}</h2>
+        <div className="slugs-title">
+          <input
+            className="slugs-rename"
+            value={name}
+            placeholder={slug}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={() => {
+              const trimmed = name.trim();
+              if (trimmed !== (data?.slug.name ?? "")) update.mutate({ slug, name: trimmed || null });
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+            }}
+            aria-label="Pool name"
+          />
           <p className="slugs-sub">#{slug}</p>
         </div>
         <button
@@ -245,6 +315,7 @@ function SlugDetail({
             key={video.id}
             video={video}
             isNext={data?.next_up?.video.id === video.id}
+            onSave={(patch) => updateVideo.mutate({ slug, id: video.id, ...patch })}
             onRemove={() => removeVideo.mutate({ slug, id: video.id })}
           />
         ))}
@@ -276,34 +347,119 @@ function SlugDetail({
 function PoolRow({
   video,
   isNext,
+  onSave,
   onRemove,
 }: {
   video: SlugVideoView;
   isNext: boolean;
+  onSave: (patch: { label?: string | null; payload?: SlugVideoPayload }) => void;
   onRemove: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+
   return (
-    <div className={`slugs-row${isNext ? " is-next" : ""}${video.missing ? " is-missing" : ""}`}>
-      <span className="slugs-cell-name">
-        <b>{video.label ?? video.filename}</b>
-        <span title={video.path}>{video.missing ? "file is missing" : video.filename}</span>
-      </span>
-      <span>{video.scored ? formatCount(video.views ?? 0) : "—"}</span>
-      <span>{video.engagement != null ? `${(video.engagement * 100).toFixed(1)}%` : "—"}</span>
-      <span className="slugs-cell-posts">
-        {video.posts.length ? (
-          video.posts.map((post) => (
-            <span key={`${post.platform}-${post.external_id}`} title={new Date(post.posted_at).toLocaleString()}>
-              <PlatformGlyph platform={post.platform} size={10} />
-            </span>
-          ))
-        ) : (
-          <span className="slugs-unposted">not yet posted</span>
-        )}
-      </span>
-      <button type="button" className="slugs-x" onClick={onRemove} aria-label="Remove from pool">
-        ✕
-      </button>
+    <>
+      <div className={`slugs-row${isNext ? " is-next" : ""}${video.missing ? " is-missing" : ""}`}>
+        <button
+          type="button"
+          className="slugs-cell-name"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          <b>{video.label ?? video.filename}</b>
+          <span title={video.path}>{video.missing ? "file is missing" : video.filename}</span>
+        </button>
+        <span>{video.scored ? formatCount(video.views ?? 0) : "—"}</span>
+        <span>{video.engagement != null ? `${(video.engagement * 100).toFixed(1)}%` : "—"}</span>
+        <span className="slugs-cell-posts">
+          {video.posts.length ? (
+            video.posts.map((post) => (
+              <span
+                key={`${post.platform}-${post.external_id}`}
+                title={`${post.platform === "yt" ? "YouTube" : "Instagram"} · ${new Date(post.posted_at).toLocaleString()}`}
+              >
+                <PlatformGlyph platform={post.platform} size={10} />
+              </span>
+            ))
+          ) : (
+            <span className="slugs-unposted">not yet posted</span>
+          )}
+        </span>
+        <button type="button" className="slugs-x" onClick={onRemove} aria-label="Remove from pool">
+          ✕
+        </button>
+      </div>
+      {open && <PoolRowEditor video={video} onSave={onSave} onDone={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/**
+ * What this candidate posts with when the slug picks it.
+ *
+ * A job booked against a slug usually carries no caption of its own — the point
+ * is that it does not know which video it will get. These are the defaults it
+ * falls back to, and without them a video added by hand goes out blank.
+ */
+function PoolRowEditor({
+  video,
+  onSave,
+  onDone,
+}: {
+  video: SlugVideoView;
+  onSave: (patch: { label?: string | null; payload?: SlugVideoPayload }) => void;
+  onDone: () => void;
+}) {
+  const [label, setLabel] = useState(video.label ?? "");
+  const [caption, setCaption] = useState(video.payload.ig?.caption ?? "");
+  const [title, setTitle] = useState(video.payload.yt?.title ?? "");
+
+  return (
+    <div className="slugs-editor">
+      <label>
+        Name
+        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={video.filename} />
+      </label>
+      <label>
+        Instagram caption
+        <textarea
+          rows={3}
+          value={caption}
+          onChange={(e) => setCaption(e.target.value)}
+          placeholder="Comment GYM for the plan 👇"
+        />
+      </label>
+      <label>
+        YouTube title
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder={video.label ?? video.filename}
+          maxLength={100}
+        />
+      </label>
+      <div className="slugs-editor-foot">
+        <p className="slugs-hint">
+          Used when the slot that picks this video didn&apos;t bring its own.
+        </p>
+        <button
+          type="button"
+          className="slugs-btn"
+          onClick={() => {
+            onSave({
+              label: label.trim() || null,
+              payload: {
+                ...video.payload,
+                ig: { ...video.payload.ig, caption: caption.trim() || undefined },
+                yt: { ...video.payload.yt, title: title.trim() || undefined },
+              },
+            });
+            onDone();
+          }}
+        >
+          Save
+        </button>
+      </div>
     </div>
   );
 }

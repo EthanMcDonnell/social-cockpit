@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  ContentSlug,
   SelectionMethod,
   SlugDetail,
   SlugSelection,
@@ -80,7 +81,7 @@ export function useCreateSlug() {
   const invalidate = useInvalidate();
   return useMutation({
     mutationFn: async (body: { slug: string; name?: string; selection_method?: SelectionMethod }) =>
-      asJson<{ slug: SlugSummary }>(
+      asJson<{ slug: ContentSlug }>(
         await fetch("/api/slugs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -102,7 +103,7 @@ export function useUpdateSlug() {
       name?: string | null;
       selection_method?: SelectionMethod | null;
     }) =>
-      asJson<{ slug: SlugSummary }>(
+      asJson<{ slug: ContentSlug }>(
         await fetch(`/api/slugs/${encodeURIComponent(slug)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -141,6 +142,37 @@ export function useAddSlugVideo() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
+        })
+      ),
+    onSuccess: (_data, vars) => invalidate(vars.slug),
+  });
+}
+
+/**
+ * Edit a candidate's label and payload defaults.
+ *
+ * The defaults matter most for a video added by hand: a slug job that carries
+ * no caption of its own falls back to the candidate's, and without one the post
+ * goes out blank.
+ */
+export function useUpdateSlugVideo() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: async ({
+      slug,
+      id,
+      ...patch
+    }: {
+      slug: string;
+      id: string;
+      label?: string | null;
+      payload?: SlugVideoPayload;
+    }) =>
+      asJson<{ video: SlugVideoView }>(
+        await fetch(`/api/slugs/${encodeURIComponent(slug)}/videos/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
         })
       ),
     onSuccess: (_data, vars) => invalidate(vars.slug),
