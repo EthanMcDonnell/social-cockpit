@@ -66,7 +66,7 @@ html {
 body {
   background-color: #121110;
   color: var(--text-primary);
-  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -111,10 +111,11 @@ body {
   --txt: #f2efe9;
   --mut: #9b958a;
   --faint: #5c574e;
-  /* The one loaded display font (also what Tailwind's `font-heading` utility
-     points at) — not a system font, so every cockpit page renders it
-     identically instead of gambling on what's installed on the viewer's OS. */
-  --cond: var(--font-syne), "Avenir Next Condensed", "Arial Narrow", ui-sans-serif, sans-serif;
+  /* The one display face, loaded rather than borrowed from the OS. It has to
+     be genuinely condensed: every label below is tracked out to 0.14–0.3em on
+     the assumption the letterforms are narrow. A normal-width face at that
+     tracking is what makes the panels look stretched. */
+  --cond: var(--font-cond), "Avenir Next Condensed", "Arial Narrow", ui-sans-serif, sans-serif;
   --mono: var(--font-dm-mono), "Menlo", "SF Mono", ui-monospace, monospace;
 
   /* Remap the app's shared theme tokens so reused primitives (Skeleton,

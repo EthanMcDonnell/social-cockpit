@@ -39,7 +39,7 @@ export default function YoutubePage() {
   const videos = useYoutubeVideos(25);
 
   return (
-    <main style={{ maxWidth: 960, margin: "0 auto", padding: 24, fontFamily: "var(--font-outfit), system-ui, sans-serif" }}>
+    <main style={{ maxWidth: 960, margin: "0 auto", padding: 24, fontFamily: "var(--font-sans), system-ui, sans-serif" }}>
       <h1 style={{ fontSize: 22, marginBottom: 4 }}>YouTube metrics (test)</h1>
       <p style={{ opacity: 0.6, fontSize: 13, marginBottom: 20 }}>
         Public stats via YouTube Data API v3. &ldquo;Short?&rdquo; is a duration heuristic (&le;3&nbsp;min), not authoritative.

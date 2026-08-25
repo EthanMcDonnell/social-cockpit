@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { DM_Mono, Syne, Outfit } from "next/font/google";
+import { DM_Mono, Barlow, Barlow_Semi_Condensed } from "next/font/google";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { ThemeProvider } from "@/providers/ThemeProvider";
 import "./globals.css";
@@ -11,17 +11,20 @@ const dmMono = DM_Mono({
   display: "swap",
 });
 
-const syne = Syne({
+/* Two families, three jobs: Barlow reads body copy, its semi-condensed sibling
+   carries every uppercase label/heading/readout in the cockpit, DM Mono holds
+   the numeric columns. Same superfamily, so labels and prose share skeletons. */
+const barlow = Barlow({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-syne",
+  weight: ["400", "500", "600"],
+  variable: "--font-sans",
   display: "swap",
 });
 
-const outfit = Outfit({
+const barlowCondensed = Barlow_Semi_Condensed({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
-  variable: "--font-outfit",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-cond",
   display: "swap",
 });
 
@@ -46,7 +49,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${dmMono.variable} ${syne.variable} ${outfit.variable}`}
+      className={`${dmMono.variable} ${barlow.variable} ${barlowCondensed.variable}`}
     >
       <body>
         <ThemeProvider>

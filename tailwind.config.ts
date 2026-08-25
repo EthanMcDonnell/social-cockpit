@@ -11,8 +11,8 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["var(--font-outfit)", "system-ui", "sans-serif"],
-        heading: ["var(--font-syne)", "system-ui", "sans-serif"],
+        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        heading: ["var(--font-cond)", "system-ui", "sans-serif"],
         mono: ["var(--font-dm-mono)", "ui-monospace", "monospace"],
       },
       colors: {
