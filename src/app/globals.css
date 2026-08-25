@@ -111,7 +111,10 @@ body {
   --txt: #f2efe9;
   --mut: #9b958a;
   --faint: #5c574e;
-  --cond: "Avenir Next Condensed", "Arial Narrow", ui-sans-serif, sans-serif;
+  /* The one loaded display font (also what Tailwind's `font-heading` utility
+     points at) — not a system font, so every cockpit page renders it
+     identically instead of gambling on what's installed on the viewer's OS. */
+  --cond: var(--font-syne), "Avenir Next Condensed", "Arial Narrow", ui-sans-serif, sans-serif;
   --mono: var(--font-dm-mono), "Menlo", "SF Mono", ui-monospace, monospace;
 
   /* Remap the app's shared theme tokens so reused primitives (Skeleton,
