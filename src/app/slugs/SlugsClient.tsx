@@ -9,6 +9,7 @@ import {
   useDeleteSlug,
   useRemoveSlugVideo,
   useSlugDetail,
+  useLinkSlugPost,
   useSlugs,
   useUpdateSlug,
   useUpdateSlugVideo,
@@ -19,6 +20,7 @@ import {
   SELECTION_LABELS,
   SELECTION_METHODS,
   type SelectionMethod,
+  type SlugPost,
   type SlugVideoPayload,
   type SlugVideoView,
 } from "@/lib/slugs/types";
@@ -343,6 +345,13 @@ function SlugDetail({
         ))}
       </div>
 
+      <SlugHistory
+        slug={slug}
+        history={data?.history ?? []}
+        pool={pool}
+        platform={platform}
+      />
+
       <div className="slugs-add">
         <input
           value={path}
@@ -363,6 +372,114 @@ function SlugDetail({
       </p>
       {error && <p className="slugs-err">{error}</p>}
     </section>
+  );
+}
+
+/**
+ * Posts already published under this slug.
+ *
+ * The reason this exists: a pool holds local files, and an established account's
+ * performance lives on posts. Until a candidate is pointed at the post it
+ * produced, a clip that did 24k ranks as unscored — the numbers are right
+ * there and unusable. Linking is a one-time act per post.
+ */
+function SlugHistory({
+  slug,
+  history,
+  pool,
+  platform,
+}: {
+  slug: string;
+  history: SlugPost[];
+  pool: SlugVideoView[];
+  platform: SchedulePlatform;
+}) {
+  const link = useLinkSlugPost();
+  if (!history.length) return null;
+
+  const unlinked = history.filter((post) => !post.linked_video_id).length;
+
+  return (
+    <div className="slugs-history">
+      <div className="slugs-history-head">
+        <span>Published under this slug</span>
+        <span className="slugs-hint">
+          {unlinked
+            ? `${unlinked} of ${history.length} not yet matched to a video — link one and its views count towards selection.`
+            : `All ${history.length} matched.`}
+        </span>
+      </div>
+
+      {history.map((post) => (
+        <div key={`${post.platform}-${post.external_id}`} className="slugs-post">
+          <PlatformGlyph platform={post.platform} size={10} />
+          <span className="slugs-post-title">
+            {post.permalink ? (
+              <a href={post.permalink} target="_blank" rel="noopener noreferrer">
+                {post.title ?? post.external_id}
+              </a>
+            ) : (
+              (post.title ?? post.external_id)
+            )}
+            <span>{post.posted_at ? post.posted_at.slice(0, 10) : ""}</span>
+          </span>
+          <span className="slugs-post-views">
+            {post.views != null ? formatCount(post.views) : "—"}
+          </span>
+
+          {post.linked_video_id ? (
+            <span className="slugs-post-link">
+              <b>{post.linked_label}</b>
+              <button
+                type="button"
+                className="slugs-x"
+                aria-label="Unlink this post"
+                onClick={() =>
+                  link.mutate({
+                    slug,
+                    id: post.linked_video_id!,
+                    platform: post.platform,
+                    external_id: post.external_id,
+                    unlink: true,
+                  })
+                }
+              >
+                ✕
+              </button>
+            </span>
+          ) : (
+            <select
+              value=""
+              aria-label={`Link ${post.title ?? post.external_id} to a video`}
+              onChange={(e) =>
+                e.target.value &&
+                link.mutate({
+                  slug,
+                  id: e.target.value,
+                  platform: post.platform,
+                  external_id: post.external_id,
+                })
+              }
+            >
+              <option value="">Link to…</option>
+              {pool.map((video) => (
+                <option key={video.id} value={video.id}>
+                  {video.label ?? video.filename}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      ))}
+
+      {!pool.length && (
+        <p className="slugs-hint">
+          Add the local file behind one of these below, then link it — that is what makes
+          {platform === "yt" ? " YouTube " : " Instagram "}
+          selection able to rank on what already worked.
+        </p>
+      )}
+    </div>
   );
 }
 

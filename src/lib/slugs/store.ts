@@ -429,6 +429,32 @@ export function recordPost(
   return write.immediate();
 }
 
+/**
+ * Undo a link. The post stays published — this only says the pool candidate is
+ * not the file behind it, which also puts the candidate back in that platform's
+ * pool.
+ */
+export function forgetPost(
+  videoId: string,
+  platform: SchedulePlatform,
+  externalId: string
+): boolean {
+  return (
+    getDb()
+      .prepare(
+        "DELETE FROM slug_video_posts WHERE video_id = ? AND platform = ? AND external_id = ?"
+      )
+      .run(videoId, platform, externalId).changes > 0
+  );
+}
+
+/** Whether any candidate already claims this post. One post, one source file. */
+export function postIsLinked(externalId: string, platform: SchedulePlatform): boolean {
+  return !!getDb()
+    .prepare("SELECT 1 FROM slug_video_posts WHERE external_id = ? AND platform = ? LIMIT 1")
+    .get(externalId, platform);
+}
+
 // ─── Eligibility ─────────────────────────────────────────────────────────────
 
 /** Has this candidate already gone out on this platform? */

@@ -5,6 +5,7 @@ import type {
   Slug,
   SelectionMethod,
   SlugDetail,
+  SlugPost,
   SlugSelection,
   SlugSelectionFailure,
   SlugSummary,
@@ -23,6 +24,8 @@ interface SlugListResponse {
 
 export interface SlugDetailResponse {
   slug: SlugDetail;
+  /** Posts already published under this slug, linked or not. */
+  history: SlugPost[];
   effective_method: SelectionMethod;
   /** What would go out if this slug fired right now. */
   next_up: SlugSelection | null;
@@ -185,6 +188,47 @@ export function useUpdateSlugVideo() {
           body: JSON.stringify(patch),
         })
       ),
+    onSuccess: (_data, vars) => invalidate(vars.slug),
+  });
+}
+
+/**
+ * Point a pool candidate at a post it already produced, or undo that.
+ *
+ * The one way an established account gets its history into the pool: a clip
+ * that did 24k joins as unscored until something says the file and the post are
+ * the same video.
+ */
+export function useLinkSlugPost() {
+  const invalidate = useInvalidate();
+  return useMutation({
+    mutationFn: async ({
+      slug,
+      id,
+      platform,
+      external_id,
+      unlink,
+    }: {
+      slug: string;
+      id: string;
+      platform: "ig" | "yt";
+      external_id: string;
+      unlink?: boolean;
+    }) => {
+      const base = `/api/slugs/${encodeURIComponent(slug)}/videos/${id}/posts`;
+      return asJson<{ video: SlugVideoView }>(
+        await fetch(
+          unlink ? `${base}?platform=${platform}&external_id=${encodeURIComponent(external_id)}` : base,
+          unlink
+            ? { method: "DELETE" }
+            : {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ platform, external_id }),
+              }
+        )
+      );
+    },
     onSuccess: (_data, vars) => invalidate(vars.slug),
   });
 }

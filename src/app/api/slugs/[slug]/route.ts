@@ -10,6 +10,7 @@ import {
   updateSlug,
 } from "@/lib/slugs/store";
 import { selectVideo, viewPool } from "@/lib/slugs/select";
+import { slugPostHistory } from "@/lib/slugs/history";
 import { resolveSelectionMethod } from "@/lib/slugs/settings";
 import {
   isSelectionFailure,
@@ -56,6 +57,9 @@ export async function GET(
       automation: linkedAutomation(slug),
       videos,
     },
+    // What has already gone out under this slug, so a candidate can be pointed
+    // at the post it produced and inherit its numbers.
+    history: slugPostHistory(slug),
     effective_method: method,
     next_up: isSelectionFailure(selection) ? null : selection,
     blocked: isSelectionFailure(selection) ? selection : null,

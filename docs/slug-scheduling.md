@@ -70,6 +70,25 @@ with, and one added **by hand has none until you set it** on the Slugs page.
 Without one it would post blank, which is why the pool row opens into an editor
 for exactly those two fields.
 
+### Existing posts, on an established account
+
+A pool holds *local files*. A slug that has been in use already has something
+else: **posts**, live on a platform, with real view counts. Those are not
+candidates — there is no file behind them the app knows about — so a clip that
+did 24k joins a pool as unscored and ranks below nothing, with its numbers
+sitting right there unusable.
+
+The Slugs page lists what has gone out under a slug (from the automation flow's
+target list, enriched from the media cache) and lets each post be pointed at the
+pool candidate that produced it. That link is a one-time act per post and does
+two things at once: the candidate inherits the post's metrics for ranking, and
+it leaves that platform's pool, because it has already run there. Which is
+exactly the cross-posting case — a video that did well on Instagram is now the
+top-ranked candidate for YouTube and ineligible for Instagram.
+
+One post has one source file: a second candidate cannot claim a post another
+already holds, or its views would be counted twice and the wrong clip retired.
+
 ### The ledger
 
 Every enrolment writes to `slug_video_posts`: *this local file became this
@@ -206,6 +225,12 @@ curl localhost:3000/api/slugs/gym-tips?platform=yt
 # Add a candidate without posting it.
 curl -X POST localhost:3000/api/slugs/gym-tips/videos -H 'Content-Type: application/json' \
   -d '{"path":"/Users/me/clips/gym-5.mp4","label":"Gym tips 5"}'
+
+# Say that candidate is the file behind a post that is already live, so its
+# views start counting towards selection.
+curl -X POST localhost:3000/api/slugs/gym-tips/videos/<id>/posts \
+  -H 'Content-Type: application/json' \
+  -d '{"platform":"ig","external_id":"18617009902035719"}'
 ```
 
 `GET /api/slugs/:slug` runs the real selector rather than a description of it,

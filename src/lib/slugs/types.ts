@@ -94,6 +94,27 @@ export interface SlugVideo {
   posts: SlugVideoPost[];
 }
 
+/**
+ * A post already published under a slug.
+ *
+ * Distinct from a candidate: this is something that exists on a platform, not a
+ * file that can be posted. Pointing a candidate at one is how an established
+ * account's history becomes rankable — see `slugPostHistory`.
+ */
+export interface SlugPost {
+  platform: SchedulePlatform;
+  external_id: string;
+  /** First line of the caption, for recognising the post at a glance. */
+  title?: string;
+  thumbnail_url?: string;
+  permalink?: string;
+  posted_at?: string;
+  views?: number;
+  /** The pool candidate claiming this post, when one does. */
+  linked_video_id?: string;
+  linked_label?: string;
+}
+
 /** A candidate plus everything the pool view and the selector need to rank it. */
 export interface SlugVideoView extends SlugVideo {
   filename: string;

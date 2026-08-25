@@ -23,6 +23,7 @@ const settings = load("lib/slugs/settings.js");
 const cache = load("lib/cache/store.js");
 const { getDb } = load("lib/db/index.js");
 const { applyAutomationPlan } = load("lib/automation/attach.js");
+const { slugPostHistory } = load("lib/slugs/history.js");
 
 function clip(name) {
   const file = path.join(mediaRoot, name);
@@ -218,6 +219,52 @@ test("flows that predate the registry are adopted on startup", () => {
     1,
     "exactly once, however many times the app restarts"
   );
+});
+
+test("an established slug's existing posts can be pointed at the files behind them", async () => {
+  const slug = "history-test";
+  // What every real install looks like: a keyed flow with posts already live,
+  // and no idea which local file produced any of them.
+  applyAutomationPlan(getDb(), "post-old", {
+    mode: "create",
+    spec: {
+      key: slug,
+      name: "History",
+      keywords: ["LINK"],
+      templateType: "comment_to_dm",
+      config: {},
+      activate: true,
+    },
+  });
+  cache.upsertMediaInsights("post-old", { views: 7237, total_interactions: 300 });
+
+  const history = slugPostHistory(slug);
+  assert.equal(history.length, 1, "the flow's posts are the slug's history");
+  assert.equal(history[0].views, 7237, "with the numbers already in the cache");
+  assert.equal(history[0].linked_video_id, undefined, "and nothing claiming them yet");
+
+  // Add the local file behind that post.
+  const video = await store.enrolVideo({ slug, path: clip("hist.mp4"), label: "Hist" });
+
+  const before = await select.selectVideo({ slug, platform: "yt", method: "most_views" });
+  assert.match(before.reason, /no candidate had metrics/, "unlinked, its 7k is invisible");
+
+  // Link it: this file is what that post was.
+  store.recordPost(video.id, "ig", "post-old");
+
+  const after = await select.selectVideo({ slug, platform: "yt", method: "most_views" });
+  assert.match(after.reason, /7\.2k views/, "linked, the post's views rank the file");
+
+  const blocked = await select.selectVideo({ slug, platform: "ig", method: "most_views" });
+  assert.ok(blocked.exhausted, "and it is out of the pool on the platform it already ran on");
+
+  assert.equal(slugPostHistory(slug)[0].linked_label, "Hist", "the history says what claims it");
+
+  // Unlinking puts it back.
+  assert.equal(store.forgetPost(video.id, "ig", "post-old"), true);
+  assert.equal(slugPostHistory(slug)[0].linked_video_id, undefined);
+  const reopened = await select.selectVideo({ slug, platform: "ig", method: "most_views" });
+  assert.equal(reopened.video.id, video.id, "eligible again on Instagram");
 });
 
 test.after(cleanup);
