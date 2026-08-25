@@ -18,6 +18,7 @@ const sched = load("lib/schedule/store.js");
 const select = load("lib/slugs/select.js");
 const settings = load("lib/slugs/settings.js");
 const cache = load("lib/cache/store.js");
+const { getDb } = load("lib/db/index.js");
 
 function clip(name) {
   const file = path.join(mediaRoot, name);
@@ -168,6 +169,34 @@ test("an empty pool is reported differently from an exhausted one", async () => 
   store.ensureSlug("brand-new");
   const none = await select.selectVideo({ slug: "brand-new", platform: "ig", method: "most_views" });
   assert.ok(none.error && !none.exhausted);
+});
+
+test("a slug that only names an automation flow is listed as an empty pool", async () => {
+  // The state every existing install starts in: keys have been in use on the
+  // automation side for months, and content_slugs is brand new and empty.
+  getDb()
+    .prepare(
+      `INSERT INTO automation_flows (id, name, template_type, trigger_keyword, config, is_active, automation_key)
+       VALUES ('flow-1', 'Watermark funnel', 'comment_to_dm', '["LINK"]', '{}', 1, 'legacy-key')`
+    )
+    .run();
+
+  const listed = store.listSlugs().find((entry) => entry.slug === "legacy-key");
+  assert.ok(listed, "listing only content_slugs would hide a slug already in use");
+  assert.equal(listed.video_count, 0);
+  assert.equal(listed.automation.name, "Watermark funnel");
+
+  assert.ok(store.getSlugOrLinked("legacy-key"), "and its pool page has to open");
+  assert.equal(store.getSlug("legacy-key"), null, "without inventing a row nobody asked for");
+
+  // Filling it is what makes it a pool of its own.
+  await store.enrolVideo({ slug: "legacy-key", path: clip("legacy.mp4") });
+  assert.ok(store.getSlug("legacy-key"), "enrolment creates the record");
+  assert.equal(
+    store.listSlugs().filter((entry) => entry.slug === "legacy-key").length,
+    1,
+    "and it must not then appear twice, once from each facet"
+  );
 });
 
 test.after(cleanup);

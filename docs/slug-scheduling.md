@@ -20,6 +20,11 @@ scheduler can draw from it.
 Both facets are optional. A pool with no comment funnel is fine; so is a keyed
 flow whose pool is empty.
 
+Because they are one namespace, the Slugs page lists a slug that so far only
+names an automation flow — as the empty pool it is, ready to fill. It is not
+given a record until something is actually enrolled against it, so looking at a
+keyed flow does not leave a pool behind.
+
 ---
 
 ## 1. How a pool fills up

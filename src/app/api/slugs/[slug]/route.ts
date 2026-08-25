@@ -3,7 +3,8 @@ import { requireScheduleAuth } from "@/lib/schedule/auth";
 import {
   deleteSlug,
   eligibleVideos,
-  getSlug,
+  ensureSlug,
+  getSlugOrLinked,
   linkedAutomation,
   normalizeSlug,
   updateSlug,
@@ -33,7 +34,9 @@ export async function GET(
   if (denied) return denied;
 
   const slug = normalizeSlug(params.slug);
-  const record = getSlug(slug);
+  // Either facet counts: a slug that so far only names an automation flow is
+  // shown as the empty pool it is, so videos can be added to it.
+  const record = getSlugOrLinked(slug);
   if (!record) {
     return NextResponse.json({ error: "not_found", message: `No slug "${slug}".` }, { status: 404 });
   }
@@ -85,6 +88,14 @@ export async function PATCH(
       { status: 400 }
     );
   }
+
+  // Naming a pool, or giving it a selection rule, is the first thing that makes
+  // an automation-only slug a pool of its own. Create the row on that edit
+  // rather than refusing it.
+  if (!getSlugOrLinked(slug)) {
+    return NextResponse.json({ error: "not_found", message: `No slug "${slug}".` }, { status: 404 });
+  }
+  ensureSlug(slug);
 
   const updated = updateSlug(slug, {
     ...(body?.name !== undefined ? { name: body.name } : {}),

@@ -2627,10 +2627,14 @@ body.cal-dragging * {
   background: rgba(255, 179, 36, 0.06);
   padding: 2px 8px;
 }
+/* Matches .cal .cal-bar h1 exactly — a page title should not be recognisable
+   as belonging to a different app than the one next to it in the nav. */
 .slugs h1 {
   font-family: var(--cond);
-  font-size: 19px;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
   color: var(--txt);
 }
 .slugs .slugs-lede {

@@ -108,6 +108,22 @@ export function getSlug(slug: string): ContentSlug | null {
 }
 
 /**
+ * The slug as either facet knows it: its own record if it has one, otherwise a
+ * synthesised empty pool for a slug that so far only names an automation flow.
+ *
+ * Callers that need to *write* should `ensureSlug` first — this deliberately
+ * does not create the row, so merely looking at a keyed flow does not leave a
+ * pool behind.
+ */
+export function getSlugOrLinked(slug: string): ContentSlug | null {
+  const existing = getSlug(slug);
+  if (existing) return existing;
+  if (!linkedAutomation(slug)) return null;
+
+  return { slug, created_at: "", updated_at: "" };
+}
+
+/**
  * Create the slug if it is new, leave it alone if it is not.
  *
  * Called on every enrolment, including the automatic one during a publish, so
@@ -151,6 +167,10 @@ export function updateSlug(
  */
 export function deleteSlug(slug: string): boolean {
   const db = getDb();
+  // Nothing to delete, but the slug is real: an automation-only slug has no
+  // pool row, and reporting "no such slug" for one you can see on screen is
+  // worse than succeeding at removing nothing.
+  if (!getSlug(slug)) return !!linkedAutomation(slug);
   const remove = db.transaction(() => {
     const ids = (db.prepare("SELECT id FROM slug_videos WHERE slug = ?").all(slug) as {
       id: string;
@@ -166,13 +186,46 @@ export function deleteSlug(slug: string): boolean {
   return remove.immediate();
 }
 
-export function listSlugs(): SlugSummary[] {
+/**
+ * Every slug this app knows about, from either facet.
+ *
+ * A slug that exists only as an `automation_key` has no pool yet, and listing
+ * only `content_slugs` would hide it — leaving you to retype the exact string
+ * to give it one, which is the "two things to keep straight" that naming both
+ * facets with one string was meant to avoid. A keyed flow shows up here with an
+ * empty pool, ready to be filled.
+ */
+function knownSlugs(): SlugRow[] {
   const db = getDb();
-  const rows = db
-    .prepare("SELECT * FROM content_slugs ORDER BY slug ASC")
-    .all() as SlugRow[];
+  const rows = db.prepare("SELECT * FROM content_slugs").all() as SlugRow[];
+  const seen = new Set(rows.map((row) => row.slug));
 
-  return rows.map((row) => {
+  const keyed = db
+    .prepare(
+      `SELECT automation_key AS slug, MIN(created_at) AS created_at
+         FROM automation_flows
+        WHERE automation_key IS NOT NULL AND TRIM(automation_key) != ''
+        GROUP BY automation_key`
+    )
+    .all() as { slug: string; created_at: string }[];
+
+  for (const flow of keyed) {
+    if (seen.has(flow.slug)) continue;
+    // Synthesised, not written: creating a row for a flow nobody has pooled
+    // videos against would be inventing state the user never asked for.
+    rows.push({
+      slug: flow.slug,
+      name: null,
+      selection_method: null,
+      created_at: flow.created_at,
+      updated_at: flow.created_at,
+    });
+  }
+  return rows.sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+export function listSlugs(): SlugSummary[] {
+  return knownSlugs().map((row) => {
     const videos = listVideos(row.slug);
     const eligible = {} as Record<SchedulePlatform, number>;
     for (const platform of PLATFORMS) {

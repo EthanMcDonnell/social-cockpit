@@ -57,7 +57,7 @@ export function SlugsClient() {
     <div className="slugs">
       <header className="slugs-bar">
         <div className="slugs-bar-left">
-          <span className="slugs-tag">POOLS</span>
+          <span className="slugs-tag">07</span>
           <h1>Slugs</h1>
         </div>
         <p className="slugs-lede">
