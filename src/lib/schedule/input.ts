@@ -296,7 +296,7 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
           : (rest as PublishInput)) as SchedulePayload,
         media: [],
         automation: checked.automation,
-        contentSlug: slug,
+        slug: slug,
         selectionMethod,
         graceMinutes: grace_minutes ?? defaultGraceMinutes(),
         maxAttempts: max_attempts,
@@ -330,7 +330,7 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
         scheduledAt,
         payload,
         media,
-        contentSlug: slug || undefined,
+        slug: slug || undefined,
         graceMinutes: grace_minutes ?? defaultGraceMinutes(),
         maxAttempts: max_attempts,
       },
@@ -360,7 +360,7 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
       automation: checked.automation,
       // Carried even though this job has its own file: publishing it enrols the
       // video in the pool, which is how a pool fills up in the first place.
-      contentSlug: slug || undefined,
+      slug: slug || undefined,
       graceMinutes: grace_minutes ?? defaultGraceMinutes(),
       maxAttempts: max_attempts,
     },

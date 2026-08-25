@@ -42,7 +42,7 @@ interface ScheduledPostRow {
   payload: string;
   media: string;
   automation: string | null;
-  content_slug: string | null;
+  slug: string | null;
   selection_method: string | null;
   attempts: number;
   max_attempts: number;
@@ -81,7 +81,7 @@ export function rowToPost(row: ScheduledPostRow): ScheduledPost {
     payload: parseJson<SchedulePayload>(row.payload, {} as SchedulePayload),
     media: parseJson<ScheduledMediaRef[]>(row.media, []),
     automation: row.automation ? parseJson<AutomationSpec>(row.automation, {}) : undefined,
-    content_slug: row.content_slug ?? undefined,
+    slug: row.slug ?? undefined,
     selection_method: (row.selection_method as SelectionMethod | null) ?? undefined,
     attempts: row.attempts,
     max_attempts: row.max_attempts,
@@ -107,7 +107,7 @@ export interface CreateJobInput {
   payload: SchedulePayload;
   media: ScheduledMediaRef[];
   automation?: AutomationSpec;
-  contentSlug?: string;
+  slug?: string;
   selectionMethod?: SelectionMethod;
   graceMinutes?: number;
   maxAttempts?: number;
@@ -121,7 +121,7 @@ export function createJob(input: CreateJobInput): ScheduledPost {
   db.prepare(
     `INSERT INTO scheduled_posts
        (id, platform, status, scheduled_at, payload, media, automation,
-        content_slug, selection_method, max_attempts, grace_minutes)
+        slug, selection_method, max_attempts, grace_minutes)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
@@ -131,7 +131,7 @@ export function createJob(input: CreateJobInput): ScheduledPost {
     JSON.stringify(input.payload),
     JSON.stringify(input.media),
     input.automation ? JSON.stringify(input.automation) : null,
-    input.contentSlug ?? null,
+    input.slug ?? null,
     input.selectionMethod ?? null,
     input.maxAttempts ?? 3,
     input.graceMinutes ?? defaultGraceMinutes()
@@ -294,7 +294,7 @@ export function reservedSlugVideoIds(
   const rows = getDb()
     .prepare(
       `SELECT result FROM scheduled_posts
-        WHERE content_slug = ? AND platform = ?
+        WHERE slug = ? AND platform = ?
           AND status IN ('publishing', 'finalizing')`
     )
     .all(slug, platform) as { result: string | null }[];
@@ -331,7 +331,7 @@ export interface JobPatch {
   payload?: SchedulePayload;
   media?: ScheduledMediaRef[];
   automation?: AutomationSpec | null;
-  contentSlug?: string | null;
+  slug?: string | null;
   selectionMethod?: SelectionMethod | null;
   graceMinutes?: number;
   maxAttempts?: number;
@@ -364,7 +364,7 @@ export function updateJob(
   if (patch.automation !== undefined) {
     put("automation", patch.automation ? JSON.stringify(patch.automation) : null);
   }
-  if (patch.contentSlug !== undefined) put("content_slug", patch.contentSlug);
+  if (patch.slug !== undefined) put("slug", patch.slug);
   if (patch.selectionMethod !== undefined) put("selection_method", patch.selectionMethod);
   if (patch.graceMinutes !== undefined) put("grace_minutes", patch.graceMinutes);
   if (patch.maxAttempts !== undefined) put("max_attempts", patch.maxAttempts);
@@ -518,7 +518,7 @@ export function updateClaimedJob(
   if (patch.payload !== undefined) put("payload", JSON.stringify(patch.payload));
   if (patch.media !== undefined) put("media", JSON.stringify(patch.media));
   if (patch.automation !== undefined) put("automation", patch.automation ? JSON.stringify(patch.automation) : null);
-  if (patch.contentSlug !== undefined) put("content_slug", patch.contentSlug);
+  if (patch.slug !== undefined) put("slug", patch.slug);
   if (patch.selectionMethod !== undefined) put("selection_method", patch.selectionMethod);
   if (patch.graceMinutes !== undefined) put("grace_minutes", patch.graceMinutes);
   if (patch.maxAttempts !== undefined) put("max_attempts", patch.maxAttempts);

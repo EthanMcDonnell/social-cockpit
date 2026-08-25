@@ -186,7 +186,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 
   if (body.selection_method !== undefined) {
-    if (!job.content_slug) {
+    if (!job.slug) {
       return NextResponse.json(
         { error: "invalid_param", message: "selection_method only applies to a job booked against a slug." },
         { status: 400 }
@@ -216,7 +216,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     // An unresolved slug job has no media to validate against, and its payload
     // is an override rather than the finished thing — the candidate fills the
     // rest in at fire time. Validation happens then, with a video in hand.
-    const awaitingSlug = !!job.content_slug && !job.media.length;
+    const awaitingSlug = !!job.slug && !job.media.length;
     if (awaitingSlug) {
       patch.payload = merged;
     } else if (job.platform === "ig") {

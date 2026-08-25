@@ -73,9 +73,9 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
   const [localPath, setLocalPath] = useState("");
   // A booked-but-unresolved slug job is the only kind with a slug and no media.
   const [source, setSource] = useState<"video" | "slug">(
-    job?.content_slug && !job.media.length ? "slug" : "video"
+    job?.slug && !job.media.length ? "slug" : "video"
   );
-  const [slug, setSlug] = useState(job?.content_slug ?? "");
+  const [slug, setSlug] = useState(job?.slug ?? "");
   const [method, setMethod] = useState<SelectionMethod | "">(job?.selection_method ?? "");
   const [automationKey, setAutomationKey] = useState(job?.automation?.key ?? "");
   const [keywords, setKeywords] = useState(
@@ -135,7 +135,7 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
         await update.mutateAsync({
           id: job!.id,
           scheduled_at: at,
-          ...(job!.content_slug ? { selection_method: method || null } : {}),
+          ...(job!.slug ? { selection_method: method || null } : {}),
           payload: platform === "yt" ? { title } : { caption },
           automation: automationKey
             ? {
@@ -291,11 +291,11 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
             </div>
           )}
 
-          {(usingSlug || (editing && !!job!.content_slug)) && (
+          {(usingSlug || (editing && !!job!.slug)) && (
             <div className="cal-field">
               <label htmlFor="cal-slug">Slug</label>
               {editing ? (
-                <p className="cal-static">#{job!.content_slug}</p>
+                <p className="cal-static">#{job!.slug}</p>
               ) : (
                 <>
                   <CalSelect
@@ -338,7 +338,7 @@ export function ComposerDrawer({ timeZone, job, draft, onClose }: ComposerDrawer
                 loading={preview.isLoading}
                 nextUp={preview.data?.next_up ?? null}
                 blocked={preview.data?.blocked ?? null}
-                enabled={!!slug || !!job?.content_slug}
+                enabled={!!slug || !!job?.slug}
               />
             </div>
           )}

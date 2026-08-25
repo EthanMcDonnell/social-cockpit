@@ -22,7 +22,7 @@ import { statLocalFile, PathError } from "@/lib/publish/local-source";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import {
   isSelectionMethod,
-  type ContentSlug,
+  type Slug,
   type SelectionMethod,
   type SlugVideo,
   type SlugVideoPayload,
@@ -73,7 +73,7 @@ function parseJson<T>(raw: string | null | undefined, fallback: T): T {
   }
 }
 
-function rowToSlug(row: SlugRow): ContentSlug {
+function rowToSlug(row: SlugRow): Slug {
   return {
     slug: row.slug,
     name: row.name ?? undefined,
@@ -100,48 +100,39 @@ function rowToVideo(row: VideoRow, posts: SlugVideoPost[]): SlugVideo {
 
 // ─── Slugs ───────────────────────────────────────────────────────────────────
 
-export function getSlug(slug: string): ContentSlug | null {
+export function getSlug(slug: string): Slug | null {
   const row = getDb()
-    .prepare("SELECT * FROM content_slugs WHERE slug = ?")
+    .prepare("SELECT * FROM slugs WHERE slug = ?")
     .get(slug) as SlugRow | undefined;
   return row ? rowToSlug(row) : null;
 }
 
 /**
- * The slug as either facet knows it: its own record if it has one, otherwise a
- * synthesised empty pool for a slug that so far only names an automation flow.
- *
- * Callers that need to *write* should `ensureSlug` first — this deliberately
- * does not create the row, so merely looking at a keyed flow does not leave a
- * pool behind.
- */
-export function getSlugOrLinked(slug: string): ContentSlug | null {
-  const existing = getSlug(slug);
-  if (existing) return existing;
-  if (!linkedAutomation(slug)) return null;
-
-  return { slug, created_at: "", updated_at: "" };
-}
-
-/**
  * Create the slug if it is new, leave it alone if it is not.
  *
- * Called on every enrolment, including the automatic one during a publish, so
- * it must never clobber a name or a selection override the user set by hand.
+ * Called from every path that brings a slug into existence — enrolling a video,
+ * booking a slot, creating a keyed automation flow — so that the registry is
+ * never behind the thing referencing it. It must never clobber a name or a
+ * selection override the user set by hand.
+ *
+ * The string is stored as given. Normalisation belongs at the input boundary,
+ * where a person typed something; an automation key that predates this table
+ * has to be adopted exactly as the flow spells it, or the flow and its slug
+ * would stop matching.
  */
-export function ensureSlug(slug: string, name?: string): ContentSlug {
-  const normalized = normalizeSlug(slug);
-  if (!normalized) throw new Error("A slug needs at least one letter or digit.");
+export function ensureSlug(slug: string, name?: string): Slug {
+  const trimmed = slug.trim();
+  if (!trimmed) throw new Error("A slug needs at least one letter or digit.");
   getDb()
-    .prepare("INSERT OR IGNORE INTO content_slugs (slug, name) VALUES (?, ?)")
-    .run(normalized, name?.trim() || null);
-  return getSlug(normalized)!;
+    .prepare("INSERT OR IGNORE INTO slugs (slug, name) VALUES (?, ?)")
+    .run(trimmed, name?.trim() || null);
+  return getSlug(trimmed)!;
 }
 
 export function updateSlug(
   slug: string,
   patch: { name?: string | null; selection_method?: SelectionMethod | null }
-): ContentSlug | null {
+): Slug | null {
   const sets: string[] = [];
   const params: (string | null)[] = [];
   if (patch.name !== undefined) {
@@ -156,76 +147,57 @@ export function updateSlug(
 
   sets.push("updated_at = datetime('now')");
   const info = getDb()
-    .prepare(`UPDATE content_slugs SET ${sets.join(", ")} WHERE slug = ?`)
+    .prepare(`UPDATE slugs SET ${sets.join(", ")} WHERE slug = ?`)
     .run(...params, slug);
   return info.changes ? getSlug(slug) : null;
 }
 
 /**
- * Drop a slug and its pool. The automation flow that shares the string is left
- * alone — deleting a pool must not silently tear down a live comment funnel.
+ * Drop a slug and its pool.
+ *
+ * Refused while an automation flow still fires on it: the slug is that flow's
+ * identity, and removing the registry row would leave the flow pointing at
+ * nothing. Clearing the pool is offered instead, which is the part a pool page
+ * actually owns.
  */
-export function deleteSlug(slug: string): boolean {
+export function deleteSlug(slug: string): { deleted: boolean; blockedBy?: string } {
+  if (linkedAutomation(slug)) {
+    return { deleted: false, blockedBy: linkedAutomation(slug)!.name };
+  }
+
   const db = getDb();
-  // Nothing to delete, but the slug is real: an automation-only slug has no
-  // pool row, and reporting "no such slug" for one you can see on screen is
-  // worse than succeeding at removing nothing.
-  if (!getSlug(slug)) return !!linkedAutomation(slug);
   const remove = db.transaction(() => {
-    const ids = (db.prepare("SELECT id FROM slug_videos WHERE slug = ?").all(slug) as {
-      id: string;
-    }[]).map((row) => row.id);
-    if (ids.length) {
-      db.prepare(
-        `DELETE FROM slug_video_posts WHERE video_id IN (${ids.map(() => "?").join(",")})`
-      ).run(...ids);
-    }
-    db.prepare("DELETE FROM slug_videos WHERE slug = ?").run(slug);
-    return db.prepare("DELETE FROM content_slugs WHERE slug = ?").run(slug).changes > 0;
+    clearPoolWithin(db, slug);
+    return db.prepare("DELETE FROM slugs WHERE slug = ?").run(slug).changes > 0;
   });
-  return remove.immediate();
+  return { deleted: remove.immediate() };
 }
 
-/**
- * Every slug this app knows about, from either facet.
- *
- * A slug that exists only as an `automation_key` has no pool yet, and listing
- * only `content_slugs` would hide it — leaving you to retype the exact string
- * to give it one, which is the "two things to keep straight" that naming both
- * facets with one string was meant to avoid. A keyed flow shows up here with an
- * empty pool, ready to be filled.
- */
-function knownSlugs(): SlugRow[] {
+/** Empty a pool without touching the slug itself, or the files on disk. */
+export function clearPool(slug: string): number {
   const db = getDb();
-  const rows = db.prepare("SELECT * FROM content_slugs").all() as SlugRow[];
-  const seen = new Set(rows.map((row) => row.slug));
+  return db.transaction(() => clearPoolWithin(db, slug)).immediate();
+}
 
-  const keyed = db
-    .prepare(
-      `SELECT automation_key AS slug, MIN(created_at) AS created_at
-         FROM automation_flows
-        WHERE automation_key IS NOT NULL AND TRIM(automation_key) != ''
-        GROUP BY automation_key`
-    )
-    .all() as { slug: string; created_at: string }[];
-
-  for (const flow of keyed) {
-    if (seen.has(flow.slug)) continue;
-    // Synthesised, not written: creating a row for a flow nobody has pooled
-    // videos against would be inventing state the user never asked for.
-    rows.push({
-      slug: flow.slug,
-      name: null,
-      selection_method: null,
-      created_at: flow.created_at,
-      updated_at: flow.created_at,
-    });
+function clearPoolWithin(db: ReturnType<typeof getDb>, slug: string): number {
+  const ids = (db.prepare("SELECT id FROM slug_videos WHERE slug = ?").all(slug) as {
+    id: string;
+  }[]).map((row) => row.id);
+  if (ids.length) {
+    db.prepare(
+      `DELETE FROM slug_video_posts WHERE video_id IN (${ids.map(() => "?").join(",")})`
+    ).run(...ids);
   }
-  return rows.sort((a, b) => a.slug.localeCompare(b.slug));
+  db.prepare("DELETE FROM slug_videos WHERE slug = ?").run(slug);
+  return ids.length;
 }
 
 export function listSlugs(): SlugSummary[] {
-  return knownSlugs().map((row) => {
+  const rows = getDb()
+    .prepare("SELECT * FROM slugs ORDER BY slug ASC")
+    .all() as SlugRow[];
+
+  return rows.map((row) => {
     const videos = listVideos(row.slug);
     const eligible = {} as Record<SchedulePlatform, number>;
     for (const platform of PLATFORMS) {
@@ -241,9 +213,11 @@ export function listSlugs(): SlugSummary[] {
 }
 
 /**
- * The automation flow sharing this slug, if any. A read across the two facets —
- * the slugs page shows it so the string never looks like it means two
- * unrelated things.
+ * The automation flow firing on this slug, if any.
+ *
+ * Not a second home for the slug — the registry row is the slug. This is the
+ * other thing that references it, surfaced so the page can say what a pool is
+ * wired to.
  */
 export function linkedAutomation(
   slug: string

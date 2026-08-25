@@ -242,15 +242,30 @@ function SlugDetail({
           />
           <p className="slugs-sub">#{slug}</p>
         </div>
+        {/*
+          A slug an automation fires on is that flow's identity, so it cannot be
+          deleted from here — only emptied. Offering the button that will be
+          refused would be worse than offering the one that works.
+        */}
         <button
           type="button"
           className="slugs-btn ghost danger"
           onClick={async () => {
-            await remove.mutateAsync(slug);
-            onDeleted();
+            const poolOnly = !!data?.slug.automation;
+            try {
+              await remove.mutateAsync({ slug, poolOnly });
+              if (!poolOnly) onDeleted();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Could not delete that.");
+            }
           }}
+          title={
+            data?.slug.automation
+              ? `#${slug} is the automation "${data.slug.automation.name}" — only its videos can be removed here`
+              : "Remove this slug and its pool"
+          }
         >
-          Delete pool
+          {data?.slug.automation ? "Empty pool" : "Delete slug"}
         </button>
       </header>
 

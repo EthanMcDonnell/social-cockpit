@@ -150,7 +150,7 @@ export interface ScheduledPost {
    * worker resolves the pool at fire time and writes the chosen source back
    * onto the row.
    */
-  content_slug?: string;
+  slug?: string;
   /** Overrides the slug's own method and the global default. */
   selection_method?: SelectionMethod;
   attempts: number;

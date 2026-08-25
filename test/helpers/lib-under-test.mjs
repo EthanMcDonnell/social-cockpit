@@ -82,6 +82,18 @@ export function loadLib(include) {
   return {
     /** e.g. load("lib/slugs/store.js") */
     load: (relative) => require_(path.join(lib, relative)),
+    /**
+     * Re-run a module's top-level work by dropping it from the require cache.
+     *
+     * The only honest way to test something that happens at startup: reloading
+     * the database module reopens the connection and replays the schema list,
+     * which is exactly what a restart does.
+     */
+    reload: (relative) => {
+      const resolved = require_.resolve(path.join(lib, relative));
+      delete require_.cache[resolved];
+      return require_(resolved);
+    },
     /** Where fixture media should be written, inside LOCAL_MEDIA_ROOT. */
     mediaRoot: work,
     cleanup: () => rmSync(work, { recursive: true, force: true }),

@@ -139,7 +139,7 @@ async function runJob(job: ClaimedScheduledPost): Promise<void> {
     // A slug job has no video until now. Resolving under the lease is the whole
     // point of the feature: the pick reflects the state of the pool at the
     // moment the slot arrives, not at the moment it was booked.
-    if (job.content_slug && !job.media.length && !(await resolveSlugJob(job))) return;
+    if (job.slug && !job.media.length && !(await resolveSlugJob(job))) return;
     if (job.platform === "yt") await runYoutubeJob(job);
     else await runInstagramJob(job);
   } catch (err) {
@@ -162,7 +162,7 @@ class InvalidPayloadError extends Error {}
  * stop without side effects, exactly as everywhere else in this worker.
  */
 async function resolveSlugJob(job: ClaimedScheduledPost): Promise<boolean> {
-  const slug = job.content_slug!;
+  const slug = job.slug!;
   const method = resolveSelectionMethod(slug, job.selection_method);
 
   // An earlier attempt may have registered a source before failing. Drop it
@@ -635,7 +635,7 @@ async function succeed(job: ClaimedScheduledPost, result: ScheduleResult): Promi
  * from the stored row rather than from memory.
  */
 function withSlugTrace(job: ScheduledPost, result: ScheduleResult): ScheduleResult {
-  if (!job.content_slug || !job.result?.slug_video_id) return result;
+  if (!job.slug || !job.result?.slug_video_id) return result;
   return {
     ...result,
     slug_video_id: job.result.slug_video_id,
@@ -659,7 +659,7 @@ function withSlugTrace(job: ScheduledPost, result: ScheduleResult): ScheduleResu
  */
 async function recordSlugPost(job: ScheduledPost, result: ScheduleResult): Promise<void> {
   const externalId = job.platform === "yt" ? result.video_id : result.media_id;
-  if (!job.content_slug || !externalId || result.dry_run) return;
+  if (!job.slug || !externalId || result.dry_run) return;
 
   try {
     // The pick made at fire time, when its candidate is still in the pool. One
@@ -679,21 +679,21 @@ async function recordSlugPost(job: ScheduledPost, result: ScheduleResult): Promi
       logScheduleEvent(
         "warn",
         "slug_enrol_skipped",
-        `#${job.content_slug} — an uploaded file can't join a pool; schedule it by path instead`,
-        { jobId: job.id, meta: { slug: job.content_slug } }
+        `#${job.slug} — an uploaded file can't join a pool; schedule it by path instead`,
+        { jobId: job.id, meta: { slug: job.slug } }
       );
       return;
     }
 
     const enrolled = await enrolVideo({
-      slug: job.content_slug,
+      slug: job.slug,
       path: source.path,
       payload: payloadDefaultsOf(job),
     });
     recordPost(enrolled.id, job.platform, externalId, job.id);
-    logScheduleEvent("info", "slug_enrolled", `Added to #${job.content_slug}`, {
+    logScheduleEvent("info", "slug_enrolled", `Added to #${job.slug}`, {
       jobId: job.id,
-      meta: { slug: job.content_slug, video_id: enrolled.id },
+      meta: { slug: job.slug, video_id: enrolled.id },
     });
   } catch (err) {
     // The post is live; losing the ledger row costs a future selection its
@@ -701,7 +701,7 @@ async function recordSlugPost(job: ScheduledPost, result: ScheduleResult): Promi
     // worth failing an already-published job over.
     reportError("slugs", "ledger_write_failed", "could not record a slug post", {
       error: err,
-      meta: { job: job.id, slug: job.content_slug, video: result.slug_video_id },
+      meta: { job: job.id, slug: job.slug, video: result.slug_video_id },
     });
   }
 }

@@ -10,20 +10,27 @@ adds the other half — the same string also names a **pool of videos**, and the
 scheduler can draw from it.
 
 ```
-                          slug: "gym-tips"
-                    ┌───────────┴───────────┐
-        automation facet                content facet
-   automation_flows.automation_key     content_slugs + slug_videos
-   (comment funnel — Automations)      (video pool — Slugs)
+                    slugs  ──  one row per slug
+                      ▲                 ▲
+                      │                 │
+        automation_flows          slug_videos
+        .automation_key           (the pool it can post)
+        (the funnel it fires)
 ```
 
-Both facets are optional. A pool with no comment funnel is fine; so is a keyed
-flow whose pool is empty.
+A slug lives in exactly one place: the `slugs` table. The two things that *use*
+a slug — an automation flow and a pool of videos — reference it by string.
+Creating a keyed flow registers the slug in the same transaction, and keys that
+predate the table are adopted on startup, so nothing ever has to ask "does this
+slug exist somewhere else instead".
 
-Because they are one namespace, the Slugs page lists a slug that so far only
-names an automation flow — as the empty pool it is, ready to fill. It is not
-given a record until something is actually enrolled against it, so looking at a
-keyed flow does not leave a pool behind.
+Both uses are optional. A pool with no comment funnel is fine; so is a keyed
+flow whose pool is empty — it lists on the Slugs page as the empty pool it is,
+ready to fill.
+
+Deleting a slug an automation still fires on is refused, because the slug is
+that flow's identity. The Slugs page offers emptying the pool instead, which is
+the part it owns.
 
 ---
 
@@ -139,7 +146,7 @@ therefore changes what every unspecified job already on the calendar will do.
 ```
 claim job (lease held)
       │
-      ├─ content_slug set, media empty?
+      ├─ slug set, media empty?
       │        │
       │        ├─ resolve method, filter pool, rank, pick
       │        ├─ register the chosen file (referenced in place, never copied)
@@ -213,11 +220,17 @@ video belongs to and the flow it fires stay one string.
 Additive only; no existing table is altered beyond two nullable columns.
 
 ```sql
-content_slugs     (slug PK, name, selection_method, …)
+slugs             (slug PK, name, selection_method, …)     -- the registry
 slug_videos       (id PK, slug, path, label, payload, …)   -- UNIQUE(slug, path)
 slug_video_posts  (video_id, platform, external_id, job_id, posted_at)
-scheduled_posts   + content_slug, + selection_method
+scheduled_posts   + slug, + selection_method
 ```
+
+On an existing install the additive list adopts what came before: rows from the
+short-lived `content_slugs` table, every `automation_key` already in use, and
+`scheduled_posts.content_slug` renamed to `slug`. All of it is idempotent, and
+the rename runs before the add so a database that has the old column cannot end
+up with both.
 
 Deleting a pool leaves the automation flow sharing its name running — tearing
 down a live comment funnel is not something a pool delete should do quietly.

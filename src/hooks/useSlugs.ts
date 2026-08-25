@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
-  ContentSlug,
+  Slug,
   SelectionMethod,
   SlugDetail,
   SlugSelection,
@@ -81,7 +81,7 @@ export function useCreateSlug() {
   const invalidate = useInvalidate();
   return useMutation({
     mutationFn: async (body: { slug: string; name?: string; selection_method?: SelectionMethod }) =>
-      asJson<{ slug: ContentSlug }>(
+      asJson<{ slug: Slug }>(
         await fetch("/api/slugs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -103,7 +103,7 @@ export function useUpdateSlug() {
       name?: string | null;
       selection_method?: SelectionMethod | null;
     }) =>
-      asJson<{ slug: ContentSlug }>(
+      asJson<{ slug: Slug }>(
         await fetch(`/api/slugs/${encodeURIComponent(slug)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -114,14 +114,24 @@ export function useUpdateSlug() {
   });
 }
 
+/**
+ * Delete a slug, or just empty its pool.
+ *
+ * A slug an automation flow fires on cannot be deleted — it is that flow's
+ * identity — so the page offers clearing the pool instead, which is the part it
+ * owns.
+ */
 export function useDeleteSlug() {
   const invalidate = useInvalidate();
   return useMutation({
-    mutationFn: async (slug: string) =>
-      asJson<{ deleted: string }>(
-        await fetch(`/api/slugs/${encodeURIComponent(slug)}`, { method: "DELETE" })
+    mutationFn: async ({ slug, poolOnly }: { slug: string; poolOnly?: boolean }) =>
+      asJson<{ deleted?: string; cleared?: number }>(
+        await fetch(
+          `/api/slugs/${encodeURIComponent(slug)}${poolOnly ? "?pool=1" : ""}`,
+          { method: "DELETE" }
+        )
       ),
-    onSuccess: (_data, slug) => invalidate(slug),
+    onSuccess: (_data, vars) => invalidate(vars.slug),
   });
 }
 

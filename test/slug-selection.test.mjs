@@ -12,13 +12,17 @@ import path from "node:path";
 import test from "node:test";
 import { loadLib } from "./helpers/lib-under-test.mjs";
 
-const { load, mediaRoot, cleanup } = loadLib(["src/lib/slugs/**/*.ts"]);
+const { load, reload, mediaRoot, cleanup } = loadLib([
+  "src/lib/slugs/**/*.ts",
+  "src/lib/automation/attach.ts",
+]);
 const store = load("lib/slugs/store.js");
 const sched = load("lib/schedule/store.js");
 const select = load("lib/slugs/select.js");
 const settings = load("lib/slugs/settings.js");
 const cache = load("lib/cache/store.js");
 const { getDb } = load("lib/db/index.js");
+const { applyAutomationPlan } = load("lib/automation/attach.js");
 
 function clip(name) {
   const file = path.join(mediaRoot, name);
@@ -133,7 +137,7 @@ test("a candidate another slot is mid-publish on is not picked again", async () 
     scheduledAt: Date.now() + 60_000,
     payload: {},
     media: [],
-    contentSlug: pool,
+    slug: pool,
   });
   sched.updateJob(job.id, { status: "publishing", result: { slug_video_id: first.id } });
 
@@ -171,31 +175,48 @@ test("an empty pool is reported differently from an exhausted one", async () => 
   assert.ok(none.error && !none.exhausted);
 });
 
-test("a slug that only names an automation flow is listed as an empty pool", async () => {
-  // The state every existing install starts in: keys have been in use on the
-  // automation side for months, and content_slugs is brand new and empty.
+test("a keyed automation flow IS a slug — there is no second place to look", async () => {
+  // The live path: creating a keyed flow registers the slug in the same
+  // transaction, so it can never exist as a flow the app fires but not as a
+  // slug the app lists.
+  applyAutomationPlan(getDb(), "media-1", {
+    mode: "create",
+    spec: {
+      key: "funnel-key",
+      name: "Funnel",
+      keywords: ["LINK"],
+      templateType: "comment_to_dm",
+      config: {},
+      activate: true,
+    },
+  });
+
+  const registered = store.getSlug("funnel-key");
+  assert.ok(registered, "creating a keyed flow must register its slug");
+  const listed = store.listSlugs().find((entry) => entry.slug === "funnel-key");
+  assert.equal(listed.video_count, 0, "with an empty pool, ready to fill");
+  assert.equal(listed.automation.name, "Funnel");
+});
+
+test("flows that predate the registry are adopted on startup", () => {
+  // Every flow on an existing install got its key before this table existed,
+  // so it was written straight into automation_flows like this.
   getDb()
     .prepare(
       `INSERT INTO automation_flows (id, name, template_type, trigger_keyword, config, is_active, automation_key)
-       VALUES ('flow-1', 'Watermark funnel', 'comment_to_dm', '["LINK"]', '{}', 1, 'legacy-key')`
+       VALUES ('flow-legacy', 'Watermark funnel', 'comment_to_dm', '["LINK"]', '{}', 1, 'legacy-key')`
     )
     .run();
+  assert.equal(store.getSlug("legacy-key"), null, "not adopted until the app next starts");
 
-  const listed = store.listSlugs().find((entry) => entry.slug === "legacy-key");
-  assert.ok(listed, "listing only content_slugs would hide a slug already in use");
-  assert.equal(listed.video_count, 0);
-  assert.equal(listed.automation.name, "Watermark funnel");
+  // Reopening the database replays the schema list — what a restart does.
+  reload("lib/db/index.js").getDb();
 
-  assert.ok(store.getSlugOrLinked("legacy-key"), "and its pool page has to open");
-  assert.equal(store.getSlug("legacy-key"), null, "without inventing a row nobody asked for");
-
-  // Filling it is what makes it a pool of its own.
-  await store.enrolVideo({ slug: "legacy-key", path: clip("legacy.mp4") });
-  assert.ok(store.getSlug("legacy-key"), "enrolment creates the record");
+  assert.ok(store.getSlug("legacy-key"), "the backfill adopts it");
   assert.equal(
     store.listSlugs().filter((entry) => entry.slug === "legacy-key").length,
     1,
-    "and it must not then appear twice, once from each facet"
+    "exactly once, however many times the app restarts"
   );
 });
 

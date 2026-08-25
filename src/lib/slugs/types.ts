@@ -107,7 +107,7 @@ export interface SlugVideoView extends SlugVideo {
   scored: boolean;
 }
 
-export interface ContentSlug {
+export interface Slug {
   slug: string;
   name?: string;
   /** Overrides the global default. Unset means "use the default". */
@@ -116,7 +116,7 @@ export interface ContentSlug {
   updated_at: string;
 }
 
-export interface SlugSummary extends ContentSlug {
+export interface SlugSummary extends Slug {
   video_count: number;
   /** Candidates still eligible for each platform (not yet posted there). */
   eligible: Record<SchedulePlatform, number>;

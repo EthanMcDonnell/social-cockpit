@@ -173,7 +173,7 @@ test("the pane resolves a pool without waiting for an effect", () => {
     })
   );
   assert.doesNotMatch(html, /Pick a slug to see its pool/);
-  assert.match(html, /Delete pool/, "the detail pane is present on first paint");
+  assert.match(html, /Empty pool|Delete slug/, "the detail pane is present on first paint");
 });
 
 test.after(cleanup);

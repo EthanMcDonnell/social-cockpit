@@ -44,10 +44,10 @@ export function hydrateJobs(jobs: ScheduledPost[]): ScheduledPostView[] {
       media_missing: unresolved || (!settled && media_files.some((m) => m.missing)),
       // Only for a job still waiting on its pool. Once it has resolved, the
       // card shows the file it actually chose.
-      ...(job.content_slug && !job.media.length
+      ...(job.slug && !job.media.length
         ? {
-            selection_effective: resolveSelectionMethod(job.content_slug, job.selection_method),
-            slug_eligible: eligibleVideos(job.content_slug, job.platform, poolFor(job.content_slug)).length,
+            selection_effective: resolveSelectionMethod(job.slug, job.selection_method),
+            slug_eligible: eligibleVideos(job.slug, job.platform, poolFor(job.slug)).length,
           }
         : {}),
     };

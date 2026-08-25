@@ -47,7 +47,7 @@ export interface ScheduledPostView {
   scheduled_at: number;
   payload: { caption?: string; title?: string; media_type?: string } & Record<string, unknown>;
   /** Booked against a content pool rather than a file. */
-  content_slug?: string;
+  slug?: string;
   /** The method that will actually run, after the job → slug → default fallback. */
   selection_effective?: string;
   /** Empty on a slug job until the worker resolves its pool at fire time. */

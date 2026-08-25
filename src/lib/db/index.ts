@@ -191,24 +191,33 @@ export function getDb(): Database.Database {
     )`,
     "CREATE INDEX IF NOT EXISTS idx_sched_events_created ON schedule_events(created_at)",
     "CREATE INDEX IF NOT EXISTS idx_sched_events_job ON schedule_events(job_id)",
-    // ── slug content pools (see docs/slug-scheduling.md) ────────────────────
-    // A slug is one string with two facets. The automation facet already exists
-    // as `automation_flows.automation_key`; this is the content facet — the pool
-    // of videos that slug can post. Both are optional: a pool with no automation
-    // and a keyed flow with an empty pool are equally valid.
-    //
-    // The pool exists so a calendar slot can book a *slug* rather than a file,
-    // and the video be chosen when the slot arrives (highest views, oldest
-    // unposted, …). That choice needs metrics, and metrics need to know which
-    // local file became which published post — which is what slug_video_posts
-    // records and nothing else in this schema did.
-    `CREATE TABLE IF NOT EXISTS content_slugs (
+    // ── slugs (see docs/slug-scheduling.md) ─────────────────────────────────
+    // ONE registry for every slug this app knows about. A slug has two uses —
+    // the automation flow it fires and the pool of videos it can post — but it
+    // is one row here, and both sides reference it by string. There is no
+    // second place a slug can live, and nothing has to ask "does it exist over
+    // there instead": if it is a slug, it is in this table.
+    `CREATE TABLE IF NOT EXISTS slugs (
       slug             TEXT PRIMARY KEY,
       name             TEXT,
       selection_method TEXT,
       created_at       TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
+    // Adopt anything that named a slug before this table existed. Both are
+    // INSERT OR IGNORE against the registry, so they are idempotent and safe to
+    // re-run on every start:
+    //   1. the short-lived `slugs` table this replaces, and
+    //   2. every automation_key ever used — the keys are the original slugs,
+    //      and without this an install with live automations would open the
+    //      Slugs page to nothing.
+    // `content_slugs` is the table this replaces — named for a "content facet"
+    // that no longer exists as a separate idea. It is read, never written; an
+    // install that never had one just fails this statement harmlessly.
+    "INSERT OR IGNORE INTO slugs (slug, name, selection_method, created_at, updated_at) SELECT slug, name, selection_method, created_at, updated_at FROM content_slugs",
+    `INSERT OR IGNORE INTO slugs (slug)
+       SELECT DISTINCT automation_key FROM automation_flows
+        WHERE automation_key IS NOT NULL AND TRIM(automation_key) != ''`,
     // One candidate video. `path` is an absolute path on this machine and is
     // never copied or uploaded by enrolment — same discipline as scheduled_media
     // with owned=0. `payload` holds per-platform defaults ({"ig":{"caption":…},
@@ -242,9 +251,14 @@ export function getDb(): Database.Database {
     // the worker resolves the slug at fire time and writes the chosen source
     // back onto the row, after which the job is indistinguishable from any
     // other and takes the unchanged publish path.
-    "ALTER TABLE scheduled_posts ADD COLUMN content_slug TEXT",
+    //
+    // RENAME runs before ADD, and the order is load-bearing: on a database that
+    // already has the old column, ADD would succeed first and leave two columns
+    // with the live data stranded in the abandoned one.
+    "ALTER TABLE scheduled_posts RENAME COLUMN content_slug TO slug",
+    "ALTER TABLE scheduled_posts ADD COLUMN slug TEXT",
     "ALTER TABLE scheduled_posts ADD COLUMN selection_method TEXT",
-    "CREATE INDEX IF NOT EXISTS idx_sched_slug ON scheduled_posts(content_slug)",
+    "CREATE INDEX IF NOT EXISTS idx_sched_slug ON scheduled_posts(slug)",
     // Generic key→value app settings. Introduced for the calendar's display
     // timezone, which must not require an app restart to change (unlike the
     // .env-backed settings) since it silently changes what every slot means.

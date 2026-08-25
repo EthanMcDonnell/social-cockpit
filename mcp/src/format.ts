@@ -48,8 +48,8 @@ export function formatJob(job: ScheduledPostView, timeZone: string): string {
     // the honest headline, not "(no caption)".
     job.payload.caption ?? job.payload.title
       ? firstLine(job.payload.caption ?? job.payload.title)
-      : job.content_slug
-        ? `#${job.content_slug}`
+      : job.slug
+        ? `#${job.slug}`
         : firstLine(undefined),
     `(${job.id})`,
   ];
@@ -58,13 +58,13 @@ export function formatJob(job: ScheduledPostView, timeZone: string): string {
   const files = job.media_files.map((m) => m.filename).join(", ");
   if (files) notes.push(files);
   if (job.media_missing) notes.push("⚠ source file missing on disk");
-  if (job.content_slug) {
+  if (job.slug) {
     // A slug job with no media has not picked its video yet — say which pool it
     // will draw from and how, rather than showing an empty file list.
     notes.push(
       job.media.length
-        ? `slug: ${job.content_slug}`
-        : `slug: ${job.content_slug} (picks by ${job.selection_effective ?? "default"} at fire time)`
+        ? `slug: ${job.slug}`
+        : `slug: ${job.slug} (picks by ${job.selection_effective ?? "default"} at fire time)`
     );
   }
   if (job.result?.slug_reason) notes.push(`picked ${job.result.slug_reason}`);

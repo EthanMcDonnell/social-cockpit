@@ -61,7 +61,7 @@ test("a job booked against a pool resolves its video at fire time", async () => 
     scheduledAt: due(),
     payload: {},
     media: [],
-    contentSlug: "pool",
+    slug: "pool",
     selectionMethod: "most_views",
   });
   assert.equal(job.media.length, 0, "a slug job is booked with no media");
@@ -92,7 +92,7 @@ test("the same pool on another platform has its own eligibility", async () => {
     scheduledAt: due(),
     payload: {},
     media: [],
-    contentSlug: "pool",
+    slug: "pool",
   });
   await worker.runScheduleCycle();
 
@@ -111,7 +111,7 @@ test("an exhausted pool fails the job terminally", async () => {
     scheduledAt: due(),
     payload: {},
     media: [],
-    contentSlug: "pool",
+    slug: "pool",
   });
   await worker.runScheduleCycle();
 

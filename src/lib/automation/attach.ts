@@ -174,6 +174,14 @@ function createFlow(
   const activatedAt = spec.activate ? new Date().toISOString() : null;
   const name = spec.name ?? spec.key!;
 
+  // A keyed flow's key IS a slug, so register it as one in the same breath.
+  // Without this the slug would exist as a flow the app can fire and as nothing
+  // the app can list, and every reader would have to check two places to answer
+  // "is this a slug".
+  if (spec.key) {
+    db.prepare("INSERT OR IGNORE INTO slugs (slug) VALUES (?)").run(spec.key);
+  }
+
   db.prepare(
     `INSERT INTO automation_flows
        (id, name, template_type, trigger_keyword, config, media_id, is_active, activated_at, automation_key)

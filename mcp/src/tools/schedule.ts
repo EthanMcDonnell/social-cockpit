@@ -151,7 +151,7 @@ function summarize(job: ScheduledPostView, timeZone: string) {
     scheduled_at_local: formatWhen(job.scheduled_at, timeZone),
     caption: job.payload.caption ?? job.payload.title,
     video: typeof job.payload.video === "string" ? job.payload.video : undefined,
-    slug: job.content_slug,
+    slug: job.slug,
     // Only a slug job still waiting on its pool has no files of its own.
     selection: job.media.length ? undefined : job.selection_effective,
     files: job.media_files.map((m) => m.filename),

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
 import {
+  clearPool,
   deleteSlug,
   eligibleVideos,
-  ensureSlug,
-  getSlugOrLinked,
+  getSlug,
   linkedAutomation,
   normalizeSlug,
   updateSlug,
@@ -34,9 +34,7 @@ export async function GET(
   if (denied) return denied;
 
   const slug = normalizeSlug(params.slug);
-  // Either facet counts: a slug that so far only names an automation flow is
-  // shown as the empty pool it is, so videos can be added to it.
-  const record = getSlugOrLinked(slug);
+  const record = getSlug(slug);
   if (!record) {
     return NextResponse.json({ error: "not_found", message: `No slug "${slug}".` }, { status: 404 });
   }
@@ -89,14 +87,6 @@ export async function PATCH(
     );
   }
 
-  // Naming a pool, or giving it a selection rule, is the first thing that makes
-  // an automation-only slug a pool of its own. Create the row on that edit
-  // rather than refusing it.
-  if (!getSlugOrLinked(slug)) {
-    return NextResponse.json({ error: "not_found", message: `No slug "${slug}".` }, { status: 404 });
-  }
-  ensureSlug(slug);
-
   const updated = updateSlug(slug, {
     ...(body?.name !== undefined ? { name: body.name } : {}),
     ...(body?.selection_method !== undefined ? { selection_method: body.selection_method } : {}),
@@ -108,10 +98,12 @@ export async function PATCH(
 }
 
 /**
- * DELETE /api/slugs/:slug — drop the pool and its posting history.
+ * DELETE /api/slugs/:slug — drop the slug and its pool.
  *
- * The automation flow sharing this name is deliberately left running: deleting
- * a pool must not silently tear down a live comment funnel.
+ * Refused while an automation flow still fires on it: the slug is that flow's
+ * identity, and tearing down a live comment funnel is not something a pool page
+ * should do quietly. `?pool=1` empties the pool and keeps the slug, which is the
+ * part this page actually owns.
  */
 export async function DELETE(
   request: NextRequest,
@@ -121,8 +113,23 @@ export async function DELETE(
   if (denied) return denied;
 
   const slug = normalizeSlug(params.slug);
-  if (!deleteSlug(slug)) {
+  if (!getSlug(slug)) {
     return NextResponse.json({ error: "not_found", message: `No slug "${slug}".` }, { status: 404 });
+  }
+
+  if (request.nextUrl.searchParams.get("pool") === "1") {
+    return NextResponse.json({ slug, cleared: clearPool(slug) });
+  }
+
+  const outcome = deleteSlug(slug);
+  if (!outcome.deleted) {
+    return NextResponse.json(
+      {
+        error: "conflict",
+        message: `"${slug}" is the automation flow "${outcome.blockedBy}" — delete that flow first, or clear the pool instead.`,
+      },
+      { status: 409 }
+    );
   }
   return NextResponse.json({ deleted: slug });
 }
