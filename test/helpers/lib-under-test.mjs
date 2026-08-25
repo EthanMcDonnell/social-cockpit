@@ -35,6 +35,11 @@ export function loadLib(include) {
         target: "ES2022",
         module: "commonjs",
         moduleResolution: "node",
+        // Client components come through here too, so the compiler needs to
+        // know about JSX and the DOM lib even when a caller only wants server
+        // modules — it costs nothing when there is no TSX in the graph.
+        jsx: "react-jsx",
+        lib: ["ES2022", "DOM"],
         outDir: build,
         rootDir: ROOT,
         esModuleInterop: true,

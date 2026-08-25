@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PlatformGlyph } from "@/components/dashboard/cockpit/PlatformGlyph";
 import {
@@ -36,19 +36,22 @@ const PLATFORM_NAME: Record<SchedulePlatform, string> = { ig: "Instagram", yt: "
  */
 export function SlugsClient() {
   const slugs = useSlugs();
-  const [selected, setSelected] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   const [platform, setPlatform] = useState<SchedulePlatform>("ig");
 
-  const list = useMemo(() => slugs.data?.slugs ?? [], [slugs.data]);
+  const list = slugs.data?.slugs ?? [];
 
-  // Land on something rather than an empty right-hand pane, and follow along if
-  // the selected slug is deleted from under us.
-  useEffect(() => {
-    if (!list.length) return setSelected(null);
-    if (!selected || !list.some((entry) => entry.slug === selected)) {
-      setSelected(list[0].slug);
-    }
-  }, [list, selected]);
+  /**
+   * Which pool the right-hand pane is showing.
+   *
+   * Derived rather than synced in an effect. The selection *is* a function of
+   * the list and what was last clicked, so holding it in state would paint an
+   * empty pane first and correct it a frame later — and would silently keep
+   * pointing at a pool that has since been deleted.
+   */
+  const selected = picked && list.some((entry) => entry.slug === picked)
+    ? picked
+    : list[0]?.slug ?? null;
 
   return (
     <div className="slugs">
@@ -78,7 +81,7 @@ export function SlugsClient() {
 
       <div className="slugs-body">
         <nav className="slugs-list">
-          <NewSlugForm onCreated={setSelected} />
+          <NewSlugForm onCreated={setPicked} />
           {slugs.isLoading && <p className="slugs-empty">Loading…</p>}
           {!slugs.isLoading && !list.length && (
             <p className="slugs-empty">
@@ -90,7 +93,7 @@ export function SlugsClient() {
               key={entry.slug}
               type="button"
               className={`slugs-item${selected === entry.slug ? " on" : ""}`}
-              onClick={() => setSelected(entry.slug)}
+              onClick={() => setPicked(entry.slug)}
             >
               <span className="slugs-item-name">{entry.name ?? entry.slug}</span>
               <span className="slugs-item-meta">
@@ -110,10 +113,14 @@ export function SlugsClient() {
 
         {selected ? (
           <SlugDetail
+            // Remount per pool: without this, a path typed into one pool's add
+            // form is still sitting there after clicking another, ready to be
+            // added to the wrong one.
+            key={selected}
             slug={selected}
             platform={platform}
             defaultMethod={slugs.data?.default_selection ?? "most_views"}
-            onDeleted={() => setSelected(null)}
+            onDeleted={() => setPicked(null)}
           />
         ) : (
           <div className="slugs-detail slugs-empty-pane">
