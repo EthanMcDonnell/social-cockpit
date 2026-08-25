@@ -2593,6 +2593,22 @@ body.cal-dragging * {
   }
 }
 
+/* 8. The nav used to slide a few pixels sideways on every page change. The
+      header is one flex row, the HUD on its right is a different width on every
+      page (the window selector on the Dashboard, "12 LOGGED" vs "NOMINAL"), and
+      the row runs a hair over its 1320px budget — so the browser shrank the one
+      item with any give in it, the radar mark, and everything after it moved.
+      Pinning the identity block makes the HUD the only thing that flexes, which
+      is the one part of the header nobody is aiming a click at. */
+.cockpit .ck-header > svg,
+.cockpit .ck-sig,
+.cockpit .ck-nav {
+  flex-shrink: 0;
+}
+.cockpit .ck-hud {
+  min-width: 0;
+}
+
 /* ════════════════════════════════════════════════════════════════════════════ */
 /*  SLUG POOLS — the content facet of a slug                                    */
 /*  A slug is one string with two facets: the pool of videos it can post (here)  */
@@ -2609,7 +2625,7 @@ body.cal-dragging * {
 
 .slugs .slugs-bar {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 18px;
   padding: 4px 0 16px;
   flex-wrap: wrap;
@@ -2644,32 +2660,11 @@ body.cal-dragging * {
   line-height: 1.6;
   color: var(--mut);
 }
-.slugs .slugs-seg {
-  display: inline-grid;
-  grid-auto-flow: column;
-  gap: 1px;
-  border: 1px solid var(--hair);
-  background: var(--hair);
-}
-.slugs .slugs-seg button {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--cond);
-  font-weight: 600;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mut);
-  background: var(--panel);
-  border: 0;
-  padding: 7px 13px;
-  cursor: pointer;
-  transition: color 0.15s var(--slugs-ease), background 0.15s var(--slugs-ease);
-}
-.slugs .slugs-seg button.on {
-  color: var(--char);
-  background: var(--amber);
+/* The shared IG/YT control, which carries the margins and top-alignment of the
+   dashboard rail it was built for. In a top bar it wants neither. */
+.slugs .slugs-bar .ck-pswitch {
+  margin: 0;
+  align-self: center;
 }
 
 /* ── two panes: the registry, and the pool you're looking at ── */
@@ -2798,28 +2793,36 @@ body.cal-dragging * {
   text-transform: uppercase;
   color: var(--mut);
 }
-.slugs select,
-.slugs input {
+.slugs input,
+.slugs textarea {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--txt);
   background: var(--char);
-  border: 1px solid var(--hair-2, var(--hair));
-  padding: 7px 9px;
+  border: 1px solid var(--hair-2);
+  padding: 9px 10px;
+  width: 100%;
 }
-.slugs select:focus,
-.slugs input:focus {
+.slugs input:focus,
+.slugs textarea:focus {
   outline: 0;
   border-color: var(--amber-dim);
+  box-shadow: 0 0 0 1px rgba(255, 179, 36, 0.18);
 }
 .slugs .slugs-hint {
+  font-size: 9px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+/* Same banner the calendar uses for a failed save — amber-red, never the
+   Instagram pink, which means "platform" everywhere else in the app. */
+.slugs .slugs-err {
   font-size: 10px;
   line-height: 1.6;
-  color: var(--mut);
-}
-.slugs .slugs-err {
-  font-size: 11px;
-  color: var(--cal-ig, #e04a8c);
+  color: #e8a25a;
+  border: 1px solid #6b4a24;
+  background: rgba(217, 138, 58, 0.06);
+  padding: 9px 11px;
 }
 
 /* ── the pick this pool would make right now ── */
@@ -2838,8 +2841,9 @@ body.cal-dragging * {
   background: rgba(255, 179, 36, 0.02);
 }
 .slugs .slugs-next.is-err {
-  border-left-color: #e04a8c;
-  background: rgba(224, 74, 140, 0.05);
+  border-color: #6b4a24;
+  border-left-color: #e8a25a;
+  background: rgba(217, 138, 58, 0.06);
 }
 .slugs .slugs-next-tag {
   font-family: var(--cond);
@@ -2908,7 +2912,7 @@ body.cal-dragging * {
   white-space: nowrap;
 }
 .slugs .is-missing .slugs-cell-name span {
-  color: #e04a8c;
+  color: #e8a25a;
 }
 .slugs .slugs-cell-posts {
   display: flex;
@@ -2925,9 +2929,10 @@ body.cal-dragging * {
   color: var(--mut);
   cursor: pointer;
   font-size: 11px;
+  transition: color 0.15s var(--slugs-ease);
 }
 .slugs .slugs-x:hover {
-  color: #e04a8c;
+  color: #e8a25a;
 }
 
 .slugs .slugs-add {
@@ -2940,29 +2945,45 @@ body.cal-dragging * {
     grid-template-columns: 1fr;
   }
 }
+/* Same spec as .cal .cal-btn — a primary button should not be recognisably a
+   different button here than it is one page over. */
 .slugs .slugs-btn {
   font-family: var(--cond);
+  font-weight: 700;
   font-size: 11px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--char);
   background: var(--amber);
-  border: 0;
-  padding: 8px 15px;
+  border: 1px solid transparent;
+  padding: 9px 16px;
   cursor: pointer;
+  transition: background 0.15s var(--slugs-ease), box-shadow 0.15s var(--slugs-ease),
+    color 0.15s var(--slugs-ease), border-color 0.15s var(--slugs-ease);
+}
+.slugs .slugs-btn:not(:disabled):hover {
+  background: var(--amber-hi);
+  box-shadow: 0 0 22px rgba(255, 179, 36, 0.36);
 }
 .slugs .slugs-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
+  color: var(--faint);
+  background: var(--hair-2);
+  cursor: not-allowed;
 }
 .slugs .slugs-btn.ghost {
   color: var(--mut);
-  background: none;
-  border: 1px solid var(--hair);
+  background: transparent;
+  border-color: var(--hair-2);
 }
-.slugs .slugs-btn.ghost.danger:hover {
-  color: #e04a8c;
-  border-color: #e04a8c;
+.slugs .slugs-btn.ghost:not(:disabled):hover {
+  color: var(--txt);
+  background: transparent;
+  border-color: var(--mut);
+  box-shadow: none;
+}
+.slugs .slugs-btn.ghost.danger:not(:disabled):hover {
+  color: #e8a25a;
+  border-color: #6b4a24;
 }
 .slugs .slugs-empty {
   padding: 14px;
@@ -3000,8 +3021,6 @@ body.cal-dragging * {
 }
 .slugs .slugs-new .slugs-err {
   grid-column: 1 / -1;
-  background: var(--panel);
-  padding: 7px 9px;
 }
 
 .slugs .slugs-title {
@@ -3061,21 +3080,14 @@ body.cal-dragging * {
   text-transform: uppercase;
   color: var(--mut);
 }
+/* The editor sits on the charcoal ground, so its fields lift a shade rather
+   than sinking — everything else about them is the page-wide field spec. */
 .slugs .slugs-editor textarea {
-  font-family: var(--mono);
-  font-size: 11px;
   line-height: 1.6;
-  color: var(--txt);
-  background: var(--panel);
-  border: 1px solid var(--hair);
-  padding: 7px 9px;
   resize: vertical;
 }
-.slugs .slugs-editor textarea:focus {
-  outline: 0;
-  border-color: var(--amber-dim);
-}
-.slugs .slugs-editor input {
+.slugs .slugs-editor input,
+.slugs .slugs-editor textarea {
   background: var(--panel);
 }
 .slugs .slugs-editor-foot {
@@ -3139,6 +3151,13 @@ body.cal-dragging * {
   font-size: 10px;
   color: var(--mut);
 }
+/* The trailing hint is a row of the history block, not a caption under it —
+   with no ground of its own the hairline the block is built from shows through
+   as a stripe. */
+.slugs .slugs-history > .slugs-hint {
+  background: var(--panel);
+  padding: 9px 11px;
+}
 .slugs .slugs-post-views {
   text-align: right;
   color: var(--mut);
@@ -3158,9 +3177,8 @@ body.cal-dragging * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.slugs .slugs-post select {
-  font-size: 10px;
-  padding: 5px 7px;
+.slugs .slugs-post .cal-select {
+  padding: 5px 22px 5px 8px;
 }
 
 /* ── calendar additions for slug jobs ── */

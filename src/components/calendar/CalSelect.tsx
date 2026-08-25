@@ -46,6 +46,13 @@ interface CalSelectProps {
   "aria-label"?: string;
 }
 
+/**
+ * Layout effects on the server are a warning and nothing else — this control is
+ * rendered there (every page that holds one is server-rendered first) but its
+ * menu only ever opens after hydration, so there is no layout to read yet.
+ */
+const useIsoLayoutEffect = typeof document === "undefined" ? useEffect : useLayoutEffect;
+
 /** Gap between the trigger and the menu, in px. */
 const GAP = 5;
 const MENU_MAX_H = 320;
@@ -91,7 +98,7 @@ export function CalSelect({
   );
   const selected = selectedIndex >= 0 ? options[selectedIndex] : null;
 
-  useLayoutEffect(() => {
+  useIsoLayoutEffect(() => {
     setHost(btnRef.current?.closest<HTMLElement>(".cockpit") ?? document.body);
   }, []);
 
@@ -123,7 +130,7 @@ export function CalSelect({
 
   // Reposition rather than close when the page moves under an open menu —
   // closing on scroll is the thing that makes custom selects feel broken.
-  useLayoutEffect(() => {
+  useIsoLayoutEffect(() => {
     if (!open) return;
     place();
     window.addEventListener("scroll", place, true);

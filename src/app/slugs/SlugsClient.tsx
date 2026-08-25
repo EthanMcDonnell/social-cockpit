@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { PlatformGlyph } from "@/components/dashboard/cockpit/PlatformGlyph";
+import { PlatformSwitch } from "@/components/dashboard/cockpit/PlatformSwitch";
+import { CalSelect } from "@/components/calendar/CalSelect";
 import {
   useAddSlugVideo,
   useCreateSlug,
@@ -66,19 +68,12 @@ export function SlugsClient() {
           Book a calendar slot against a slug and the video is chosen when the slot arrives —
           highest views, longest wait, whatever you pick.
         </p>
-        <div className="slugs-seg">
-          {PLATFORMS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={platform === p ? "on" : undefined}
-              onClick={() => setPlatform(p)}
-            >
-              <PlatformGlyph platform={p} size={11} />
-              {PLATFORM_NAME[p]}
-            </button>
-          ))}
-        </div>
+        {/*
+          Controlled, like Compose: which platform this page is previewing is a
+          question about this pool, not the dashboard-wide `?platform=` the
+          uncontrolled switch drives.
+        */}
+        <PlatformSwitch value={platform} onChange={setPlatform} />
       </header>
 
       <div className="slugs-body">
@@ -274,7 +269,11 @@ function SlugDetail({
       {data?.slug.automation ? (
         <p className="slugs-note">
           Shares its name with the automation flow{" "}
-          <Link href="/automations">{data.slug.automation.name}</Link>
+          {/* Deep link: the flow id, not just the section — landing on the list
+              and having to find the row again is a step the link can take. */}
+          <Link href={`/automations?flow=${encodeURIComponent(data.slug.automation.flow_id)}`}>
+            {data.slug.automation.name}
+          </Link>
           {data.slug.automation.is_active ? " (active)" : " (paused)"} — posting under this slug
           attaches to it.
         </p>
@@ -284,23 +283,24 @@ function SlugDetail({
 
       <div className="slugs-method">
         <label htmlFor="slug-method">Selection</label>
-        <select
+        <CalSelect
           id="slug-method"
           value={override}
-          onChange={(e) =>
+          options={[
+            { value: "", label: `Default (${SELECTION_LABELS[defaultMethod]})` },
+            ...SELECTION_METHODS.map((method) => ({
+              value: method,
+              label: SELECTION_LABELS[method],
+            })),
+          ]}
+          onChange={(value) =>
             update.mutate({
               slug,
-              selection_method: (e.target.value || null) as SelectionMethod | null,
+              selection_method: (value || null) as SelectionMethod | null,
             })
           }
-        >
-          <option value="">Default ({SELECTION_LABELS[defaultMethod]})</option>
-          {SELECTION_METHODS.map((method) => (
-            <option key={method} value={method}>
-              {SELECTION_LABELS[method]}
-            </option>
-          ))}
-        </select>
+          aria-label="Selection method"
+        />
         <p className="slugs-hint">
           {SELECTION_DESCRIPTIONS[data?.effective_method ?? defaultMethod]}
         </p>
@@ -448,26 +448,28 @@ function SlugHistory({
               </button>
             </span>
           ) : (
-            <select
+            <CalSelect
               value=""
-              aria-label={`Link ${post.title ?? post.external_id} to a video`}
-              onChange={(e) =>
-                e.target.value &&
+              placeholder="Link to…"
+              align="end"
+              // Nothing in the pool means nothing to link to — an empty popup
+              // is a worse answer than a control that says so by being dead.
+              disabled={!pool.length}
+              options={pool.map((video) => ({
+                value: video.id,
+                label: video.label ?? video.filename,
+              }))}
+              onChange={(id) =>
+                id &&
                 link.mutate({
                   slug,
-                  id: e.target.value,
+                  id,
                   platform: post.platform,
                   external_id: post.external_id,
                 })
               }
-            >
-              <option value="">Link to…</option>
-              {pool.map((video) => (
-                <option key={video.id} value={video.id}>
-                  {video.label ?? video.filename}
-                </option>
-              ))}
-            </select>
+              aria-label={`Link ${post.title ?? post.external_id} to a video`}
+            />
           )}
         </div>
       ))}

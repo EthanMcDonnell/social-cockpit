@@ -128,6 +128,11 @@ test("a pool shows the pick it would make, and why", () => {
   assert.match(html, /9\.0k views/, "the reason, not just the winner");
   assert.match(html, /#gym-tips/);
   assert.match(html, /Gym funnel/, "the automation sharing this slug is linked, not hidden");
+  assert.match(
+    html,
+    /href="\/automations\?flow=f1"/,
+    "and the link opens that flow — landing on the list and hunting for the row again is a step the link can take"
+  );
   assert.match(html, /2\.1%/, "engagement column");
   assert.match(html, /not yet posted/, "an unposted candidate says so rather than showing a blank");
   assert.match(html, /gym-4\.mp4/, "a candidate with no label falls back to its filename");

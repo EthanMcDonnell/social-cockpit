@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import type { AutomationFlow, AutomationConfig, CommentToDmConfig, CommentToReplyConfig, CommentToFollowDmConfig, AutomationTemplateType } from "@/lib/db";
@@ -1318,6 +1319,7 @@ type EditorState =
 
 export function AutomationsClient() {
   const { data: flows, isLoading } = useAutomationFlows();
+  const flowParam = useSearchParams().get("flow");
   const { data: mediaData } = useMedia({ all: true });
   const { data: statsMap } = useAutomationStats();
   const mediaMap = Object.fromEntries(
@@ -1331,6 +1333,20 @@ export function AutomationsClient() {
   const selectedFlowId = editor.mode === "edit" ? editor.flow.id : null;
   const rightPanelRef = useRef<HTMLDivElement>(null);
   const isEditing = editor.mode === "new" || editor.mode === "edit";
+
+  /**
+   * `?flow=<id>` opens that flow — how Slugs links to the automation sharing a
+   * slug's name. Honoured once per id rather than on every render, so closing
+   * the editor doesn't fight the URL and re-open it.
+   */
+  const opened = useRef<string | null>(null);
+  useEffect(() => {
+    if (!flowParam || opened.current === flowParam || !flows) return;
+    const flow = flows.find((f) => f.id === flowParam);
+    if (!flow) return;
+    opened.current = flowParam;
+    setEditor({ mode: "edit", flow });
+  }, [flowParam, flows]);
 
   function handleOuterClick(e: React.MouseEvent) {
     if (isEditing && rightPanelRef.current && !rightPanelRef.current.contains(e.target as Node)) {
