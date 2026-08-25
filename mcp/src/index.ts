@@ -3,8 +3,8 @@
  * social-cockpit MCP server.
  *
  * Exposes the scheduling API — book a post for a future slot, list/inspect/move/
- * cancel what's booked, publish one early — plus one read-only analytics tool for
- * grounding those decisions in what actually performed.
+ * cancel what's booked, publish one early — plus two read-only tools for grounding
+ * those decisions: what actually performed, and what a content pool would pick.
  *
  * Served over stdio with `serveStdio`, which pins one server instance per
  * connection and answers both the current stateless protocol and the older
@@ -19,6 +19,7 @@ import { registerScheduleTools } from "./tools/schedule.js";
 import { registerSlotTools } from "./tools/slots.js";
 import { registerCalendarTools } from "./tools/calendar.js";
 import { registerAnalyticsTools } from "./tools/analytics.js";
+import { registerSlugTools } from "./tools/slugs.js";
 import type { ScheduleSettings } from "./types.js";
 
 function build(): McpServer {
@@ -32,8 +33,9 @@ function build(): McpServer {
       // it is on every request whether or not the server is ever used.
       instructions:
         "Use for this account's social posting: scheduling and rescheduling Instagram reels and " +
-        "YouTube Shorts, what's on the posting calendar, choosing when to post next, and which " +
-        "past posts performed best. " +
+        "YouTube Shorts, what's on the posting calendar, choosing when to post next, which " +
+        "past posts performed best, and content pools (slugs) — booking a slot against a pool and " +
+        "letting the best-performing video be chosen when the slot arrives. " +
         "Times are in the cockpit's configured timezone unless an explicit UTC offset is given. " +
         "Media is referenced by absolute path on the cockpit machine and uploaded only when the slot arrives.",
     }
@@ -64,6 +66,7 @@ function build(): McpServer {
   registerCalendarTools(server);
   registerSlotTools(server);
   registerAnalyticsTools(server);
+  registerSlugTools(server);
 
   return server;
 }

@@ -136,3 +136,56 @@ export interface PostsSummary {
     shares: number;
   };
 }
+
+/**
+ * Content pools. Mirrors the subset of `src/lib/slugs/types.ts` this server
+ * formats — see `docs/slug-scheduling.md`.
+ */
+
+export type SelectionMethod =
+  | "most_views"
+  | "most_engagement"
+  | "least_views"
+  | "oldest_unposted"
+  | "newest"
+  | "random";
+
+export interface SlugVideoView {
+  id: string;
+  path: string;
+  filename: string;
+  label?: string;
+  /** The source file has been moved or deleted since it was enrolled. */
+  missing: boolean;
+  /** Summed across every platform this candidate has been posted to. */
+  views?: number;
+  /** Interactions per view, 0–1. Undefined when nothing is known. */
+  engagement?: number;
+  /** True when metrics were found for at least one of its posts. */
+  scored: boolean;
+  posts: { platform: SchedulePlatform; external_id: string; posted_at: string }[];
+}
+
+export interface SlugSummary {
+  slug: string;
+  name?: string;
+  selection_method?: SelectionMethod;
+  video_count: number;
+  /** Candidates still eligible for each platform (not yet posted there). */
+  eligible: Record<SchedulePlatform, number>;
+  automation?: { flow_id: string; name: string; is_active: boolean };
+}
+
+export interface SlugListResponse {
+  default_selection: SelectionMethod;
+  slugs: SlugSummary[];
+}
+
+export interface SlugDetailResponse {
+  slug: SlugSummary & { videos: SlugVideoView[] };
+  effective_method: SelectionMethod;
+  /** The pick the worker would make right now, from the real selector. */
+  next_up: { video: SlugVideoView; method: SelectionMethod; reason: string; considered: number } | null;
+  /** Why the pool could not produce a candidate, when it could not. */
+  blocked: { error: string; exhausted: boolean } | null;
+}
