@@ -171,10 +171,18 @@ function InstagramReadouts() {
         barPct={reach != null && followers ? (reach / followers) * 100 : 0}
       />
 
+      {/*
+        The insights caveat used to be a line in the header, where it made the
+        Dashboard's header taller than every other page's. It belongs next to
+        the charts it qualifies anyway — the last two days of every series on
+        this page are the ones it is talking about.
+      */}
       <div className="syncnote">
         CACHE <b>WARM · {agoLabel(profileQuery.dataUpdatedAt)}</b>
         <br />
         SOURCE <b>META GRAPH API</b>
+        <br />
+        <span className="warn">▲ INSIGHTS DELAYED ≤48H — LAST 2 DAYS OMITTED</span>
       </div>
     </>
   );

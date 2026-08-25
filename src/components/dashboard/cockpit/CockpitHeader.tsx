@@ -20,17 +20,6 @@ const NAV = [
 
 const WINDOWS: PeriodDays[] = [7, 30, 90];
 
-function formatToday(): string {
-  return new Date()
-    .toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "2-digit",
-      year: "numeric",
-    })
-    .toUpperCase();
-}
-
 function WindowSelector() {
   const [period, setPeriod] = usePeriod();
   return (
@@ -133,8 +122,17 @@ export function CockpitHeader() {
           </Link>
         ))}
       </nav>
+      {/*
+        One line, and the same one on every page. It used to carry the date, the
+        section name and the issue tally as well, which is how the header ended
+        up needing more width than it had: it wrapped to a different number of
+        lines per page, so the whole page started at a different height
+        depending on where you were. The section is what the nav highlight
+        already says, the tally is now a badge on the logs button, and the date
+        is on the wall.
+      */}
       <div className="ck-hud">
-        {platform.toUpperCase()}/MAIN · <b>{formatToday()}</b>
+        {platform.toUpperCase()}/MAIN
         {isDashboard && (
           <>
             {" "}
@@ -143,25 +141,6 @@ export function CockpitHeader() {
               <WindowSelector />
             </Suspense>
           </>
-        )}
-        <br />
-        {isDashboard ? (
-          platform === "yt" ? (
-            <span>
-              SOURCE <b>YOUTUBE DATA API v3</b> · PUBLIC METRICS
-            </span>
-          ) : (
-            <span className="warn">▲ INSIGHTS DELAYED ≤48H — LAST 2 DAYS OMITTED</span>
-          )
-        ) : (
-          <span>
-            SECTION <b>{(active?.label ?? "SYSTEM").toUpperCase()}</b> · STATUS{" "}
-            {issues > 0 ? (
-              <b className="warn">▲ {issues} LOGGED</b>
-            ) : (
-              <b>NOMINAL</b>
-            )}
-          </span>
         )}
       </div>
       <Link

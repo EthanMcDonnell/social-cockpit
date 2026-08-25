@@ -212,20 +212,18 @@ body {
   border: 1px solid var(--amber-dim);
   background: rgba(255, 179, 36, 0.06);
 }
+/* One line on every page — see CockpitHeader for why it carries so little.
+   Clipped rather than wrapped: on a window too narrow to hold the row, losing
+   the tail of a status readout beats every page below it changing height. */
 .cockpit .ck-hud {
   margin-left: auto;
   text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
   font-size: 10px;
   color: var(--mut);
   letter-spacing: 0.12em;
   line-height: 1.9;
-}
-.cockpit .ck-hud b {
-  color: var(--txt);
-  font-weight: 400;
-}
-.cockpit .ck-hud .warn {
-  color: var(--amber-hi);
 }
 .cockpit .ck-settings {
   display: flex;
@@ -251,21 +249,20 @@ body {
 }
 /* Health indicator, sitting beside the settings cog on every page. Errors and
    warnings used to reach stdout only, so noticing one meant already suspecting
-   it; this is the passive signal that removes that step. */
+   it; this is the passive signal that removes that step. Square like the cog,
+   because a control that changes width when something breaks moves the header
+   around it. */
 .cockpit .ck-health {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  width: 28px;
   height: 28px;
-  padding: 0 8px;
   margin-left: 14px;
   border: 1px solid transparent;
   border-radius: 6px;
   color: var(--mut);
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
   flex-shrink: 0;
   transition: color 0.15s ease, border-color 0.15s ease;
 }
@@ -278,11 +275,26 @@ body {
   border-color: var(--amber-dim);
   background: rgba(255, 179, 36, 0.06);
 }
-/* Only the count is tinted red. The glyph staying neutral keeps the control
-   readable as "logs" rather than reading as an alert that cannot be dismissed. */
+/* The tally rides the corner of the glyph rather than sitting beside it: the
+   button stays a button you can find by shape, and the number is a thing that
+   appears on it rather than a thing that widens it. */
 .cockpit .ck-health .ck-health-count {
-  color: var(--accent-red);
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 8px;
   font-weight: 600;
+  line-height: 1;
+  color: var(--char);
+  background: var(--accent-red);
 }
 
 .cockpit .ck-window {
@@ -433,6 +445,9 @@ body {
   color: var(--faint);
   text-transform: uppercase;
   line-height: 2;
+}
+.cockpit .syncnote .warn {
+  color: var(--amber-hi);
 }
 .cockpit .syncnote b {
   color: var(--mut);
@@ -606,6 +621,19 @@ body {
     grid-template-columns: 1fr;
   }
 }
+/* Between the full-width deck and the phone layout the row runs out of room.
+   The nav's own padding is the cheapest thing to spend — it costs a few pixels
+   of target size and nothing else, where the alternatives cost the window
+   selector or the settings cog. */
+@media (max-width: 1350px) {
+  .cockpit .ck-header {
+    gap: 12px;
+  }
+  .cockpit .ck-nav a {
+    padding: 7px 9px;
+  }
+}
+
 @media (max-width: 720px) {
   .cockpit .deck {
     padding: 0 16px 40px;
@@ -622,7 +650,7 @@ body {
   }
   .cockpit .ck-hud {
     width: 100%;
-    text-align: left;
+    justify-content: flex-start;
     margin-left: 0;
   }
   .cockpit .ck-nav {
@@ -2594,12 +2622,12 @@ body.cal-dragging * {
 }
 
 /* 8. The nav used to slide a few pixels sideways on every page change. The
-      header is one flex row, the HUD on its right is a different width on every
-      page (the window selector on the Dashboard, "12 LOGGED" vs "NOMINAL"), and
-      the row runs a hair over its 1320px budget — so the browser shrank the one
-      item with any give in it, the radar mark, and everything after it moved.
-      Pinning the identity block makes the HUD the only thing that flexes, which
-      is the one part of the header nobody is aiming a click at. */
+      header is one flex row and the HUD on its right is still wider on the
+      Dashboard than anywhere else, so on a window too narrow for the row the
+      browser shrinks whatever will give — which was the radar mark, and
+      everything after it moved. Pinning the identity block makes the HUD the
+      only thing that flexes, which is the one part of the header nobody is
+      aiming a click at. */
 .cockpit .ck-header > svg,
 .cockpit .ck-sig,
 .cockpit .ck-nav {
