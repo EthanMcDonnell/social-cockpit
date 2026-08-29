@@ -1,30 +1,74 @@
 # Social Cockpit portfolio media — review pack
 
-This folder is the review gate for potential portfolio media. Nothing here has been copied to the personal site.
+This folder is the review gate for potential portfolio media. Nothing here has
+been copied to the personal site.
 
-The icon exports reproduce the product’s existing radar scope; they do not introduce a replacement brand identity. Screens and recordings were captured from the already-running local application in a **read-only** browser session: no posts, schedules, settings, uploads, messages, automations, or credentials were changed.
+Every screenshot is of a **fabricated account** — see [`demo/`](demo/). The
+earlier pack was the live install with black boxes over every private region,
+which reads as a broken app rather than a working one, and a calendar with three
+blank cards in it argues for nothing. The demo account has nothing to hide, so
+the screenshots show the software actually being used: a full week in the
+scheduler, seven live automation flows, a populated analytics dashboard.
+
+No account data, follower count, caption, or DM in this folder is real. The
+demo instance cannot reach Meta — see the safety table in
+[`demo/README.md`](demo/README.md).
+
+The icon exports reproduce the product's own radar scope; they do not introduce
+a replacement brand identity.
 
 ## Candidates
 
 | Asset | Role | Source / provenance | Privacy treatment | Status | Draft alt text |
 | --- | --- | --- | --- | --- | --- |
-| [`../../screenshots/dashboard.png`](../../screenshots/dashboard.png) | Hero dashboard still | Existing tracked README screenshot | Existing project documentation asset; re-review before public use | `candidate` | “Social Cockpit’s dark instrument-panel dashboard with follower, video-view, posting-time, and posting-frequency panels.” |
-| [`identity/social-cockpit-radar.svg`](identity/social-cockpit-radar.svg) | Proper icon logo | Faithful documentation export of [`RadarScope.tsx`](../../src/components/dashboard/cockpit/RadarScope.tsx) | No account data | `candidate` | “Social Cockpit radar icon with an amber scan sweep and contact blip.” |
-| [`identity/social-cockpit-radar-512.png`](identity/social-cockpit-radar-512.png) | Raster icon logo | 512px export of the SVG above | No account data | `candidate` | “Square Social Cockpit radar icon on charcoal.” |
-| [`identity/social-cockpit-lockup.svg`](identity/social-cockpit-lockup.svg) | Identity lockup | Faithful export of the real header’s radar and `SOCIAL·COCKPIT` treatment | No account data | `candidate` | “Social Cockpit radar mark beside the Social Cockpit wordmark.” |
-| [`screenshots/02-calendar.png`](screenshots/02-calendar.png) | Scheduler capability still | Read-only navigation from `/dashboard` to `/calendar` | All scheduled-post title/content regions are masked with opaque charcoal boxes | `candidate` | “Social Cockpit’s week scheduler with private scheduled-post details redacted.” |
-| [`screenshots/03-automations.png`](screenshots/03-automations.png) | Automation capability still | Read-only visit to `/automations` | Flow thumbnails and user-authored source text are masked; generic capability labels and controls remain | `candidate` | “Social Cockpit’s Comment to DM automation flow list with private flow details redacted.” |
-| [`recordings/01-dashboard-calendar.mp4`](recordings/01-dashboard-calendar.mp4) | Product interaction proof | A real browser session, captured through Chrome DevTools Protocol: dashboard → header calendar link → calendar | Calendar event cards are masked after navigation; no user actions that mutate data occurred | `candidate` | “A short read-only navigation from the analytics dashboard to the scheduling calendar.” |
-| [`posters/01-dashboard-calendar.jpg`](posters/01-dashboard-calendar.jpg) | Recording poster | Still sampled from the redacted recording | Same three event-card redactions as the recording | `candidate` | “Redacted Social Cockpit weekly calendar used as the dashboard-to-calendar recording poster.” |
+| [`screenshots/01-dashboard.png`](screenshots/01-dashboard.png) | Hero analytics still | Demo instance at `/dashboard` | Fabricated account; nothing to redact | `candidate` | "Social Cockpit's instrument-panel dashboard: a rising follower line, per-post video views, a best-time-to-post heatmap and posting frequency." |
+| [`screenshots/02-calendar.png`](screenshots/02-calendar.png) | Scheduler still | Demo instance at `/calendar`, week view | Fabricated account; nothing to redact | `candidate` | "A week in Social Cockpit's scheduler, with Instagram Reels and YouTube Shorts published and queued across seven days." |
+| [`screenshots/03-automations.png`](screenshots/03-automations.png) | Automation-builder still | Demo instance at `/automations`, first flow opened | Fabricated account; nothing to redact | `candidate` | "Social Cockpit's comment-to-DM builder: trigger keyword, the posts it applies to, the public replies and the DM that gets sent." |
+| [`screenshots/04-posts.png`](screenshots/04-posts.png) | Post-analytics still | Demo instance at `/posts`, table view | Fabricated account; nothing to redact | `candidate` | "Social Cockpit's post table ranking 42 Reels by engagement, likes, comments, reach and views." |
+| [`identity/social-cockpit-radar.svg`](identity/social-cockpit-radar.svg) | Icon logo | Export of [`RadarScope.tsx`](../../src/components/dashboard/cockpit/RadarScope.tsx), posed mid-rotation | No account data | `candidate` | "Social Cockpit radar icon with an amber scan sweep and contact blip." |
+| [`identity/social-cockpit-radar-512.png`](identity/social-cockpit-radar-512.png) | Raster icon logo | 512px export of the SVG above | No account data | `candidate` | "Square Social Cockpit radar icon on charcoal." |
+| [`identity/social-cockpit-lockup.svg`](identity/social-cockpit-lockup.svg) | Identity lockup | The radar beside the header's `SOCIAL·COCKPIT` treatment, glyphs converted to outlines | No account data | `candidate` | "Social Cockpit radar mark beside the Social Cockpit wordmark." |
 
-## Capture notes
+## Identity notes
 
-- Capture date: 2026-08-29.
-- Browser viewport: 1600 × 1100.
-- The recording is a 6.25-second H.264 MP4 assembled from genuine periodic captures of the same browser tab during real, read-only navigation. It is not a simulated dashboard or a replayed terminal transcript.
-- Redaction is intentionally additive: it only covers existing private text/image areas and does not replace values with made-up application data.
-- Review each candidate at full size before changing its status to `approved for personal site`.
+The radar mark is a still of an animation that never stops. Parked at twelve
+o'clock it read as a stopped clock hand, so it is now posed 38° into its
+rotation, with the leading edge just past the contact blip — the moment a radar
+picture is actually about. Nothing about the component changed; this is a
+different frame of the same sweep.
 
-## Out of scope in this repository
+The lockup's wordmark is Barlow Semi Condensed Bold at 0.3em with `COCKPIT` in
+amber, matching `.ck-sig` in `globals.css`. It is stored as outlines rather than
+`<text>`: the previous version named fonts it could not guarantee and overran
+its own viewBox in any renderer that did not have Arial Narrow. Regenerate with:
 
-Do not move these assets into the portfolio yet. A later, explicit approval should copy only approved web-sized derivatives; it should not remove these source documentation assets.
+```
+pip install fonttools brotli
+python3 docs/portfolio/make_lockup.py
+```
+
+## Regenerating the screenshots
+
+```
+docs/portfolio/demo/run.sh
+```
+
+Read [`demo/README.md`](demo/README.md) before running it. In short: the app runs
+from a detached worktree on port 3100 against scratch databases, with the
+Instagram client repointed at a local mock, so the live install on 3000 is never
+opened.
+
+## Removed on review
+
+- `recordings/01-dashboard-calendar.mp4` and `posters/01-dashboard-calendar.jpg`
+  — a redacted dashboard-to-calendar navigation. Superseded by the stills above.
+  A replacement recording would be worth having; the harness already drives the
+  browser, so it is a screencast away.
+- The previous `02-calendar.png` and `03-automations.png`, which were the live
+  account with its content masked out.
+
+## Approval gate
+
+These contain no personal data, so the earlier hold on identifying a real person
+no longer applies. Review each at full size, then copy web-sized derivatives to
+the personal site.

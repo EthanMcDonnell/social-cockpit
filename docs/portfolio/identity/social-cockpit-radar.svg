@@ -10,7 +10,11 @@
   <rect width="512" height="512" rx="112" fill="#121110"/>
   <circle cx="256" cy="256" r="192" fill="#171613" stroke="#3B3730" stroke-width="14"/>
   <circle cx="256" cy="256" r="122" fill="none" stroke="#3B3730" stroke-width="14"/>
-  <path d="M256 256V64A192 192 0 0 1 391.76 120.24Z" fill="url(#sweep)"/>
-  <path d="M256 256V64" fill="none" stroke="#FFB324" stroke-width="18" stroke-linecap="round"/>
-  <circle cx="324" cy="188" r="16" fill="#FFC72E"/>
+  <!-- Posed mid-rotation. The leading edge sits just past the blip, so the
+       contact reads as freshly swept rather than as a stopped hand. -->
+  <g transform="rotate(38 256 256)">
+    <path d="M256 256V64A192 192 0 0 1 391.76 120.24Z" fill="url(#sweep)"/>
+    <path d="M256 256V64" fill="none" stroke="#FFB324" stroke-width="18" stroke-linecap="round"/>
+  </g>
+  <circle cx="383" cy="177" r="16" fill="#FFC72E"/>
 </svg>
