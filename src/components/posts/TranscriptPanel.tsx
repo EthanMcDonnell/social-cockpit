@@ -63,7 +63,7 @@ export function TranscriptPanel({ mediaId, mediaType }: TranscriptPanelProps) {
                 </span>
               )}
             </p>
-            <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+            <p className="ui-k text-[var(--text-muted)]">
               {transcript.model}
               {transcript.language ? ` · ${transcript.language}` : ""}
               {transcript.duration ? ` · ${Math.round(transcript.duration)}s` : ""}

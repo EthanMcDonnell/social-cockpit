@@ -22,7 +22,7 @@ function InlineTranscript({ mediaId, mediaType }: { mediaId: string; mediaType: 
 
   return (
     <div>
-      <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Script</p>
+      <p className="ui-k text-[var(--text-muted)]">Script</p>
       <div className="mt-1">
         {transcriptQuery.isLoading ? (
           <div className="space-y-1.5">
@@ -100,12 +100,12 @@ export function PostsTable({ rows, metric, sort, loadingIds }: PostsTableProps) 
     <Card padding="none" className="overflow-hidden">
       {/* Sort / header bar */}
       <div className="flex items-center gap-3 border-b border-[var(--border)] bg-[var(--bg-base)]/40 px-4 py-2.5">
-        <span className="w-7 shrink-0 text-center font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+        <span className="w-7 shrink-0 text-center ui-k text-[var(--text-muted)]">
           #
         </span>
         <button
           onClick={() => handleSort("timestamp")}
-          className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+          className="ui-k text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
         >
           Post {arrow("timestamp")}
         </button>
@@ -115,7 +115,7 @@ export function PostsTable({ rows, metric, sort, loadingIds }: PostsTableProps) 
               key={col.key}
               onClick={() => handleSort(col.key)}
               className={clsx(
-                "rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors",
+                "rounded-md px-2 py-1 ui-k transition-colors",
                 sortKey === col.key
                   ? "bg-[var(--accent-cyan)]/15 text-[var(--accent-cyan)]"
                   : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
@@ -184,7 +184,7 @@ export function PostsTable({ rows, metric, sort, loadingIds }: PostsTableProps) 
                   <p className="line-clamp-1 text-sm text-[var(--text-primary)]">
                     {row.caption || <span className="italic text-[var(--text-muted)]">No caption</span>}
                   </p>
-                  <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                  <p className="mt-1 ui-k text-[var(--text-muted)]">
                     {MEDIA_TYPE_LABEL[row.mediaType] ?? row.mediaType} · {row.timestamp}
                   </p>
                 </div>
@@ -193,7 +193,7 @@ export function PostsTable({ rows, metric, sort, loadingIds }: PostsTableProps) 
                 <div className="hidden shrink-0 items-center gap-5 md:flex">
                   {secondaries.map((s) => (
                     <div key={s.key} className="w-14 text-right">
-                      <p className="font-mono text-[9px] uppercase tracking-wider text-[var(--text-muted)]/70">
+                      <p className="ui-k-sm text-[var(--text-muted)]/70">
                         {s.short}
                       </p>
                       <p className="font-mono text-xs tabular-nums text-[var(--text-muted)]">
@@ -206,7 +206,7 @@ export function PostsTable({ rows, metric, sort, loadingIds }: PostsTableProps) 
                 {/* Active metric — value + bar */}
                 <div className="flex w-44 shrink-0 flex-col items-end gap-1.5">
                   <div className="flex items-baseline gap-1.5">
-                    <span className="font-mono text-[9px] uppercase tracking-wider text-[var(--text-muted)]/70">
+                    <span className="ui-k-sm text-[var(--text-muted)]/70">
                       {def.short}
                     </span>
                     <span className="font-mono text-base font-semibold tabular-nums text-[var(--text-primary)]">
@@ -247,7 +247,7 @@ export function PostsTable({ rows, metric, sort, loadingIds }: PostsTableProps) 
                   <div className="grid gap-4 md:grid-cols-[1fr_auto]">
                     <div className="min-w-0 space-y-3">
                       <div>
-                        <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                        <p className="ui-k text-[var(--text-muted)]">
                           Caption
                         </p>
                         <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--text-primary)]">
@@ -261,7 +261,7 @@ export function PostsTable({ rows, metric, sort, loadingIds }: PostsTableProps) 
                     <div className="grid grid-cols-4 gap-x-5 gap-y-3 self-start md:grid-cols-2 lg:grid-cols-4">
                       {METRICS.map((m) => (
                         <div key={m.key} className="text-right">
-                          <p className="font-mono text-[9px] uppercase tracking-wider text-[var(--text-muted)]/70">
+                          <p className="ui-k-sm text-[var(--text-muted)]/70">
                             {m.glyph} {m.short}
                           </p>
                           <p

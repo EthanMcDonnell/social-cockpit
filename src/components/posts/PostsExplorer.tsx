@@ -317,7 +317,7 @@ export function PostsExplorer() {
 
         {/* Sort-by selector */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-0.5 font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+          <span className="mr-0.5 ui-k text-[var(--text-muted)]">
             Sort by
           </span>
           <button

@@ -29,7 +29,7 @@ export function PostsCompare({ rows, metric, loadingIds }: PostsCompareProps) {
   return (
     <Card padding="none" className="overflow-hidden">
       <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2.5">
-        <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+        <span className="ui-k text-[var(--text-muted)]">
           Ranked by {def.label}
         </span>
         <span className="font-mono text-[10px] text-[var(--text-muted)]">

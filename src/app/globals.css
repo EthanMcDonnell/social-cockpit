@@ -442,6 +442,34 @@ body {
   background: var(--amber);
   box-shadow: 0 0 8px rgba(255, 179, 36, 0.7);
 }
+/* ── the label voice ──
+   The uppercase micro-label, available outside the cockpit's own blocks.
+
+   It exists because the same element was being set two ways on two pages: the
+   Slugs pool header (`.slugs-pool .is-head span`) is condensed at 0.16em, while
+   the Posts table header was mono at 0.05em. Same object, same size, same job —
+   different typeface, because one was written in this stylesheet and the other
+   in Tailwind utilities.
+
+   Sets type only, never colour: callers keep their own `text-…` class, so a
+   muted label, a dimmed one and a white-on-image one all share the voice
+   without this file needing to know about any of them. */
+.ui-k,
+.ui-k-sm {
+  font-family: var(--cond);
+  text-transform: uppercase;
+}
+.ui-k {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+}
+/* Small caps need a touch more air to stay legible — tracking runs inverse to
+   size, which is the one rule the existing values mostly already follow. */
+.ui-k-sm {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+}
+
 /* ── stat tile ──
    A compact readout, and deliberately built from the same three parts as
    `.ro` above — key, value, detail — because it is the same object at a
