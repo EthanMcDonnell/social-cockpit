@@ -1,58 +1,75 @@
-# Demo harness
+# Portfolio demo harness
 
-Brings up a throwaway copy of Social Cockpit, fills it with a fabricated
-account, and screenshots it.
+Brings up an isolated Social Cockpit, fills it with a fully fabricated creative
+studio account, and writes four screenshot candidates to a fresh scratch
+directory.
 
-```
-docs/portfolio/demo/run.sh          # into $TMPDIR/sc-demo
-KEEP=1 docs/portfolio/demo/run.sh   # ...and leave it running to poke at
+```sh
+docs/portfolio/demo/run.sh                    # prints a fresh scratch location
+KEEP=1 docs/portfolio/demo/run.sh              # leave that isolated demo open
 ```
 
 ## Why it exists
 
-The first pass at portfolio screenshots was the live install with black boxes
-painted over every private region: captions, flow names, thumbnails, the
-scheduled queue. What that produces is not a redacted screenshot of a working
-app, it is a screenshot of a broken one - and a calendar with three blank cards
-in it says nothing about a scheduler. A fabricated account with nothing to hide
-shows the same software actually being used.
+The first portfolio screenshots were taken from the live install with private
+regions painted over. A fabricated account with nothing to hide demonstrates the
+software actually being used: a current analytics dashboard, an upcoming work
+week, campaign-specific automations, and a varied media grid.
+
+**Lumen Field / Demo is fictional.** Its profile, metrics, captions, destinations,
+flows, and locally served visual covers exist only for this review pack. The
+covers are original editorial illustrations; their provenance is in
+[`assets/ATTRIBUTION.md`](assets/ATTRIBUTION.md).
 
 ## What it does not touch
 
-The live install is serving production on port 3000 out of `.next` and `data/`.
-Nothing here goes near either:
+The production app serves port 3000 from `.next` and `data/`. This harness never
+opens, targets, or writes them:
 
 | Concern | How it is prevented |
 | --- | --- |
-| The production build | The app runs from a detached `git worktree`, and `next dev` writes to `.next-dev` regardless |
-| The production database | Every `*_DB_PATH` points into a scratch directory; `seed.mjs` refuses to open the repo's own `data/` |
-| The production port | 3100, and the run aborts if anything already holds it |
-| Reaching Instagram | `BASE_URL` in `src/lib/instagram/{client,usage}.ts` is rewritten *in the worktree* to point at `mock-graph.mjs`. There is no real access token in the environment either |
+| Production build | Every run creates a new detached worktree; only that worktree runs `next dev`, which writes `.next-dev` there |
+| Production database | Every `*_DB_PATH` points into the run's unique scratch directory; `seed.mjs` refuses the repository `data/` directory |
+| Production port | The demo uses 3100 and fails if it, the mock port 3199, or the Chrome DevTools port 9333 is occupied. It never probes port 3000 |
+| Real social APIs | The worktree-only Graph base URLs are rewritten to `mock-graph.mjs`; the process starts under `env -i` with a fake token |
+| Active checkout | The source tree is neither built nor changed. A binary-safe, four-file allowlist can overlay the current Calendar, Compose, Slugs, and global-style UI changes into the detached worktree only |
 
-The scheduler worker is deliberately left **on**: the calendar carries a standing
-banner while it is off, and a screenshot of a disabled scheduler is worse than
-none. It is safe because every seeded job in the past is already `published`, so
-nothing is ever due, and the mock stands between it and Meta regardless.
+The scheduler stays **on** so Calendar does not carry a disabled-worker banner.
+The dataset seeds historical work as published, puts all open work in the next
+full planning weeks, and puts the local read-only Graph mock in front of every
+social request. No capture can cause a pending demo job to become due.
 
 ## The pieces
 
 | File | Job |
 | --- | --- |
-| `dataset.mjs` | The fabricated account: profile, 42 Reels and their insights, 60 days of follower deltas, a fortnight of scheduled posts, seven automation flows |
-| `mock-graph.mjs` | Serves that as the Graph API, and draws each Reel's cover as a title card |
-| `seed.mjs` | Writes the scheduled queue and the flows into the demo database |
-| `shoot.mjs` | Drives headless Chrome over CDP and captures the four pages |
-| `run.sh` | Worktree, mock, app, migration, seed, warm, shoot |
+| `dataset.mjs` | Fictional profile, 42 campaign Reels and their insights, 60 daily source values, a historical/future queue, and seven flows |
+| `assets/campaign/` | Original locally served campaign covers; no remote CDN dependency |
+| `make_campaign_assets.mjs` | Rebuilds the original SVG campaign-cover set |
+| `mock-graph.mjs` | Serves the dataset and fixed cover manifest as the local, read-only Graph API |
+| `seed.mjs` | Writes the schedule and flows into the scratch database |
+| `shoot.mjs` | Drives headless Chrome over CDP and writes scratch candidate images |
+| `run.sh` | Worktree, allowlisted UI overlay, mock, app, migration, seed, warm-up, capture, and provenance manifest |
 
-The dataset is anchored to **today**, not to a fixed date: the dashboard trims
-its window to the last 48 hours of real time and the calendar opens on the real
-current week, so a frozen dataset screenshots as a half-empty chart and a
-calendar of last month.
+The fixture is anchored to capture time rather than a historical date. The
+calendar opens on a real current week and the dashboard respects the product's
+selected 7/30/90-day window (with the normal two-day insight delay); a frozen
+dataset would otherwise look empty or stale.
 
-## Known rough edge
+## Capture review workflow
 
-`.gitignore` line 41 is `data/` with no leading slash, so it also matches
-`src/lib/data/` — two real source modules the repo does not track, and without
-which a fresh checkout does not compile. `run.sh` copies them into the worktree
-and prints a note. The actual fix is to anchor the pattern as `/data/` and commit
-`src/lib/data/calculations.ts` and `src/lib/data/transforms.ts`.
+`run.sh` writes candidate PNGs and `capture-manifest.txt` beneath a unique scratch
+path. It does **not** overwrite `../screenshots/`. Before promotion, inspect all
+four at native size and check:
+
+1. no skeletons, error overlays, devtools, missing cover images, or stale title
+   cards;
+2. only loopback app/mock/CDP endpoints appeared in the logs;
+3. Dashboard uses the current hourly views-and-engagement Best Time instrument,
+   not the historical weekday heatmap;
+4. Calendar shows a populated current week, Automations opens a campaign-relevant
+   flow, and Posts uses the existing grid control with varied local cover art;
+5. the base revision, overlay checksum, and dimensions in the manifest match the
+   reviewed run.
+
+Only then replace all four review candidates together.

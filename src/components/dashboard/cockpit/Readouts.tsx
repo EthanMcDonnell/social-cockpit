@@ -7,7 +7,11 @@ import { usePeriod } from "@/hooks/usePeriod";
 import { usePlatform } from "@/hooks/usePlatform";
 import { useYoutubeChannel } from "@/hooks/useYoutubeChannel";
 import { useYoutubeVideos } from "@/hooks/useYoutubeVideos";
-import { extractLatestValue, calcPeriodDelta } from "@/lib/data/transforms";
+import {
+  extractLatestValue,
+  reconstructCumulativeTotals,
+  userInsightsToTimeSeries,
+} from "@/lib/data/transforms";
 import { formatCount } from "@/lib/utils/format";
 import { PlatformSwitch } from "./PlatformSwitch";
 
@@ -71,9 +75,22 @@ function InstagramReadouts() {
 
   // ── Followers ──────────────────────────────────────────────────────────────
   const followers = profileQuery.data?.followers_count;
-  const followerDelta = insightsQuery.data
-    ? calcPeriodDelta(insightsQuery.data, "follower_count")
-    : undefined;
+  const followerSeries =
+    insightsQuery.data && followers != null
+      ? reconstructCumulativeTotals(
+          userInsightsToTimeSeries(insightsQuery.data, "follower_count"),
+          followers
+        )
+      : [];
+  const followerDelta =
+    followerSeries.length > 1
+      ? (() => {
+          const first = followerSeries[0].value;
+          const last = followerSeries[followerSeries.length - 1].value;
+          const delta = last - first;
+          return { delta, ratio: first === 0 ? 0 : delta / first };
+        })()
+      : undefined;
 
   // ── Posts (total + published within the selected window) ─────────────────────
   const allMedia = mediaQuery.data?.data ?? [];
@@ -150,7 +167,7 @@ function InstagramReadouts() {
       <Readout
         k="Avg Likes"
         code="R-03"
-        value={avgLikes != null ? avgLikes.toFixed(1) : DASH}
+        value={avgLikes != null ? formatCount(Math.round(avgLikes)) : DASH}
         detail={`mean per post · ${period}d`}
         barPct={avgLikes != null ? avgLikes : 0}
       />
@@ -158,7 +175,7 @@ function InstagramReadouts() {
       <Readout
         k="Avg Comments"
         code="R-04"
-        value={avgComments != null ? avgComments.toFixed(1) : DASH}
+        value={avgComments != null ? formatCount(Math.round(avgComments)) : DASH}
         detail={`mean per post · ${period}d`}
         barPct={avgComments != null ? avgComments * 10 : 0}
       />
@@ -167,7 +184,7 @@ function InstagramReadouts() {
         k="Reach"
         code="R-05"
         value={reach != null ? reach.toLocaleString() : DASH}
-        detail="unique accounts"
+        detail="latest available day · accounts reached"
         barPct={reach != null && followers ? (reach / followers) * 100 : 0}
       />
 

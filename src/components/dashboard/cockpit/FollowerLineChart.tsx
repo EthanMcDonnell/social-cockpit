@@ -16,24 +16,10 @@ import { useProfile } from "@/hooks/useProfile";
 import { usePeriod } from "@/hooks/usePeriod";
 import { usePlatform } from "@/hooks/usePlatform";
 import { useYoutubeChannel } from "@/hooks/useYoutubeChannel";
-import { userInsightsToTimeSeries, type TimeSeriesPoint } from "@/lib/data/transforms";
+import { reconstructCumulativeTotals, userInsightsToTimeSeries } from "@/lib/data/transforms";
 import { formatCount } from "@/lib/utils/format";
 import { Panel } from "./Panel";
 import { cockpitTooltip } from "./chartTheme";
-
-function buildCumulativeSeries(
-  deltas: TimeSeriesPoint[],
-  currentTotal: number
-): TimeSeriesPoint[] {
-  if (!deltas.length) return [];
-  const sorted = [...deltas].sort((a, b) => a.isoDate.localeCompare(b.isoDate));
-  const totals = new Array<number>(sorted.length);
-  totals[sorted.length - 1] = currentTotal;
-  for (let i = sorted.length - 2; i >= 0; i--) {
-    totals[i] = totals[i + 1] - sorted[i + 1].value;
-  }
-  return sorted.map((point, i) => ({ ...point, value: totals[i] }));
-}
 
 function niceStep(rough: number): number {
   if (rough <= 0) return 1;
@@ -107,7 +93,7 @@ export function FollowerLineChart() {
 
   const series =
     insightsQuery.data && profileQuery.data?.followers_count != null
-      ? buildCumulativeSeries(
+      ? reconstructCumulativeTotals(
           userInsightsToTimeSeries(insightsQuery.data, "follower_count"),
           profileQuery.data.followers_count
         )

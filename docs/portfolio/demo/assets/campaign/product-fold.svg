@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720" role="img" aria-label="Original editorial campaign illustration">
+  <defs>
+    <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F2D3C2"/><stop offset="1" stop-color="#9B5E73"/></linearGradient>
+    <filter id="noise3" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="14"/><feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .06 0"/></filter>
+  </defs>
+  <rect width="720" height="720" fill="url(#g3)"/>
+  
+    <ellipse cx="355" cy="602" rx="263" ry="65" fill="#141C35" opacity=".26"/>
+    <path d="M194 263L450 176L575 292L318 386Z" fill="#F2D3C2"/>
+    <path d="M194 263L318 386V580L194 450Z" fill="#343A62"/>
+    <path d="M318 386L575 292V487L318 580Z" fill="#9B5E73"/>
+    <path d="M353 298L470 257L521 289L405 331Z" fill="#FFF4DF" opacity=".78"/>
+    <path d="M318 386V580" stroke="#FFF4DF" stroke-width="7" opacity=".3"/>
+    <circle cx="102" cy="142" r="48" fill="#343A62" opacity=".7"/>
+  
+  <rect width="720" height="720" fill="#1B2334" filter="url(#noise3)" opacity=".35"/>
+  <rect x="22" y="22" width="676" height="676" rx="10" fill="none" stroke="#FFF8ED" stroke-width="2" opacity=".44"/>
+</svg>

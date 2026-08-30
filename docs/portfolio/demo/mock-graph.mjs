@@ -1,25 +1,37 @@
 /**
- * A stand-in for graph.instagram.com, serving the fabricated account in
- * dataset.mjs.
+ * A local, read-only stand-in for graph.instagram.com.
  *
- * This is the reason the demo instance is safe to run: `BASE_URL` in
- * src/lib/instagram/{client,usage}.ts is repointed here, so no request the app
- * makes can reach Meta even if a worker wakes up and tries to publish. It also
- * serves the Reel thumbnails, so the pages that show media have something real
- * to load.
+ * It serves the single fabricated campaign in dataset.mjs, including local visual
+ * fixtures. `run.sh` rewrites the app's Graph base URLs to this server inside an
+ * isolated worktree, so a capture cannot reach a real account.
  *
  *   node docs/portfolio/demo/mock-graph.mjs [port]
  */
 
 import { createServer } from "node:http";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ACCOUNT_ID, PROFILE, MEDIA, USER_INSIGHTS } from "./dataset.mjs";
 
 const PORT = Number(process.argv[2] ?? 3199);
 const ORIGIN = `http://127.0.0.1:${PORT}`;
+const ASSET_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "assets/campaign");
+const byId = new Map(MEDIA.map((media) => [media.id, media]));
+const coverKeys = new Set(MEDIA.map((media) => media.cover));
 
-const byId = new Map(MEDIA.map((m) => [m.id, m]));
+function send(res, status, body, type = "application/json", headers = {}) {
+  res.writeHead(status, {
+    "content-type": type,
+    // The rate-limit meter reads this. It is intentionally a quiet, healthy demo account.
+    "x-app-usage": JSON.stringify({ call_count: 11, total_cputime: 3, total_time: 4 }),
+    "access-control-allow-origin": "*",
+    ...headers,
+  });
+  res.end(typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body));
+}
 
-/** Graph returns insights as one entry per metric; media metrics are lifetime. */
+/** Graph returns user/media insights as one entry per requested metric. */
 function insightsResponse(entries) {
   return {
     data: entries.map(([name, values]) => ({
@@ -33,106 +45,95 @@ function insightsResponse(entries) {
   };
 }
 
-function mediaPayload(m) {
+function mediaPayload(media) {
+  const cover = encodeURIComponent(media.cover);
   return {
-    id: m.id,
-    caption: m.caption,
-    media_type: m.media_type,
-    media_product_type: m.media_product_type,
-    permalink: m.permalink,
-    shortcode: m.shortcode,
-    timestamp: m.timestamp,
-    like_count: m.like_count,
-    comments_count: m.comments_count,
-    thumbnail_url: `${ORIGIN}/thumb/${m.id}.svg`,
-    media_url: `${ORIGIN}/thumb/${m.id}.svg`,
+    id: media.id,
+    caption: media.caption,
+    media_type: media.media_type,
+    media_product_type: media.media_product_type,
+    permalink: media.permalink,
+    shortcode: media.shortcode,
+    timestamp: media.timestamp,
+    like_count: media.like_count,
+    comments_count: media.comments_count,
+    thumbnail_url: `${ORIGIN}/thumb/${cover}.svg`,
+    media_url: `${ORIGIN}/thumb/${cover}.svg`,
   };
 }
 
-/**
- * A title card in the account's own style, standing in for the Reel's cover.
- * Drawn rather than photographed: a demo dataset should not carry a real
- * person's face around with it.
- */
-function thumbnail(m) {
-  const words = m.title.split(" ");
-  const lines = [];
-  let line = "";
-  for (const word of words) {
-    if ((line + " " + word).trim().length > 15) {
-      lines.push(line.trim());
-      line = word;
-    } else {
-      line += ` ${word}`;
-    }
+function selectedUserValues(values, search) {
+  const since = Number(search.get("since"));
+  const until = Number(search.get("until"));
+  if (!Number.isFinite(since) || !Number.isFinite(until)) return values;
+  const lower = since * 1000;
+  const upper = until * 1000;
+  return values.filter((entry) => {
+    const at = new Date(entry.end_time).getTime();
+    return at >= lower && at <= upper;
+  });
+}
+
+function serveCover(res, key) {
+  // Fixed manifest keys and a simple filename rule make traversal impossible.
+  if (!coverKeys.has(key) || !/^[a-z0-9-]+$/.test(key)) {
+    return send(res, 404, "cover not found", "text/plain; charset=utf-8");
   }
-  lines.push(line.trim());
-  const start = 300 - ((lines.length - 1) * 72) / 2;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 640">
-  <defs><linearGradient id="g" x1="0" y1="0" x2="0.4" y2="1">
-    <stop offset="0" stop-color="#1E1C18"/><stop offset="1" stop-color="#0B0A09"/>
-  </linearGradient></defs>
-  <rect width="360" height="640" fill="url(#g)"/>
-  <g fill="#F3C84E" font-family="Georgia, 'Times New Roman', serif" font-size="58" text-anchor="middle">
-${lines.map((l, i) => `    <text x="180" y="${start + i * 72}">${l.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</text>`).join("\n")}
-  </g>
-  <text x="180" y="600" fill="#7A756C" font-family="Georgia, serif" font-size="26" font-style="italic" text-anchor="middle">How It's Built</text>
-</svg>`;
+  const path = resolve(ASSET_ROOT, `${key}.svg`);
+  if (!path.startsWith(`${ASSET_ROOT}/`) || !existsSync(path)) {
+    return send(res, 404, "cover not found", "text/plain; charset=utf-8");
+  }
+  return send(res, 200, readFileSync(path), "image/svg+xml", {
+    "cache-control": "public, max-age=3600, immutable",
+  });
 }
 
 createServer((req, res) => {
-  const url = new URL(req.url, ORIGIN);
-  const path = url.pathname.replace(/^\/v\d+\.\d+/, "");
-
-  const send = (body, type = "application/json") => {
-    res.writeHead(200, {
-      "content-type": type,
-      // The header the rate-limit meter reads. A quiet, healthy account.
-      "x-app-usage": JSON.stringify({ call_count: 11, total_cputime: 3, total_time: 4 }),
-      "access-control-allow-origin": "*",
-    });
-    res.end(typeof body === "string" ? body : JSON.stringify(body));
-  };
-
-  const thumb = path.match(/^\/thumb\/(\d+)\.svg$/);
-  if (thumb) {
-    const m = byId.get(thumb[1]);
-    return m ? send(thumbnail(m), "image/svg+xml") : send("", "image/svg+xml");
+  if (req.method !== "GET") {
+    return send(res, 405, { error: "demo mock is read-only" }, "application/json", { allow: "GET" });
   }
 
-  if (path === `/${ACCOUNT_ID}`) return send(PROFILE);
+  const url = new URL(req.url, ORIGIN);
+  const path = url.pathname.replace(/^\/v\d+\.\d+/, "");
+  const cover = path.match(/^\/thumb\/([a-z0-9-]+)\.svg$/);
+  if (cover) return serveCover(res, cover[1]);
+
+  if (path === `/${ACCOUNT_ID}`) return send(res, 200, PROFILE);
 
   if (path === `/${ACCOUNT_ID}/insights`) {
     const wanted = (url.searchParams.get("metric") ?? "").split(",").filter(Boolean);
     return send(
+      res,
+      200,
       insightsResponse(
-        wanted.filter((m) => USER_INSIGHTS[m]).map((m) => [m, USER_INSIGHTS[m]])
+        wanted
+          .filter((metric) => USER_INSIGHTS[metric])
+          .map((metric) => [metric, selectedUserValues(USER_INSIGHTS[metric], url.searchParams)])
       )
     );
   }
 
-  if (path === `/${ACCOUNT_ID}/media`) {
-    return send({ data: MEDIA.map(mediaPayload) });
-  }
+  if (path === `/${ACCOUNT_ID}/media`) return send(res, 200, { data: MEDIA.map(mediaPayload) });
 
   const media = path.match(/^\/(\d+)\/(insights|comments)$/);
   if (media) {
-    const m = byId.get(media[1]);
-    if (!m) return send({ data: [] });
-    if (media[2] === "comments") return send({ data: [] });
+    const item = byId.get(media[1]);
+    if (!item) return send(res, 404, { data: [] });
+    if (media[2] === "comments") return send(res, 200, { data: [] });
     const wanted = (url.searchParams.get("metric") ?? "").split(",").filter(Boolean);
     return send(
+      res,
+      200,
       insightsResponse(
         wanted
-          .filter((k) => m.insights[k] !== undefined)
-          .map((k) => [k, [{ value: m.insights[k] }]])
+          .filter((metric) => item.insights[metric] !== undefined)
+          .map((metric) => [metric, [{ value: item.insights[metric] }]])
       )
     );
   }
 
-  // Anything unmodelled answers like an empty edge rather than an error, so one
-  // missing endpoint cannot put an error state into a screenshot.
-  send({ data: [] });
+  // A missing read edge should look empty, not produce an error state in a shot.
+  return send(res, 200, { data: [] });
 }).listen(PORT, "127.0.0.1", () => {
-  console.log(`mock graph on ${ORIGIN} — ${MEDIA.length} media, account ${ACCOUNT_ID}`);
+  console.log(`mock graph on ${ORIGIN} — ${MEDIA.length} media, ${coverKeys.size} local covers`);
 });

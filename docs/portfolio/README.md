@@ -3,16 +3,11 @@
 This folder is the review gate for potential portfolio media. Nothing here has
 been copied to the personal site.
 
-Every screenshot is of a **fabricated account** — see [`demo/`](demo/). The
-earlier pack was the live install with black boxes over every private region,
-which reads as a broken app rather than a working one, and a calendar with three
-blank cards in it argues for nothing. The demo account has nothing to hide, so
-the screenshots show the software actually being used: a full week in the
-scheduler, seven live automation flows, a populated analytics dashboard.
-
-No account data, follower count, caption, or DM in this folder is real. The
-demo instance cannot reach Meta — see the safety table in
-[`demo/README.md`](demo/README.md).
+Every screenshot uses **Lumen Field / Demo**, a fully fabricated creative-studio
+account. The account, campaign, performance figures, captions, scheduled queue,
+automations, and local visual covers are invented so the product can be shown as
+used without redacting a real account or implying that a person endorses it. The
+demo instance cannot reach Meta—see [`demo/README.md`](demo/README.md).
 
 The icon exports reproduce the product's own radar scope; they do not introduce
 a replacement brand identity.
@@ -21,42 +16,47 @@ a replacement brand identity.
 
 | Asset | Role | Source / provenance | Privacy treatment | Status | Draft alt text |
 | --- | --- | --- | --- | --- | --- |
-| [`screenshots/01-dashboard.png`](screenshots/01-dashboard.png) | Hero analytics still | Demo instance at `/dashboard` | Fabricated account; nothing to redact | `candidate` | "Social Cockpit's instrument-panel dashboard: a rising follower line, per-post video views, a best-time-to-post heatmap and posting frequency." |
-| [`screenshots/02-calendar.png`](screenshots/02-calendar.png) | Scheduler still | Demo instance at `/calendar`, week view | Fabricated account; nothing to redact | `candidate` | "A week in Social Cockpit's scheduler, with Instagram Reels and YouTube Shorts published and queued across seven days." |
-| [`screenshots/03-automations.png`](screenshots/03-automations.png) | Automation-builder still | Demo instance at `/automations`, first flow opened | Fabricated account; nothing to redact | `candidate` | "Social Cockpit's comment-to-DM builder: trigger keyword, the posts it applies to, the public replies and the DM that gets sent." |
-| [`screenshots/04-posts.png`](screenshots/04-posts.png) | Post-analytics still | Demo instance at `/posts`, table view | Fabricated account; nothing to redact | `candidate` | "Social Cockpit's post table ranking 42 Reels by engagement, likes, comments, reach and views." |
+| [`screenshots/01-dashboard.png`](screenshots/01-dashboard.png) | Hero analytics still | Demo instance at `/dashboard` | Fabricated account; nothing to redact | `candidate` | "Social Cockpit's instrument-panel dashboard for a fictional creative studio: follower growth, reel views, an hourly views-and-engagement best-time instrument, and posting cadence." |
+| [`screenshots/02-calendar.png`](screenshots/02-calendar.png) | Scheduler still | Demo instance at `/calendar`, current week view | Fabricated account; nothing to redact | `candidate` | "A current week in Social Cockpit's scheduler, with a populated fictional Instagram Reels and YouTube Shorts publishing history." |
+| [`screenshots/03-automations.png`](screenshots/03-automations.png) | Automation-builder still | Demo instance at `/automations`, campaign flow opened | Fabricated account; nothing to redact | `candidate` | "Social Cockpit's comment-to-DM builder, showing a fictional campaign resource, selected campaign posts, public replies, and the direct message sent." |
+| [`screenshots/04-posts.png`](screenshots/04-posts.png) | Post-analytics still | Demo instance at `/posts`, campaign media grid | Fabricated account; nothing to redact | `candidate` | "A grid of original campaign covers in Social Cockpit's post explorer, with engagement and performance indicators." |
 | [`identity/social-cockpit-radar.svg`](identity/social-cockpit-radar.svg) | Icon logo | Export of [`RadarScope.tsx`](../../src/components/dashboard/cockpit/RadarScope.tsx), posed mid-rotation | No account data | `candidate` | "Social Cockpit radar icon with an amber scan sweep and contact blip." |
 | [`identity/social-cockpit-radar-512.png`](identity/social-cockpit-radar-512.png) | Raster icon logo | 512px export of the SVG above | No account data | `candidate` | "Square Social Cockpit radar icon on charcoal." |
 | [`identity/social-cockpit-lockup.svg`](identity/social-cockpit-lockup.svg) | Identity lockup | The radar beside the header's `SOCIAL·COCKPIT` treatment, glyphs converted to outlines | No account data | `candidate` | "Social Cockpit radar mark beside the Social Cockpit wordmark." |
+
+The older [`../screenshots/dashboard.png`](../screenshots/dashboard.png) is a
+historical product reference, not a portfolio-capture baseline. It depicts the
+retired weekday/hour heatmap; the current product and `01-dashboard.png` use the
+hour-by-hour views and engagement instrument.
 
 ## Identity notes
 
 The radar mark is a still of an animation that never stops. Parked at twelve
 o'clock it read as a stopped clock hand, so it is now posed 38° into its
-rotation, with the leading edge just past the contact blip — the moment a radar
+rotation, with the leading edge just past the contact blip—the moment a radar
 picture is actually about. Nothing about the component changed; this is a
 different frame of the same sweep.
 
 The lockup's wordmark is Barlow Semi Condensed Bold at 0.3em with `COCKPIT` in
 amber, matching `.ck-sig` in `globals.css`. It is stored as outlines rather than
-`<text>`: the previous version named fonts it could not guarantee and overran
-its own viewBox in any renderer that did not have Arial Narrow. Regenerate with:
+`<text>` so it does not depend on a renderer owning the right font. Regenerate
+with:
 
-```
+```sh
 pip install fonttools brotli
 python3 docs/portfolio/make_lockup.py
 ```
 
 ## Regenerating the screenshots
 
-```
+```sh
 docs/portfolio/demo/run.sh
 ```
 
-Read [`demo/README.md`](demo/README.md) before running it. In short: the app runs
-from a detached worktree on port 3100 against scratch databases, with the
-Instagram client repointed at a local mock, so the live install on 3000 is never
-opened.
+The command prints a new scratch candidate directory and capture manifest; it
+does not overwrite this folder. Review all four images at full size, then promote
+the complete candidate set together. Read [`demo/README.md`](demo/README.md)
+before running it.
 
 ## Removed on review
 

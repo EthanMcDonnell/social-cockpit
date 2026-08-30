@@ -1,11 +1,11 @@
 /**
  * Screenshot the demo instance through the Chrome DevTools Protocol.
  *
- * Headless Chrome, one full-page capture per route, into docs/portfolio/screenshots/.
- * Waits for the page's own network to settle rather than a fixed sleep, so a
- * slow first compile does not produce a screenshot of a skeleton.
+ * Headless Chrome, one viewport capture per route, into a scratch candidate
+ * directory. Waits for the page's own network to settle rather than a fixed
+ * sleep, so a slow first compile does not produce a screenshot of a skeleton.
  *
- *   node docs/portfolio/demo/shoot.mjs <base-url>
+ *   SHOT_OUT=/tmp/candidates node docs/portfolio/demo/shoot.mjs <base-url>
  */
 
 import { spawn } from "node:child_process";
@@ -14,10 +14,10 @@ import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:3100";
-const OUT = resolve(fileURLToPath(import.meta.url), "../../screenshots");
-const PROFILE = "/tmp/sc-demo-chrome-profile";
+const OUT = resolve(process.env.SHOT_OUT ?? fileURLToPath(import.meta.url), process.env.SHOT_OUT ? "." : "../../screenshots");
+const PROFILE = resolve(process.env.SHOT_PROFILE ?? "/tmp/sc-demo-chrome-profile");
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const PORT = 9333;
+const PORT = Number(process.env.SHOT_CDP_PORT ?? 9333);
 
 /**
  * `ready` is the page's own evidence that it has finished, not a guess at how
@@ -28,11 +28,16 @@ const SHOTS = [
   {
     file: "01-dashboard.png",
     path: "/dashboard",
-    ready: "document.querySelectorAll('svg.recharts-surface').length >= 4",
+    ready: `document.querySelectorAll('svg.recharts-surface').length >= 4
+      && document.body.innerText.toLowerCase().includes('avg views')
+      && document.body.innerText.toLowerCase().includes('engagement')
+      && document.body.innerText.toLowerCase().includes('under 3 posts')`,
   },
   {
     file: "02-calendar.png",
     path: "/calendar",
+    // The current week combines visible campaign history with the current UI;
+    // the next two full weeks remain seeded as safe future planning work.
     ready: "document.querySelectorAll('.cal-card').length >= 6",
   },
   {
@@ -43,7 +48,7 @@ const SHOTS = [
     // empty "select a flow" pane is half a screenshot.
     click: `(() => {
       const card = Array.from(document.querySelectorAll('button'))
-        .find(b => b.innerText.includes('Systems cheatsheet'));
+        .find(b => b.innerText.toLowerCase().includes('lighting checklist'));
       if (!card) return false;
       card.click();
       return true;
@@ -54,6 +59,16 @@ const SHOTS = [
     file: "04-posts.png",
     path: "/posts",
     ready: "document.querySelectorAll('img').length >= 6",
+    // The grid gives the locally authored campaign covers enough room to prove
+    // their variety; it is an existing product control, not a portfolio mode.
+    click: `(() => {
+      const grid = Array.from(document.querySelectorAll('button'))
+        .find(b => b.innerText.trim() === 'Grid');
+      if (!grid) return false;
+      grid.click();
+      return true;
+    })()`,
+    after: "Array.from(document.querySelectorAll('img')).filter(i => i.complete && i.naturalWidth > 0).length >= 6",
   },
 ];
 

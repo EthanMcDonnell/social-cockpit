@@ -58,6 +58,27 @@ export function userInsightsToTimeSeries(
 }
 
 /**
+ * Meta reports follower_count as a daily acquisition delta, while the profile
+ * endpoint exposes the present total. Walk backwards from that total so every
+ * consumer describes the same cumulative follower series.
+ */
+export function reconstructCumulativeTotals(
+  deltas: TimeSeriesPoint[],
+  currentTotal: number
+): TimeSeriesPoint[] {
+  if (!deltas.length) return [];
+
+  const sorted = [...deltas].sort((a, b) => a.isoDate.localeCompare(b.isoDate));
+  const totals = new Array<number>(sorted.length);
+  totals[sorted.length - 1] = currentTotal;
+  for (let i = sorted.length - 2; i >= 0; i--) {
+    totals[i] = totals[i + 1] - sorted[i + 1].value;
+  }
+
+  return sorted.map((point, index) => ({ ...point, value: totals[index] }));
+}
+
+/**
  * Converts a user InsightsResponse with multiple metrics into a multi-series
  * array keyed by metric name. Used for EngagementChart (likes/comments/shares).
  */

@@ -1,157 +1,158 @@
 /**
- * The fabricated account the portfolio screenshots are taken of.
+ * The fabricated account used for the portfolio screenshots.
  *
- * Every number, caption and username here is invented. That is the point: the
- * earlier screenshots were the real account with black boxes painted over every
- * private region, which reads as a broken app rather than a working one. A
- * coherent fictional account shows the same software with nothing to hide.
- *
- * Shared by mock-graph.mjs (serves it as the Graph API) and seed.mjs (writes it
- * into the demo databases), so the two can never drift.
+ * This module is shared by the Graph mock and the database seeder. Everything is
+ * invented: the account, people, campaign, copy, media, performance, and flows.
+ * Keeping it in one place makes the demo believable without ever involving an
+ * account that exists outside this repository.
  */
 
-/**
- * The clock everything is generated around: 09:00 this morning.
- *
- * Anchored to the run date rather than a hard-coded one, because the app is
- * not. The dashboard trims its window to the last 48 hours of real time and the
- * calendar opens on the real current week, so a frozen dataset would screenshot
- * as a half-empty chart and a calendar of last month. Within a day it is stable,
- * which is as reproducible as this can honestly be.
- */
+/** The capture clock stays current while making a same-day run stable. */
 export const NOW = (() => {
-  const d = new Date();
-  d.setHours(9, 0, 0, 0);
-  return d;
+  const date = new Date();
+  date.setHours(9, 0, 0, 0);
+  return date;
 })();
 
 export const ACCOUNT_ID = "17841400000000001";
-
 export const PROFILE = {
   id: ACCOUNT_ID,
-  username: "howitsbuilt",
-  name: "How It's Built",
-  biography: "Short explainers on the engineering behind software you use daily.",
-  followers_count: 18432,
-  media_count: 147,
+  username: "lumenfield_demo",
+  name: "Lumen Field / Demo",
+  biography: "A fictional creative studio sharing the work between the work.",
+  followers_count: 28760,
+  media_count: 42,
   account_type: "MEDIA_CREATOR",
-  website: "https://howitsbuilt.example",
+  website: "https://lumenfield.example",
 };
 
-/** Headlines for the published back catalogue and the scheduled queue. */
-const TITLES = [
-  "How Figma renders 60fps in a browser tab",
-  "Why Discord rewrote its read states in Rust",
-  "The queue that keeps Airbnb bookings honest",
-  "How Cloudflare serves a fifth of the web",
-  "Why Shopify still runs one giant monolith",
-  "What actually happens when you type git push",
-  "How Stripe made retries safe to send twice",
-  "The trick behind Google Docs going offline",
-  "Why Netflix built its own CDN boxes",
-  "How WhatsApp served 2 billion users on Erlang",
-  "How Spotify assembles Discover Weekly",
-  "Why Instagram stores photos in Cassandra",
-  "How Uber schedules 20 million trips a day",
-  "The one index that fixed our p99",
-  "Why your Docker build is slow",
-  "How Vercel makes cold starts disappear",
-  "What a CDN actually caches",
-  "Why Postgres VACUUM exists at all",
-  "How Slack keeps 500k websockets alive",
-  "The maths behind rate limiting",
-  "Why Kafka writes to disk on purpose",
-  "How DNS finds anything in 30ms",
-  "Why React had to rewrite its renderer",
-  "How S3 hits eleven nines",
-  "The compiler pass nobody talks about",
-  "Why load balancers pick at random",
-];
+const DAY = 86_400_000;
 
-const HASHTAGS = "#softwareengineering #systemdesign #devtools #backend";
-
-/** A deterministic pseudo-random stream, so re-runs are identical. */
 function rng(seed) {
-  let s = seed;
+  let state = seed;
   return () => {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    return s / 0x7fffffff;
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 0x1_0000_0000;
   };
 }
 
-const day = 86_400_000;
+/**
+ * The campaign is deliberately broad enough to make an actual account: faces,
+ * process, places, objects, and only a few typographic editorial moments. Each
+ * `cover` has a corresponding local file under assets/campaign.
+ */
+const STORIES = [
+  ["First light in the fitting room", "portrait-sun", "people"],
+  ["A blue hour test before doors open", "city-blue", "place"],
+  ["The sample table, before the clean-up", "material-table", "process"],
+  ["Folding the first run by hand", "product-fold", "object"],
+  ["Five minutes with the light meter", "studio-light", "process"],
+  ["The long walk to the location", "city-walk", "place"],
+  ["A note on making the box feel kept", "editorial-kept", "editorial"],
+  ["Portrait study: red chair, late afternoon", "portrait-red", "people"],
+  ["Tape, tracing paper, one useful mistake", "process-paper", "process"],
+  ["The object, once the room goes quiet", "product-shadow", "object"],
+  ["An ordinary coffee between set changes", "city-coffee", "place"],
+  ["What made the final colour stay", "editorial-colour", "editorial"],
+  ["Crew call, ten minutes before rain", "people-rain", "people"],
+  ["Detail study: edge, seam, reflection", "product-detail", "object"],
+  ["The test prints we did not throw away", "process-print", "process"],
+  ["After the gallery closed", "city-night", "place"],
+  ["Small notes from launch week", "editorial-notes", "editorial"],
+  ["A borrowed chair in the studio window", "portrait-window", "people"],
+];
+
+const TAGS = "#creativepractice #studiolife #launchweek";
 
 /**
- * 42 published Reels, newest first.
- *
- * Dated from a weekly posting rhythm rather than a fixed stride: the dashboard
- * has a posts-per-day chart, and an evenly spaced catalogue draws it as a row of
- * identical bars, which is the shape of generated data rather than of a person
- * posting.
+ * Four recurring weekly posting hours create enough sample depth for the current
+ * hour-by-hour Best Time instrument. A few 7am tests remain deliberately sparse,
+ * so its dashed low-confidence treatment has something honest to explain.
  */
-export const MEDIA = (() => {
-  const rand = rng(7);
-  // Posts per weekday, Sunday first. Wednesday is the double.
-  const PER_WEEKDAY = [0, 1, 1, 2, 1, 1, 1];
-
+function recentSlots() {
   const dates = [];
-  for (let d = 1; dates.length < 42 && d < 120; d++) {
-    const day = new Date(NOW.getTime() - d * 86_400_000);
-    let n = PER_WEEKDAY[day.getDay()];
-    if (n && rand() < 0.22) n -= 1;        // the odd skipped slot
-    for (let k = 0; k < n && dates.length < 42; k++) {
-      // Spread across the slots a creator actually uses. A single narrow window
-      // draws the best-time-to-post heatmap as two lonely bars.
-      const SLOTS = [7, 8, 9, 12, 13, 17, 18, 19];
-      const at = new Date(day);
-      const hour = SLOTS[Math.floor(rand() * SLOTS.length / 2) + (k ? 4 : 0)];
-      at.setHours(hour, Math.floor(rand() * 60), 0, 0);
-      dates.push(at);
+  for (let daysAgo = 1; dates.length < 42 && daysAgo < 110; daysAgo++) {
+    const date = new Date(NOW.getTime() - daysAgo * DAY);
+    const weekday = date.getDay();
+    const week = Math.floor(daysAgo / 7);
+    // The same cadence, gently varied week-to-week: enough confidence at a
+    // handful of useful windows without generating a suspiciously full 24-hour chart.
+    const hour =
+      weekday === 0 ? (week % 2 ? 19 : 18) :
+      weekday === 2 ? (week % 3 ? 9 : 8) :
+      weekday === 4 ? (week % 2 ? 13 : 12) :
+      weekday === 6 ? (week % 3 === 1 ? 21 : 18) : null;
+    if (hour != null) {
+      date.setHours(hour, 12 + ((daysAgo * 13) % 42), 0, 0);
+      dates.push(date);
+    }
+    // Two early experiments stay visibly under-sampled and earn the chart's
+    // dashed treatment rather than presenting a one-off result as a pattern.
+    if (weekday === 3 && daysAgo % 42 === 4 && dates.length < 42) {
+      date.setHours(7, 24, 0, 0);
+      dates.push(date);
     }
   }
+  return dates.sort((a, b) => b.getTime() - a.getTime()).slice(0, 42);
+}
 
-  return dates.map((posted, i) => {
-    // Two breakouts, the rest in a believable band. Kept within one order of
-    // magnitude of the median so the views chart has shape rather than spikes.
-    const breakout = i === 4 || i === 17;
-    const views = Math.round(breakout ? 48_000 + rand() * 26_000 : 5_500 + rand() * 15_000);
-    const reach = Math.round(views * (0.72 + rand() * 0.13));
-    const likes = Math.round(views * (0.031 + rand() * 0.018));
-    const comments = Math.round(likes * (0.05 + rand() * 0.05));
+function performanceFor(index, rand) {
+  const band = index === 5 || index === 24 ? "breakout" : index % 7 === 0 ? "strong" : index % 9 === 0 ? "quiet" : "steady";
+  const bounds = {
+    breakout: [42_000, 55_000],
+    strong: [24_000, 32_000],
+    steady: [12_500, 20_500],
+    quiet: [7_500, 10_800],
+  }[band];
+  const views = Math.round(bounds[0] + rand() * (bounds[1] - bounds[0]));
+  const reach = Math.round(views * (0.69 + rand() * 0.11));
+  const likes = Math.round(views * (0.043 + rand() * 0.015));
+  const comments = Math.round(likes * (0.065 + rand() * 0.055));
+  const shares = Math.round(likes * (0.09 + rand() * 0.055));
+  const saved = Math.round(likes * (0.17 + rand() * 0.11));
+  const avgWatchSeconds = 8.5 + rand() * 5.5;
+
+  return {
+    band,
+    views,
+    reach,
+    likes,
+    comments,
+    shares,
+    saved,
+    total_interactions: likes + comments + shares + saved,
+    ig_reels_avg_watch_time: Math.round(avgWatchSeconds * 1000),
+    ig_reels_video_view_total_time: Math.round(views * avgWatchSeconds * 1000),
+  };
+}
+
+/** 42 published Reels, newest first, from roughly the previous eleven weeks. */
+export const MEDIA = (() => {
+  const rand = rng(73);
+  return recentSlots().map((posted, index) => {
+    const [title, cover, subject] = STORIES[index % STORIES.length];
+    const insights = performanceFor(index, rand);
     return {
-      id: `1793${String(4000000000000 + i * 1370411).padStart(13, "0")}`,
-      caption: `${TITLES[i % TITLES.length]}\n\n${HASHTAGS}`,
+      id: `1793${String(4000000000000 + index * 1370411).padStart(13, "0")}`,
+      caption: `${title}.\n\n${TAGS}`,
       media_type: "VIDEO",
       media_product_type: "REELS",
-      permalink: `https://www.instagram.com/reel/DEMO${i}/`,
-      shortcode: `DEMO${i}`,
+      permalink: `https://www.instagram.com/reel/LUMENDEMO${index}/`,
+      shortcode: `LUMENDEMO${index}`,
       timestamp: posted.toISOString(),
-      like_count: likes,
-      comments_count: comments,
-      title: TITLES[i % TITLES.length],
-      insights: {
-        reach,
-        views,
-        likes,
-        comments,
-        shares: Math.round(likes * (0.08 + rand() * 0.07)),
-        saved: Math.round(likes * (0.14 + rand() * 0.1)),
-        total_interactions: likes + comments,
-        ig_reels_avg_watch_time: Math.round(7_000 + rand() * 9_000),
-        ig_reels_video_view_total_time: Math.round(views * (9 + rand() * 6) * 1000),
-      },
+      like_count: insights.likes,
+      comments_count: insights.comments,
+      title,
+      cover,
+      subject,
+      insights,
     };
   });
 })();
 
 /**
- * Daily deltas for the last 60 days.
- *
- * Two things constrain the shape. The chart walks these back from the profile's
- * current total to draw a cumulative line, so the *sum* sets where the line
- * starts. And the readout compares the first day's delta with the last day's,
- * so growth has to be trending up for the panel to read as an account that is
- * working - a flat random series lands on a coin-flip arrow.
+ * Daily account-insight values. follower_count is a daily acquisition delta—the
+ * dashboard reconstructs the cumulative total from it using PROFILE's total.
  */
 export const USER_INSIGHTS = (() => {
   const rand = rng(19);
@@ -162,83 +163,76 @@ export const USER_INSIGHTS = (() => {
     accounts_engaged: [],
     total_interactions: [],
   };
-  for (let i = 59; i >= 0; i--) {
-    const endTime = new Date(NOW.getTime() - i * day);
+
+  for (let daysAgo = 59; daysAgo >= 0; daysAgo--) {
+    const endTime = new Date(NOW.getTime() - daysAgo * DAY);
     endTime.setUTCHours(7, 0, 0, 0);
-    const iso = endTime.toISOString();
-    const progress = (59 - i) / 59;
-    // A gaussian around the breakout Reel, so the cumulative line bends rather
-    // than steps.
-    const bump = 150 * Math.exp(-(((i - 16) / 5) ** 2));
-    const base = 42 + progress * 26 + bump;
-    const jitter = 0.86 + rand() * 0.28;
-    metrics.follower_count.push({ value: Math.round(base * jitter), end_time: iso });
-    metrics.reach.push({ value: Math.round((4_800 + progress * 2_400 + bump * 22) * jitter), end_time: iso });
-    metrics.profile_views.push({ value: Math.round((240 + progress * 160 + bump * 1.6) * jitter), end_time: iso });
-    metrics.accounts_engaged.push({ value: Math.round((700 + progress * 420 + bump * 5) * jitter), end_time: iso });
-    metrics.total_interactions.push({ value: Math.round((1_100 + progress * 640 + bump * 8) * jitter), end_time: iso });
+    const progress = (59 - daysAgo) / 59;
+    const launchBump = 82 * Math.exp(-(((daysAgo - 21) / 5.5) ** 2));
+    const jitter = 0.9 + rand() * 0.18;
+    const follows = Math.round((42 + progress * 20 + launchBump) * jitter);
+    const reach = Math.round((6_400 + progress * 2_100 + launchBump * 42) * jitter);
+    const engaged = Math.round((1_150 + progress * 440 + launchBump * 7) * jitter);
+
+    metrics.follower_count.push({ value: follows, end_time: endTime.toISOString() });
+    metrics.reach.push({ value: reach, end_time: endTime.toISOString() });
+    metrics.profile_views.push({ value: Math.round((310 + progress * 130 + launchBump * 1.9) * jitter), end_time: endTime.toISOString() });
+    metrics.accounts_engaged.push({ value: engaged, end_time: endTime.toISOString() });
+    metrics.total_interactions.push({ value: Math.round(engaged * (1.12 + rand() * 0.16)), end_time: endTime.toISOString() });
   }
+
   return metrics;
 })();
 
+const QUEUE_STORIES = STORIES.slice(0, 17);
+
 /**
- * The scheduled queue: a fortnight of work in flight. Deliberately dense - the
- * screenshot exists to show a calendar being used, and three cards in an empty
- * grid does not.
+ * One published history week plus two fully future planning weeks. The first
+ * future Monday is always at least seven days away, so a capture can never make
+ * an open job due simply by running later in the day.
  */
 export const SCHEDULED = (() => {
   const rand = rng(31);
-  // Weekday slots the account actually posts in, in local time.
-  const slots = [
-    [1, 7, 30], [1, 12, 15], [1, 18, 45],
-    [2, 8, 0], [2, 17, 30],
-    [3, 7, 45], [3, 12, 30], [3, 19, 0],
-    [4, 8, 15], [4, 18, 0],
-    [5, 7, 30], [5, 13, 0], [5, 17, 45],
-    [6, 10, 0], [6, 16, 30],
-    [0, 11, 0], [0, 19, 15],
-  ];
-  // Monday of the screenshot week.
   const monday = new Date(NOW);
-  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7) + 7);
   monday.setHours(0, 0, 0, 0);
-
+  const slots = [
+    [1, 9, 10], [2, 12, 30], [3, 7, 45], [4, 18, 10], [5, 12, 15], [6, 18, 30], [0, 9, 0],
+  ];
   const jobs = [];
-  let n = 0;
-  for (const week of [0, 1]) {
-    for (const [dow, hh, mm] of slots) {
+  let index = 0;
+
+  for (const week of [-1, 0, 1]) {
+    for (const [dow, hour, minute] of slots) {
       const at = new Date(monday);
       at.setDate(at.getDate() + week * 7 + ((dow + 6) % 7));
-      at.setHours(hh, mm, 0, 0);
-      const past = at.getTime() < NOW.getTime();
-      const title = TITLES[n % TITLES.length];
-      const platform = n % 4 === 3 ? "yt" : "ig";
+      at.setHours(hour, minute, 0, 0);
+      const [title] = QUEUE_STORIES[index % QUEUE_STORIES.length];
+      const platform = index % 4 === 3 ? "yt" : "ig";
       jobs.push({
-        id: `job_${String(n).padStart(3, "0")}`,
+        id: `job_${String(index).padStart(3, "0")}`,
         platform,
-        // Everything behind the fixed clock has already gone out; one paused job
-        // ahead of it, because a calendar with a single status is a mockup.
-        status: past ? "published" : n === 9 ? "paused" : "pending",
+        status: week < 0 ? "published" : index === 11 ? "paused" : "pending",
         scheduled_at: at.getTime(),
         title,
-        caption: `${title}\n\n${HASHTAGS}`,
-        automation: n % 3 === 0,
-        file: `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}.mp4`,
-        size_bytes: Math.round(8_000_000 + rand() * 24_000_000),
+        caption: `${title}.\n\n${TAGS}`,
+        automation: index % 3 === 0,
+        file: `${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}.mp4`,
+        size_bytes: Math.round(9_000_000 + rand() * 21_000_000),
       });
-      n++;
+      index++;
     }
   }
   return jobs;
 })();
 
-/** Comment→DM flows, each pointing at one of the published Reels. */
+/** Comment-to-DM flows tie useful fictional resources to relevant campaign posts. */
 export const FLOWS = [
-  { name: "Systems cheatsheet", keyword: "SYSTEMS", sent: 1284, active: 1, media: 0 },
-  { name: "Postgres index guide", keyword: "INDEX", sent: 872, active: 1, media: 3 },
-  { name: "Rust migration notes", keyword: "RUST", sent: 611, active: 1, media: 1 },
-  { name: "CDN explainer", keyword: "CDN", sent: 430, active: 1, media: 4 },
-  { name: "Docker checklist", keyword: "DOCKER", sent: 268, active: 1, media: 6 },
-  { name: "Rate limit worksheet", keyword: "LIMITS", sent: 154, active: 0, media: 9 },
-  { name: "Kafka starter repo", keyword: "KAFKA", sent: 97, active: 1, media: 11 },
+  { name: "Lighting checklist", keyword: "LIGHT", sent: 824, active: 1, media: 4 },
+  { name: "Launch call sheet", keyword: "CALLSHEET", sent: 641, active: 1, media: 12 },
+  { name: "Colour test notes", keyword: "COLOUR", sent: 512, active: 1, media: 11 },
+  { name: "Materials guide", keyword: "MATERIALS", sent: 438, active: 1, media: 2 },
+  { name: "Packing template", keyword: "PACK", sent: 307, active: 1, media: 3 },
+  { name: "Location list", keyword: "LOCATIONS", sent: 196, active: 0, media: 5 },
+  { name: "Studio edit guide", keyword: "EDIT", sent: 284, active: 1, media: 14 },
 ];

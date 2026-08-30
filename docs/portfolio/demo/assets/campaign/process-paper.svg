@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 720" role="img" aria-label="Original editorial campaign illustration">
+  <defs>
+    <linearGradient id="g8" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#D8E1DA"/><stop offset="1" stop-color="#5F8290"/></linearGradient>
+    <filter id="noise8" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="19"/><feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 .06 0"/></filter>
+  </defs>
+  <rect width="720" height="720" fill="url(#g8)"/>
+  
+    <path d="M91 96H542L627 572H176Z" fill="#FAF5E9" transform="rotate(0 360 360)"/>
+    <path d="M133 177H489M148 227H532M163 277H448" stroke="#5F8290" stroke-width="12" opacity=".66"/>
+    <path d="M372 386C478 324 557 378 629 509C543 571 463 590 360 533Z" fill="#CE735B"/>
+    <path d="M0 540C145 462 219 474 311 598C205 680 98 694 0 662Z" fill="#D8E1DA" opacity=".86"/>
+    <circle cx="517" cy="168" r="58" fill="#D8E1DA"/>
+    <path d="M183 401L326 329L363 405L220 477Z" fill="#5F8290" opacity=".86"/>
+  
+  <rect width="720" height="720" fill="#1B2334" filter="url(#noise8)" opacity=".35"/>
+  <rect x="22" y="22" width="676" height="676" rx="10" fill="none" stroke="#FFF8ED" stroke-width="2" opacity=".44"/>
+</svg>

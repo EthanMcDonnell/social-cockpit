@@ -1,136 +1,148 @@
 #!/usr/bin/env bash
 #
-# Bring up a throwaway Social Cockpit and screenshot it.
+# Bring up an isolated Social Cockpit, fill it with a fabricated account, and
+# write portfolio candidates to a new scratch directory. The active checkout is
+# never built, seeded, stashed, reset, or otherwise modified.
 #
-# NOTHING here touches the live install. Specifically:
-#
-#   * the app runs from a detached `git worktree`, so `.next/` - the build the
-#     production server is serving - is never written to;
-#   * it listens on 3100, not 3000;
-#   * every DB_PATH points into a scratch directory, so data/ is never opened;
-#   * BASE_URL in the Instagram client is repointed at a local mock, so no
-#     request can reach Meta even if something does wake up. There is no real
-#     access token in the environment either.
-#
-# The scheduler worker IS left on. It has to be - the calendar shows a standing
-# banner when it is off, and a portfolio screenshot of a disabled scheduler is
-# worse than no screenshot. It is harmless here: every seeded job in the past is
-# already `published`, so nothing is ever due, and the mock stands between it and
-# Meta regardless.
-#
-# Usage: docs/portfolio/demo/run.sh [workdir]
+# Usage: docs/portfolio/demo/run.sh [scratch-parent]
 set -euo pipefail
 
-REPO=$(cd "$(dirname "$0")/../../.." && pwd)
-WORK=${1:-${TMPDIR:-/tmp}/sc-demo}
-APP=$WORK/app
-DATA=$WORK/data
+SOURCE_REPO=$(cd "$(dirname "$0")/../../.." && pwd)
+SCRATCH_PARENT=${1:-${TMPDIR:-/tmp}}
+mkdir -p "$SCRATCH_PARENT"
+WORK=$(mktemp -d "$SCRATCH_PARENT/sc-demo.XXXXXX")
+APP="$WORK/app"
+DATA="$WORK/data"
+CANDIDATES="$WORK/candidates"
+PATCH="$WORK/current-ui.patch"
+MANIFEST="$WORK/capture-manifest.txt"
 PORT=3100
 MOCK_PORT=3199
+CDP_PORT=9333
+
+# These are deliberately the only local, user-owned interface changes a capture
+# may inherit. The harness fails rather than silently sweeping unrelated work
+# into a portfolio image.
+OVERLAY_PATHS=(
+  src/app/globals.css
+  src/app/slugs/SlugsClient.tsx
+  src/components/calendar/CalendarClient.tsx
+  src/components/compose/ComposeStudio.tsx
+)
 
 command -v node >/dev/null || { echo "node is required"; exit 1; }
+command -v git >/dev/null || { echo "git is required"; exit 1; }
 
-# A leftover server from an earlier run answers on the same port, and every
-# readiness check below would pass against it - so the run would screenshot a
-# stale instance with stale data and no sign that anything was wrong. Refuse.
-for p in $PORT $MOCK_PORT; do
-  if lsof -ti "tcp:$p" >/dev/null 2>&1; then
-    echo "port $p is already in use (pid $(lsof -ti "tcp:$p" | tr '\n' ' '))."
-    echo "that is probably a leftover demo run - stop it and retry."
+# A left-over demo can make every readiness check pass against stale fixtures.
+# Port 3000 is intentionally not queried: it is the live app and outside this
+# harness's remit.
+for port in "$PORT" "$MOCK_PORT" "$CDP_PORT"; do
+  if lsof -ti "tcp:$port" >/dev/null 2>&1; then
+    echo "port $port is already in use; refusing to capture a stale demo."
     exit 1
   fi
 done
 
-echo "== worktree =="
-if [ ! -d "$APP" ]; then
-  git -C "$REPO" worktree add --detach "$APP" HEAD
-fi
-[ -e "$APP/node_modules" ] || ln -s "$REPO/node_modules" "$APP/node_modules"
+cleanup() {
+  [ -n "${MOCK_PID:-}" ] && kill "$MOCK_PID" 2>/dev/null || true
+  [ -n "${APP_PID:-}" ] && kill "$APP_PID" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 
-# Cut the copy off from Meta at the source. Two constants, both in the worktree
-# only - the live tree is never edited.
-for f in src/lib/instagram/client.ts src/lib/instagram/usage.ts; do
+printf '== scratch ==\n%s\n' "$WORK"
+printf '== worktree ==\n'
+git -C "$SOURCE_REPO" worktree add --detach "$APP" HEAD >/dev/null
+[ -e "$APP/node_modules" ] || ln -s "$SOURCE_REPO/node_modules" "$APP/node_modules"
+
+# Make a binary-safe, explicitly allowlisted overlay of the active UI. `HEAD`
+# includes this harness's committed implementation; this patch contains only
+# the local Calendar/Compose/Slugs/style snapshot the user asked to capture.
+git -C "$SOURCE_REPO" diff --binary HEAD -- "${OVERLAY_PATHS[@]}" >"$PATCH"
+if [ -s "$PATCH" ]; then
+  while IFS=$'\t' read -r _ _ path; do
+    case "$path" in
+      src/app/globals.css|src/app/slugs/SlugsClient.tsx|src/components/calendar/CalendarClient.tsx|src/components/compose/ComposeStudio.tsx) ;;
+      *) echo "overlay contains an unapproved path: $path"; exit 1 ;;
+    esac
+  done < <(git apply --numstat "$PATCH")
+  git -C "$APP" apply --check "$PATCH"
+  git -C "$APP" apply "$PATCH"
+fi
+
+# Cut the worktree off from Meta at the source. The live checkout is never
+# edited; fake credentials and the local mock are the only social connection.
+for file in src/lib/instagram/client.ts src/lib/instagram/usage.ts; do
   /usr/bin/sed -i '' \
-    "s|const BASE_URL = \"https://graph.instagram.com/v25.0\";|const BASE_URL = \"http://127.0.0.1:$MOCK_PORT/v25.0\"; // demo harness: see docs/portfolio/demo|" \
-    "$APP/$f"
+    "s|const BASE_URL = \"https://graph.instagram.com/v25.0\";|const BASE_URL = \"http://127.0.0.1:$MOCK_PORT/v25.0\"; // demo harness: local mock only|" \
+    "$APP/$file"
 done
-grep -q "127.0.0.1:$MOCK_PORT" "$APP/src/lib/instagram/client.ts" || {
-  echo "failed to redirect the Instagram base URL - refusing to start"; exit 1; }
-
-# `data/` in .gitignore has no leading slash, so it also matches src/lib/data/ -
-# two real source modules the repo therefore does not track. A worktree checkout
-# is missing them and the app will not compile. Copy them across and say so; the
-# actual fix is to anchor that pattern as `/data/` and commit the two files.
-if [ -d "$REPO/src/lib/data" ] && ! git -C "$REPO" ls-files --error-unmatch src/lib/data >/dev/null 2>&1; then
-  echo "note: copying untracked src/lib/data/ (see .gitignore \`data/\` - it should be \`/data/\`)"
-  mkdir -p "$APP/src/lib/data"
-  cp "$REPO"/src/lib/data/* "$APP/src/lib/data/"
+if grep -R "https://graph.instagram.com" "$APP/src/lib/instagram/client.ts" "$APP/src/lib/instagram/usage.ts" >/dev/null; then
+  echo "failed to redirect the Graph client; refusing to start"
+  exit 1
 fi
 
-mkdir -p "$DATA"
+mkdir -p "$DATA" "$CANDIDATES" "$WORK/tmp"
 
-echo "== mock graph =="
-node "$REPO/docs/portfolio/demo/mock-graph.mjs" "$MOCK_PORT" &
-MOCK=$!
+printf '== mock graph ==\n'
+node "$APP/docs/portfolio/demo/mock-graph.mjs" "$MOCK_PORT" >"$WORK/mock.log" 2>&1 &
+MOCK_PID=$!
 
-echo "== app =="
-(cd "$APP" && env -i \
-  PATH="$PATH" HOME="$HOME" LANG="${LANG:-en_AU.UTF-8}" TMPDIR="${TMPDIR:-/tmp}" \
-  NODE_ENV=development \
-  INSTAGRAM_ACCOUNT_ID=17841400000000001 \
-  INSTAGRAM_ACCESS_TOKEN=demo-not-a-real-token \
-  DB_PATH="$DATA/automations.db" \
-  CACHE_DB_PATH="$DATA/cache.db" \
-  TRANSCRIPTS_DB_PATH="$DATA/transcripts.db" \
-  EVENTS_DB_PATH="$DATA/events.db" \
-  SCHEDULER_ENABLED=true \
-  SCHEDULE_TIMEZONE=Australia/Brisbane \
-  node node_modules/next/dist/bin/next dev -p $PORT) >"$WORK/app.log" 2>&1 &
+printf '== app ==\n'
+(
+  cd "$APP"
+  exec env -i \
+    PATH="$PATH" HOME="$HOME" LANG="${LANG:-en_AU.UTF-8}" TMPDIR="$WORK/tmp" \
+    NODE_ENV=development \
+    INSTAGRAM_ACCOUNT_ID=17841400000000001 \
+    INSTAGRAM_ACCESS_TOKEN=demo-not-a-real-token \
+    DB_PATH="$DATA/automations.db" \
+    CACHE_DB_PATH="$DATA/cache.db" \
+    TRANSCRIPTS_DB_PATH="$DATA/transcripts.db" \
+    EVENTS_DB_PATH="$DATA/events.db" \
+    SCHEDULER_ENABLED=true \
+    SCHEDULE_TIMEZONE=Australia/Brisbane \
+    node node_modules/next/dist/bin/next dev -p "$PORT"
+) >"$WORK/app.log" 2>&1 &
 APP_PID=$!
 
-# `next dev` is a grandchild (the subshell above cd's first), so killing the
-# recorded pid leaves the server listening - which the port guard then trips
-# over on the next run. Clear the ports themselves.
-cleanup() {
-  kill $MOCK $APP_PID 2>/dev/null || true
-  for p in $PORT $MOCK_PORT; do
-    lsof -ti "tcp:$p" 2>/dev/null | xargs -r kill 2>/dev/null || true
-  done
-}
-trap cleanup EXIT
-
-echo "== waiting =="
-for i in $(seq 1 120); do
-  if curl -fsS "http://127.0.0.1:$PORT/api/schedule" >/dev/null 2>&1; then break; fi
+printf '== waiting ==\n'
+for _ in $(seq 1 120); do
+  curl -fsS "http://127.0.0.1:$PORT/api/schedule" >/dev/null 2>&1 && break
   sleep 2
 done
 curl -fsS "http://127.0.0.1:$PORT/api/schedule" >/dev/null || {
-  echo "app never came up:"; tail -30 "$WORK/app.log"; exit 1; }
+  echo "app never came up; inspect $WORK/app.log"
+  exit 1
+}
 
-# The worker refuses to run until the scheduler integrity migration is present,
-# and the calendar carries a standing banner while it is off. Apply it to the
-# demo database - explicitly, by path, which is the only way this script accepts
-# a target.
-echo "== migrate =="
-node "$REPO/scripts/migrate-scheduler-integrity.mjs" --db "$DATA/automations.db" --apply >/dev/null
+printf '== migrate ==\n'
+node "$APP/scripts/migrate-scheduler-integrity.mjs" --db "$DATA/automations.db" --apply >/dev/null
 
-echo "== seed =="
-node "$REPO/docs/portfolio/demo/seed.mjs" "$DATA"
+printf '== seed ==\n'
+node "$APP/docs/portfolio/demo/seed.mjs" "$DATA"
 
-# Warm the local media cache before shooting. The first request to /media does a
-# cold sync of every post and its insights; without this the screenshot catches
-# the dashboard mid-skeleton.
-echo "== warm =="
+printf '== warm ==\n'
 curl -fsS "http://127.0.0.1:$PORT/api/instagram/profile" >/dev/null
 curl -fsS "http://127.0.0.1:$PORT/api/instagram/media?all=true" >/dev/null
 curl -fsS "http://127.0.0.1:$PORT/api/instagram/insights?period=day&metrics=follower_count,reach,profile_views,accounts_engaged,total_interactions" >/dev/null
 
-echo "== shoot =="
-node "$REPO/docs/portfolio/demo/shoot.mjs" "http://127.0.0.1:$PORT"
+printf '== shoot ==\n'
+SHOT_OUT="$CANDIDATES" SHOT_PROFILE="$WORK/chrome-profile" SHOT_CDP_PORT="$CDP_PORT" \
+  node "$APP/docs/portfolio/demo/shoot.mjs" "http://127.0.0.1:$PORT"
 
+{
+  echo "base commit: $(git -C "$SOURCE_REPO" rev-parse HEAD)"
+  echo "captured at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "overlay paths: ${OVERLAY_PATHS[*]}"
+  echo "overlay sha256: $(shasum -a 256 "$PATCH" | cut -d ' ' -f 1)"
+  echo "images:"
+  for image in "$CANDIDATES"/*.png; do
+    echo "  $(basename "$image"): $(sips -g pixelWidth -g pixelHeight "$image" | tr '\n' ' ')"
+  done
+} >"$MANIFEST"
+
+printf 'candidates: %s\nmanifest: %s\n' "$CANDIDATES" "$MANIFEST"
 if [ "${KEEP:-}" = "1" ]; then
-  echo "KEEP=1 - leaving the demo up on http://127.0.0.1:$PORT (ctrl-c to stop)"
-  wait $APP_PID
+  printf 'KEEP=1 — demo remains at http://127.0.0.1:%s (ctrl-c to stop)\n' "$PORT"
+  wait "$APP_PID"
 fi
-
-echo "done. app log: $WORK/app.log"
