@@ -189,8 +189,33 @@ export interface SlugListResponse {
   slugs: SlugSummary[];
 }
 
+/** One archived video's standing in a repost pool. */
+export interface RepostCandidateView {
+  label: string;
+  slug?: string;
+  views?: number;
+  last_reposted_at?: number;
+  tier: 1 | 2 | null;
+  eligible: boolean;
+  why?: string;
+  /** Present only when a previous repost underperformed. Never the same as `why: "not_enabled"`. */
+  block?: { views?: number; blocked_at: string; reason: string };
+}
+
+export interface RepostPoolView {
+  candidates: RepostCandidateView[];
+  tier1: number;
+  tier2: number;
+  /** Held back only because their slug was never opted in — your decision, not a verdict. */
+  awaiting_optin: number;
+  /** Retired on measured performance. A different thing entirely. */
+  blocked: number;
+}
+
 export interface SlugDetailResponse {
   slug: SlugSummary & { videos: SlugVideoView[] };
+  /** Present only for a slug in `repost` mode, whose pool is the archive. */
+  repost?: RepostPoolView | null;
   effective_method: SelectionMethod;
   /** The pick the worker would make right now, from the real selector. */
   next_up: { video: SlugVideoView; method: SelectionMethod; reason: string; considered: number } | null;

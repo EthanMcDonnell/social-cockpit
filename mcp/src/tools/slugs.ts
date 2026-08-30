@@ -67,7 +67,12 @@ export function registerSlugTools(server: McpServer): void {
         "Inspect a content pool: which videos it holds, how each has performed, how many are still eligible for " +
         "each platform, and — the point of it — which one would actually go out if a slot booked against this slug " +
         "fired right now. Call it before booking a slug-only post with schedule_posts, and to confirm a cross-post " +
-        "has something to draw from. Omit `slug` to list every pool. Read-only.",
+        "has something to draw from. Omit `slug` to list every pool. " +
+        "A slug in REPOST mode works the opposite way: it draws from the archive of already-published videos and " +
+        "publishes them again as trial reels, so its members are listed under `repost` rather than `videos`. There, " +
+        "note the difference between a video awaiting opt-in (its slug's repost_eligible is off — a setting, fixable " +
+        "with schedule_posts or the Slugs page) and one that is retired (a repost of it measurably underperformed, " +
+        "and it reports the view count that did it). Read-only.",
       inputSchema: z.object({
         slug: z
           .string()
@@ -126,6 +131,33 @@ export function registerSlugTools(server: McpServer): void {
           .optional()
           .describe("Why there is no pick. `exhausted` means every video has already run on this platform."),
         videos: z.array(VIDEO).optional(),
+        repost: z
+          .object({
+            tier1: z.number().describe("Never reposted. Always picked before tier 2."),
+            tier2: z.number().describe("Reposted before, rested, and their last run did not flop."),
+            awaiting_optin: z
+              .number()
+              .describe("Held back only because their slug is not enabled for reposting — a setting, not a verdict."),
+            blocked: z
+              .number()
+              .describe("Retired because a repost of them underperformed. Not the same as awaiting_optin."),
+            candidates: z.array(
+              z.object({
+                label: z.string(),
+                slug: z.string().optional(),
+                views: z.number().optional(),
+                tier: z.number().nullable(),
+                eligible: z.boolean(),
+                why: z.string().optional().describe("Why it cannot run, when it cannot."),
+                blocked_views: z
+                  .number()
+                  .optional()
+                  .describe("The view count that retired it. Only ever set on a genuine block."),
+              })
+            ),
+          })
+          .optional()
+          .describe("Present only for a slug in repost mode, whose pool is the archive rather than a file list."),
       }),
       annotations: {
         readOnlyHint: true,
@@ -177,17 +209,48 @@ export function registerSlugTools(server: McpServer): void {
         ? { video: toVideo(detail.next_up.video), reason: detail.next_up.reason, considered: detail.next_up.considered }
         : undefined;
 
+      const repost = detail.repost ?? undefined;
+
+      // A repost pool's members are archived videos, not enrolled files, so it
+      // is listed from `repost.candidates` instead of `videos` — which is empty
+      // for such a slug and would otherwise read as "this pool has nothing in
+      // it" directly above a Next up naming what it is about to post.
+      const body = repost
+        ? [
+            `  tier 1 (never reposted): ${repost.tier1} · tier 2 (rested): ${repost.tier2}`,
+            repost.awaiting_optin
+              ? `  ${repost.awaiting_optin} held back — their slug is not enabled for reposting (a setting you control)`
+              : "",
+            repost.blocked
+              ? `  ${repost.blocked} retired — a repost of them underperformed (measured, not a setting)`
+              : "",
+            "",
+            ...repost.candidates
+              .slice(0, 25)
+              .map(
+                (c) =>
+                  `  ${c.label}` +
+                  (c.views !== undefined ? ` — ${c.views.toLocaleString()} views` : "") +
+                  (c.eligible
+                    ? ` · tier ${c.tier}`
+                    : c.block
+                      ? ` · RETIRED (${c.block.views?.toLocaleString() ?? "?"} views on ` +
+                        `${c.block.blocked_at.slice(0, 10)})`
+                      : ` · ${c.why ?? "not eligible"}`)
+              ),
+          ].filter(Boolean)
+        : ["Pool:", ...videos.map((v) => `  ${describe(v)}`)];
+
       const text = [
-        `${detail.slug.slug} — ${videos.length} video(s), ${eligible} eligible for ${platform} · ` +
+        `${detail.slug.slug} — ${detail.slug.video_count} video(s), ${eligible} eligible for ${platform} · ` +
           `picks by ${detail.effective_method}` +
-          (detail.slug.mode === "repost" ? " · REPOST POOL (publishes as trial reels)" : "") +
-          `\nReposting: ${detail.slug.repost_eligible ? "enabled" : "not enabled"}`,
+          (detail.slug.mode === "repost" ? " · REPOST POOL (publishes as trial reels, promoted by hand)" : ""),
+        `Reposting: ${detail.slug.repost_eligible ? "enabled" : "not enabled"}`,
         next
           ? `Next up on ${platform}: ${describe(next.video)}\n  ${next.reason} (from ${next.considered} eligible)`
           : `Next up on ${platform}: nothing — ${detail.blocked?.error ?? "no candidate"}`,
         "",
-        "Pool:",
-        ...videos.map((v) => `  ${describe(v)}`),
+        ...body,
       ].join("\n");
 
       return {
@@ -201,6 +264,21 @@ export function registerSlugTools(server: McpServer): void {
           next_up: next,
           blocked: detail.blocked ?? undefined,
           videos,
+          repost: repost && {
+            tier1: repost.tier1,
+            tier2: repost.tier2,
+            awaiting_optin: repost.awaiting_optin,
+            blocked: repost.blocked,
+            candidates: repost.candidates.map((c) => ({
+              label: c.label,
+              slug: c.slug,
+              views: c.views,
+              tier: c.tier,
+              eligible: c.eligible,
+              why: c.why,
+              blocked_views: c.block?.views,
+            })),
+          },
         },
       };
     }

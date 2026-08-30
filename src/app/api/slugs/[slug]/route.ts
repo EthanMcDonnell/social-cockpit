@@ -11,6 +11,7 @@ import {
 } from "@/lib/slugs/store";
 import { selectVideo, viewPool } from "@/lib/slugs/select";
 import { slugPostHistory } from "@/lib/slugs/history";
+import { viewRepostPool } from "@/lib/repost/candidates";
 import { resolveSelectionMethod } from "@/lib/slugs/settings";
 import {
   isSelectionFailure,
@@ -47,17 +48,32 @@ export async function GET(
   const method = resolveSelectionMethod(slug);
   const selection = await selectVideo({ slug, platform, method });
 
+  /**
+   * A repost pool holds no `slug_videos` rows — it draws from the archive — so
+   * counting them would report "0 videos, 0 eligible" directly above a `next_up`
+   * naming the video it is about to post. Its counts come from the archive
+   * instead, and the candidates ride along under `repost` so a client can show
+   * the tiers and the retired ones rather than an empty table.
+   *
+   * `yt` is genuinely 0: reposts publish as trial reels, which YouTube has no
+   * equivalent of, and booking one for `yt` is refused.
+   */
+  const repost = record.mode === "repost" ? await viewRepostPool(slug, platform) : null;
+
   return NextResponse.json({
     slug: {
       ...record,
-      video_count: videos.length,
-      eligible: {
-        ig: eligibleVideos(slug, "ig", videos).length,
-        yt: eligibleVideos(slug, "yt", videos).length,
-      },
+      video_count: repost ? repost.candidates.length : videos.length,
+      eligible: repost
+        ? { ig: repost.tier1 + repost.tier2, yt: 0 }
+        : {
+            ig: eligibleVideos(slug, "ig", videos).length,
+            yt: eligibleVideos(slug, "yt", videos).length,
+          },
       automation: linkedAutomation(slug),
       videos,
     },
+    repost,
     // What has already gone out under this slug, so a candidate can be pointed
     // at the post it produced and inherit its numbers.
     history: slugPostHistory(slug),

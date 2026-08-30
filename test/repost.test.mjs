@@ -346,6 +346,36 @@ test("an empty repost pool explains which rule emptied it", async () => {
   store.updateSlug("evergreen", { repost_eligible: true });
 });
 
+test("a repost pool reports the archive's counts, not its own empty video list", async () => {
+  store.ensureSlug("reposts");
+  store.updateSlug("reposts", { mode: "repost" });
+  store.updateSlug("evergreen", { repost_eligible: true });
+
+  // The bug this pins: a repost slug has no `slug_videos` rows, so anything
+  // counting them reports "0 videos, 0 eligible" directly above a `next_up`
+  // naming the video it is about to publish.
+  assert.equal(store.listVideos("reposts").length, 0, "a repost pool holds no rows of its own");
+
+  const view = await candidates.viewRepostPool("reposts", "ig");
+  assert.ok(view.candidates.length > 0, "its members come from the archive");
+  assert.ok(view.tier1 + view.tier2 > 0, "and at least one of them can actually run");
+
+  const pick = await select.selectVideo({ slug: "reposts", platform: "ig", method: "most_views" });
+  assert.ok(!("error" in pick), "so the counts and the pick have to agree");
+});
+
+test("the pool separates awaiting-opt-in from retired in its own counts", async () => {
+  store.ensureSlug("never-enabled");
+  await published("never-enabled", "unopted.mp4", { views: 70_000 });
+
+  const view = await candidates.viewRepostPool("reposts", "ig");
+  assert.ok(view.awaiting_optin > 0, "a slug that was never enabled is counted as such");
+  assert.ok(
+    view.candidates.some((c) => c.why === "not_enabled" && !c.block),
+    "and carries no block, because nobody measured anything about it"
+  );
+});
+
 // ─── Settings ────────────────────────────────────────────────────────────────
 
 test("repost times default to a staggered week, and an empty day means no repost", () => {
