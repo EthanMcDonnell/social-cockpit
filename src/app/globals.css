@@ -442,6 +442,56 @@ body {
   background: var(--amber);
   box-shadow: 0 0 8px rgba(255, 179, 36, 0.7);
 }
+/* ── stat tile ──
+   A compact readout, and deliberately built from the same three parts as
+   `.ro` above — key, value, detail — because it is the same object at a
+   different size: the Posts summary strip is a secondary reading of the kind
+   of number the dashboard shows at 54px.
+
+   It was previously styled with Tailwind utilities and had drifted into the
+   wrong voice for both halves. The system's rule is that CONDENSED is the
+   display voice (headings, labels, figures you read at a glance) and MONO is
+   the data voice (table cells, ids, paths — things you scan in a column).
+   A summary figure is display, so it is condensed here, matching `.ro .v`. */
+.cockpit .stat {
+  border: 1px solid var(--hair);
+  background: var(--panel);
+  padding: 12px 14px 13px;
+}
+.cockpit .stat .k {
+  font-family: var(--cond);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mut);
+}
+.cockpit .stat .v {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 28px;
+  line-height: 1.1;
+  margin-top: 4px;
+  color: var(--txt);
+  /* Barlow's default figures are proportional, so a strip of tiles would
+     re-flow as 128 becomes 1,284. */
+  font-variant-numeric: tabular-nums;
+}
+/* `--accent-cyan` is the semantic accent token; the cockpit remaps it to amber
+   (see the `.cockpit` block). Named this way so the tile follows the theme
+   rather than hard-coding a hue. */
+.cockpit .stat .v.accent {
+  color: var(--accent-cyan);
+}
+.cockpit .stat .d {
+  margin-top: 3px;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--mut);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cockpit .syncnote {
   margin-top: 20px;
   font-size: 8.5px;

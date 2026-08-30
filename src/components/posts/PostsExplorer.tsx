@@ -121,18 +121,15 @@ function StatTile({
   sub?: React.ReactNode;
   accent?: boolean;
 }) {
+  // Styled by `.cockpit .stat` rather than inline utilities. It is the same
+  // object as the dashboard's `.ro` readout one step down the scale, and
+  // rebuilding it in Tailwind is how it drifted into mono — the data voice —
+  // for a figure that is display.
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-3.5 py-3">
-      <p className="font-mono text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{label}</p>
-      <p
-        className={clsx(
-          "mt-1 font-mono text-xl font-medium tabular-nums",
-          accent ? "text-[var(--accent-cyan)]" : "text-[var(--text-primary)]"
-        )}
-      >
-        {value}
-      </p>
-      {sub && <div className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">{sub}</div>}
+    <div className="stat">
+      <p className="k">{label}</p>
+      <p className={clsx("v", accent && "accent")}>{value}</p>
+      {sub && <div className="d">{sub}</div>}
     </div>
   );
 }
