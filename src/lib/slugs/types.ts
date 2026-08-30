@@ -90,6 +90,11 @@ export interface SlugVideo {
   /** Display name. Defaults to the file's basename when unset. */
   label?: string;
   payload: SlugVideoPayload;
+  /**
+   * The preserved copy of this file, once one exists. What keeps the candidate
+   * usable after the original is moved or deleted — see src/lib/archive.
+   */
+  archive_id?: string;
   created_at: string;
   posts: SlugVideoPost[];
 }
@@ -128,11 +133,41 @@ export interface SlugVideoView extends SlugVideo {
   scored: boolean;
 }
 
+/**
+ * What a slug's pool is for.
+ *
+ * `pool` works through a library and retires each video as it posts. `repost`
+ * inverts that: it draws from the archive of what has already been published
+ * and deliberately runs things again. See src/lib/repost/candidates.ts.
+ */
+export type SlugMode = "pool" | "repost";
+
+export function isSlugMode(value: unknown): value is SlugMode {
+  return value === "pool" || value === "repost";
+}
+
 export interface Slug {
   slug: string;
   name?: string;
   /** Overrides the global default. Unset means "use the default". */
   selection_method?: SelectionMethod;
+  /**
+   * Whether videos published under this slug may ever be reposted.
+   *
+   * **Opt-in, and off by default.** This is a statement of intent — "this
+   * content is evergreen" — and is the mechanism for keeping time-dependent
+   * material (news, updates, anything dated) out of the rotation: such a slug
+   * is simply never switched on.
+   *
+   * Do not conflate this with a video being blocked. A block lives in
+   * `repost_blocks`, is written only by the evaluator from a measured view
+   * count, and applies to one video rather than a whole slug. "I have not
+   * enabled this" and "this one underperformed" are different answers and are
+   * kept in different places so they cannot be reported as the same thing.
+   */
+  repost_eligible: boolean;
+  /** Unset behaves as `pool`. */
+  mode: SlugMode;
   created_at: string;
   updated_at: string;
 }
@@ -157,6 +192,15 @@ export interface SlugSelection {
   reason: string;
   /** Candidates that were eligible at the moment of the pick. */
   considered: number;
+  /**
+   * Set only when the pick came from a repost pool.
+   *
+   * The worker branches on this for the two things a repost does differently:
+   * it forces trial-reel parameters onto the payload, and it writes the repost
+   * ledger instead of the ordinary pool ledger (a repost must not retire its
+   * video from the platform's pool — it is the *same* post going out again).
+   */
+  repost?: { archive_id: string; tier: 1 | 2 };
 }
 
 /** Why a pool could not produce a candidate. */

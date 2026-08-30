@@ -71,6 +71,16 @@ const POST_SPEC = {
         "against the pool itself and the video is chosen when the slot arrives — by views, by longest wait, or " +
         "whatever selection_method says. A slug shares its name with the automation flow it fires."
     ),
+  repost_eligible: z
+    .boolean()
+    .optional()
+    .describe(
+      "Set whether videos published under this slug may LATER be reposted. Requires `slug`. Off by default — " +
+        "leave it unset for time-dependent content (updates, news, anything dated), because a repost of it would " +
+        "go out months later still claiming to be current. This is a property of the slug, so setting it here " +
+        "applies to every video published under that slug, not just this post. It is NOT the same as a video " +
+        "being blocked: blocks are written automatically when a repost underperforms, and are lifted separately."
+    ),
   selection_method: z
     .enum(["most_views", "most_engagement", "least_views", "oldest_unposted", "newest", "random"])
     .optional()
@@ -125,7 +135,9 @@ type PostSpec = z.infer<z.ZodObject<typeof POST_SPEC>>;
 
 /** Translate the tool's ergonomic shape into the cockpit's request body. */
 function toRequestBody(spec: PostSpec): Record<string, unknown> {
-  const { trial_reel, ...rest } = spec;
+  // `repost_eligible` configures the slug rather than the job, so it is applied
+  // in a separate call and must not be forwarded to /api/schedule.
+  const { trial_reel, repost_eligible: _repostEligible, ...rest } = spec;
   const body: Record<string, unknown> = { ...rest };
 
   // The cockpit infers media_type: REELS from a lone video source, so the only
@@ -198,6 +210,10 @@ export function registerScheduleTools(server: McpServer): void {
             error: z.string(),
           })
         ),
+        warnings: z
+          .array(z.string())
+          .optional()
+          .describe("The post was scheduled, but something alongside it did not apply."),
       }),
       annotations: {
         readOnlyHint: false,
@@ -210,6 +226,7 @@ export function registerScheduleTools(server: McpServer): void {
       const config = await settings();
       const scheduled: ReturnType<typeof summarize>[] = [];
       const failed: { index: number; scheduled_at: string; error: string }[] = [];
+      const warnings: string[] = [];
 
       for (const [index, spec] of posts.entries()) {
         try {
@@ -218,6 +235,25 @@ export function registerScheduleTools(server: McpServer): void {
             body: toRequestBody(spec),
           });
           scheduled.push(summarize(job, config.timezone));
+
+          // Applied after booking, deliberately: the booking is what creates
+          // the slug, and setting the flag first would leave a phantom slug
+          // behind every rejected request. A failure here must not report the
+          // post as unscheduled — it is live either way — so it is surfaced as
+          // a warning rather than moved into `failed`.
+          if (spec.repost_eligible !== undefined && spec.slug) {
+            try {
+              await cockpit(`/api/slugs/${encodeURIComponent(spec.slug)}`, {
+                method: "PATCH",
+                body: { repost_eligible: spec.repost_eligible },
+              });
+            } catch (err) {
+              warnings.push(
+                `Scheduled, but could not set repost_eligible on #${spec.slug}: ` +
+                  (err instanceof Error ? err.message : String(err))
+              );
+            }
+          }
         } catch (err) {
           if (!(err instanceof CockpitError)) throw err;
           // A one-entry batch has no partial success to report, and an error
@@ -238,8 +274,11 @@ export function registerScheduleTools(server: McpServer): void {
         lines.push("", `Rejected ${failed.length}:`);
         lines.push(...failed.map((f) => `  ✗ [${f.index}] ${f.scheduled_at} — ${f.error}`));
       }
+      if (warnings.length) {
+        lines.push("", ...warnings.map((w) => `  ! ${w}`));
+      }
 
-      return ok(lines.join("\n"), { scheduled, failed });
+      return ok(lines.join("\n"), { scheduled, failed, warnings });
     }
   );
 

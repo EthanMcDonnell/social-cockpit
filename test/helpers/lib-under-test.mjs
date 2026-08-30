@@ -74,6 +74,10 @@ export function loadLib(include) {
   process.env.EVENTS_DB_PATH = path.join(data, "events.db");
   process.env.TRANSCRIPTS_DB_PATH = path.join(data, "transcripts.db");
   process.env.SCHEDULE_MEDIA_DIR = path.join(data, "staged");
+  // The archive is the one thing here that writes files it never deletes, so an
+  // unset ARCHIVE_DIR does not merely leak — it drops fixture videos into the
+  // developer's own data/ directory and leaves them there.
+  process.env.ARCHIVE_DIR = path.join(data, "archive");
   process.env.INSTAGRAM_ACCOUNT_ID = "test-account";
   process.env.INSTAGRAM_ACCESS_TOKEN = "test-token";
   process.env.LOCAL_MEDIA_ROOT = work;

@@ -37,6 +37,21 @@ export interface ScheduleSettings {
   max_posts_per_day: number;
   /** How a slug job picks its video when neither the job nor the slug says. */
   default_selection: SelectionMethod;
+  repost: RepostSettingsPayload;
+}
+
+export interface RepostSettingsPayload {
+  min_views: number;
+  block_below_views: number;
+  min_gap_days: number;
+  evaluate_after_hours: number;
+  /** Seven entries, Sunday first. An empty day means no repost that day. */
+  times_by_weekday: string[][];
+  max_per_week: number;
+  autobook: boolean;
+  horizon_days: number;
+  /** Read-only. Reposts are always trial reels promoted by hand. */
+  graduation_strategy: string;
 }
 
 /** The subset a client may write. Everything else on the payload is read-only. */
@@ -47,6 +62,7 @@ export type ScheduleSettingsPatch = Partial<{
   paused: boolean;
   dry_run: boolean;
   default_selection: SelectionMethod;
+  repost: Partial<Omit<RepostSettingsPayload, "graduation_strategy">>;
 }>;
 
 async function asJson<T>(res: Response): Promise<T> {

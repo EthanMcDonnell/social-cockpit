@@ -18,11 +18,15 @@ import fs from "fs";
 import path from "path";
 import { getDb } from "@/lib/db";
 import { reservedSlugVideoIds } from "@/lib/schedule/store";
-import { statLocalFile, PathError } from "@/lib/publish/local-source";
+import fsp from "fs/promises";
+import { statLocalFile, contentTypeFor, PathError } from "@/lib/publish/local-source";
+import { getArchived } from "@/lib/archive/store";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import {
   isSelectionMethod,
+  isSlugMode,
   type Slug,
+  type SlugMode,
   type SelectionMethod,
   type SlugVideo,
   type SlugVideoPayload,
@@ -50,6 +54,8 @@ interface SlugRow {
   slug: string;
   name: string | null;
   selection_method: string | null;
+  repost_eligible: number | null;
+  mode: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +67,7 @@ interface VideoRow {
   path: string;
   label: string | null;
   payload: string;
+  archive_id: string | null;
   created_at: string;
 }
 
@@ -80,6 +87,11 @@ function rowToSlug(row: SlugRow): Slug {
     selection_method: isSelectionMethod(row.selection_method)
       ? row.selection_method
       : undefined,
+    // Anything other than an explicit 1 is "not opted in". The column defaults
+    // to 0, but a row written before the migration reads back NULL, and the
+    // safe reading of an unknown value here is the one that does not repost.
+    repost_eligible: row.repost_eligible === 1,
+    mode: isSlugMode(row.mode) ? row.mode : "pool",
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -93,6 +105,7 @@ function rowToVideo(row: VideoRow, posts: SlugVideoPost[]): SlugVideo {
     path: row.path,
     label: row.label ?? undefined,
     payload: parseJson<SlugVideoPayload>(row.payload, {}),
+    archive_id: row.archive_id ?? undefined,
     created_at: row.created_at,
     posts,
   };
@@ -131,10 +144,15 @@ export function ensureSlug(slug: string, name?: string): Slug {
 
 export function updateSlug(
   slug: string,
-  patch: { name?: string | null; selection_method?: SelectionMethod | null }
+  patch: {
+    name?: string | null;
+    selection_method?: SelectionMethod | null;
+    repost_eligible?: boolean;
+    mode?: SlugMode;
+  }
 ): Slug | null {
   const sets: string[] = [];
-  const params: (string | null)[] = [];
+  const params: (string | number | null)[] = [];
   if (patch.name !== undefined) {
     sets.push("name = ?");
     params.push(patch.name?.trim() || null);
@@ -142,6 +160,19 @@ export function updateSlug(
   if (patch.selection_method !== undefined) {
     sets.push("selection_method = ?");
     params.push(patch.selection_method ?? null);
+  }
+  // Turning this off holds the slug's videos back; it deliberately does NOT
+  // write anything to `repost_blocks`. A block is the evaluator's verdict on a
+  // measured repost, and a user changing their mind is not that — collapsing
+  // the two would make "I switched it off" indistinguishable from "this
+  // underperformed" the next time anyone read the pool.
+  if (patch.repost_eligible !== undefined) {
+    sets.push("repost_eligible = ?");
+    params.push(patch.repost_eligible ? 1 : 0);
+  }
+  if (patch.mode !== undefined) {
+    sets.push("mode = ?");
+    params.push(patch.mode);
   }
   if (!sets.length) return getSlug(slug);
 
@@ -284,6 +315,22 @@ export interface EnrolInput {
   path: string;
   label?: string;
   payload?: SlugVideoPayload;
+  /**
+   * The archived copy backing this candidate, when there is one. Recorded so
+   * the enrolment outlives the original file.
+   */
+  archiveId?: string;
+  /**
+   * Skip LOCAL_MEDIA_ROOT confinement.
+   *
+   * That check exists to stop a *caller-supplied* path turning enrolment into
+   * an arbitrary-file-read surface. It is the wrong check for a path this app
+   * generated itself — the archive directory is deliberately outside the user's
+   * media root, and confining it there would make an archived copy unenrollable
+   * on exactly the installs that set the variable. Only ever set by the worker,
+   * for a path that came out of `lib/archive`.
+   */
+  trusted?: boolean;
 }
 
 /**
@@ -299,7 +346,7 @@ export interface EnrolInput {
  * typo fails the enrolment call rather than the publish it was meant to feed.
  */
 export async function enrolVideo(input: EnrolInput): Promise<SlugVideo> {
-  const info = await statLocalFile(input.path);
+  const info = input.trusted ? await statTrustedFile(input.path) : await statLocalFile(input.path);
   // A pool exists to be posted from, and every method that draws on one treats
   // its members as interchangeable videos. Catching a photo (or a .txt) here
   // makes it a failed enrolment rather than a failed publish at 3am.
@@ -328,9 +375,15 @@ export async function enrolVideo(input: EnrolInput): Promise<SlugVideo> {
         ...parseJson<SlugVideoPayload>(existing.payload, {}),
         ...(input.payload ?? {}),
       };
-      db.prepare("UPDATE slug_videos SET label = COALESCE(?, label), payload = ? WHERE id = ?").run(
+      db.prepare(
+        `UPDATE slug_videos
+            SET label = COALESCE(?, label), payload = ?,
+                archive_id = COALESCE(?, archive_id)
+          WHERE id = ?`
+      ).run(
         input.label?.trim() || null,
         JSON.stringify(merged),
+        input.archiveId ?? null,
         existing.id
       );
       return existing.id;
@@ -338,8 +391,15 @@ export async function enrolVideo(input: EnrolInput): Promise<SlugVideo> {
 
     const id = randomUUID();
     db.prepare(
-      "INSERT INTO slug_videos (id, slug, path, label, payload) VALUES (?, ?, ?, ?, ?)"
-    ).run(id, slug, info.path, input.label?.trim() || null, JSON.stringify(input.payload ?? {}));
+      "INSERT INTO slug_videos (id, slug, path, label, payload, archive_id) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run(
+      id,
+      slug,
+      info.path,
+      input.label?.trim() || null,
+      JSON.stringify(input.payload ?? {}),
+      input.archiveId ?? null
+    );
     return id;
   });
 
@@ -355,6 +415,20 @@ export async function enrolVideo(input: EnrolInput): Promise<SlugVideo> {
     if (!row) throw err;
     return rowToVideo(row, postsFor([row.id]).get(row.id) ?? []);
   }
+}
+
+/**
+ * Measure a path this app generated, without the LOCAL_MEDIA_ROOT check.
+ *
+ * Still confirms it is a readable regular file — the confinement is the only
+ * thing skipped, and only for paths that never came from a request body.
+ */
+async function statTrustedFile(input: string): Promise<{ path: string; contentType: string }> {
+  const abs = path.resolve(input);
+  const info = await fsp.stat(abs).catch(() => null);
+  if (!info) throw new PathError(`File not found: ${input}`);
+  if (!info.isFile()) throw new PathError(`Not a file: ${input}`);
+  return { path: abs, contentType: contentTypeFor(abs) };
 }
 
 export function updateVideo(
@@ -491,6 +565,29 @@ export function filenameOf(video: SlugVideo): string {
   return path.basename(video.path);
 }
 
+/**
+ * The candidate has no readable file left anywhere.
+ *
+ * Archive-aware, and that is the point of the archive: a pool references the
+ * user's own library in place, so before this a video dropped out of every pool
+ * the moment its original was moved, renamed, or tidied onto another drive.
+ * With a preserved copy the enrolment survives the original.
+ */
 export function isMissing(video: SlugVideo): boolean {
-  return !fs.existsSync(video.path);
+  if (fs.existsSync(video.path)) return false;
+  const archived = video.archive_id ? getArchived(video.archive_id) : null;
+  return !archived || !fs.existsSync(archived.path);
+}
+
+/**
+ * The path to actually publish: the original when it is still there, otherwise
+ * the archived copy.
+ *
+ * The original is preferred so a file the user has since re-edited in place is
+ * the one that goes out — the archive is a safety net, not an override.
+ */
+export function sourcePathOf(video: SlugVideo): string | null {
+  if (fs.existsSync(video.path)) return video.path;
+  const archived = video.archive_id ? getArchived(video.archive_id) : null;
+  return archived && fs.existsSync(archived.path) ? archived.path : null;
 }

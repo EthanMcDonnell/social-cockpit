@@ -18,6 +18,18 @@ import {
   setDefaultSelectionMethod,
 } from "@/lib/slugs/settings";
 import { isSelectionMethod, SELECTION_METHODS } from "@/lib/slugs/types";
+import {
+  getRepostSettings,
+  setAutobookEnabled,
+  setBlockBelowViews,
+  setEvaluateAfterHours,
+  setHorizonDays,
+  setMaxPerWeek,
+  setMinGapDays,
+  setMinViews,
+  setTimesByWeekday,
+} from "@/lib/repost/settings";
+import { REPOST_GRADUATION_STRATEGY } from "@/lib/repost/publish";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
 import { schedulerEnabled } from "@/lib/schedule/worker";
 
@@ -45,6 +57,15 @@ function payload() {
     // Read at fire time, so changing it also changes what every unspecified job
     // already on the calendar will do.
     default_selection: getDefaultSelectionMethod(),
+    // Repost policy. Reported as its own object rather than flattened in, so a
+    // client can tell "this install has no repost settings" from "they are all
+    // at their defaults" — and so the graduation strategy can sit beside them
+    // as a read-only fact rather than looking like one more thing to tune.
+    repost: {
+      ...getRepostSettings(),
+      /** Reported so a client can show it. There is no setter — see lib/repost/publish.ts. */
+      graduation_strategy: REPOST_GRADUATION_STRATEGY,
+    },
   };
 }
 
@@ -107,6 +128,51 @@ export async function PUT(request: NextRequest) {
       setMaxPostsPerDay(Number(body.max_posts_per_day));
     } catch (err) {
       return invalid(err instanceof Error ? err.message : "Bad max_posts_per_day.");
+    }
+  }
+
+  // ── Repost policy ──────────────────────────────────────────────────────────
+  // Accepted nested (`{ repost: { min_views: 25000 } }`) so one PUT can carry
+  // both policies without the key names colliding.
+  const repost = body?.repost;
+  if (repost !== undefined) {
+    if (typeof repost !== "object" || repost === null || Array.isArray(repost)) {
+      return invalid("repost must be an object.");
+    }
+    if (repost.graduation_strategy !== undefined) {
+      return invalid(
+        "graduation_strategy is not configurable — reposts always publish as trial reels promoted manually."
+      );
+    }
+
+    const numbers: [string, unknown, (value: number) => void][] = [
+      ["min_views", repost.min_views, setMinViews],
+      ["block_below_views", repost.block_below_views, setBlockBelowViews],
+      ["min_gap_days", repost.min_gap_days, setMinGapDays],
+      ["evaluate_after_hours", repost.evaluate_after_hours, setEvaluateAfterHours],
+      ["max_per_week", repost.max_per_week, setMaxPerWeek],
+      ["horizon_days", repost.horizon_days, setHorizonDays],
+    ];
+    for (const [name, value, apply] of numbers) {
+      if (value === undefined) continue;
+      try {
+        apply(Number(value));
+      } catch (err) {
+        return invalid(err instanceof Error ? err.message : `Bad repost.${name}.`);
+      }
+    }
+
+    if (repost.times_by_weekday !== undefined) {
+      try {
+        setTimesByWeekday(repost.times_by_weekday);
+      } catch (err) {
+        return invalid(err instanceof Error ? err.message : "Bad repost.times_by_weekday.");
+      }
+    }
+
+    if (repost.autobook !== undefined) {
+      if (typeof repost.autobook !== "boolean") return invalid("repost.autobook must be a boolean.");
+      setAutobookEnabled(repost.autobook);
     }
   }
 

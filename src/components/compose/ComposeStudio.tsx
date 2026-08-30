@@ -137,8 +137,6 @@ export function ComposeStudio() {
       {/* CONTROLS */}
       <div className="cs-controls">
         <div className="cs-title">
-          <span className="cs-tag">05</span>
-          <h1>Compose</h1>
           <span className="cs-endpoint">{endpoint}</span>
         </div>
 

@@ -45,6 +45,12 @@ import { selectVideo } from "@/lib/slugs/select";
 import { enrolVideo, recordPost } from "@/lib/slugs/store";
 import { resolveSelectionMethod } from "@/lib/slugs/settings";
 import { isSelectionFailure, type SlugVideoPayload } from "@/lib/slugs/types";
+import { tryArchiveVideo, linkCandidate } from "@/lib/archive/store";
+import { asTrialRepost } from "@/lib/repost/publish";
+import { recordRepost } from "@/lib/repost/store";
+import { evaluateReposts } from "@/lib/repost/evaluate";
+import { autobookReposts } from "@/lib/repost/autobook";
+import { getEvaluateAfterHours } from "@/lib/repost/settings";
 import { schedulerEnabled as configuredSchedulerEnabled, dryRunActive } from "./settings";
 import type {
   FailureKind,
@@ -117,6 +123,33 @@ export async function runScheduleCycle(): Promise<void> {
     cullScheduleEvents();
     const swept = await sweepOrphanedStaged();
     if (swept) logScheduleEvent("info", "swept", `Removed ${swept} orphaned staged file(s)`);
+
+    // Reposting rides this cadence rather than starting a worker of its own.
+    // Both passes are cheap — evaluation reads view counts the cache worker has
+    // already synced and makes no API call, and auto-booking is a no-op unless
+    // a slug is in repost mode. Neither is allowed to take the cycle down with
+    // it: a failure here must not stop the scheduler publishing.
+    try {
+      const judged = await evaluateReposts(now);
+      if (judged.blocked) {
+        logScheduleEvent(
+          "info",
+          "reposts_evaluated",
+          `Judged ${judged.evaluated} repost(s); ${judged.blocked} retired for underperforming`
+        );
+      }
+    } catch (err) {
+      reportError("repost", "evaluation_failed", "repost evaluation failed", { error: err });
+    }
+
+    try {
+      const booked = await autobookReposts(now);
+      if (booked.booked) {
+        logScheduleEvent("info", "reposts_autobooked", `Booked ${booked.booked} repost slot(s)`);
+      }
+    } catch (err) {
+      reportError("repost", "autobook_failed", "repost auto-booking failed", { error: err });
+    }
   }
 }
 
@@ -181,7 +214,17 @@ async function resolveSlugJob(job: ClaimedScheduledPost): Promise<boolean> {
 
   const staged = await registerLocalPath(selection.video.path);
   const media: ScheduledMediaRef[] = [{ role: "video", staged_id: staged.id }];
-  const payload = mergeSlugPayload(job, selection.video.payload, selection.video.label ?? selection.video.filename);
+  const merged = mergeSlugPayload(job, selection.video.payload, selection.video.label ?? selection.video.filename);
+
+  // A repost always goes out as a trial reel promoted by hand. Forced here,
+  // after the merge, so nothing a caller supplied — including `trial_params`
+  // copied from the original publish — can turn a repost into an ordinary feed
+  // post that followers see again unannounced. YouTube has no trial concept and
+  // is rejected at booking time, so this only ever applies to Instagram.
+  const payload =
+    selection.repost && job.platform === "ig"
+      ? asTrialRepost(merged as IgPublishInput)
+      : merged;
 
   // Every other route into a publish validates its payload before booking. A
   // slug job cannot: there is no video to validate against until now. This is
@@ -204,6 +247,8 @@ async function resolveSlugJob(job: ClaimedScheduledPost): Promise<boolean> {
       ...(job.result ?? {}),
       slug_video_id: selection.video.id,
       slug_reason: selection.reason,
+      repost_archive_id: selection.repost?.archive_id,
+      repost_tier: selection.repost?.tier,
     },
   });
   if (!resolved) {
@@ -219,12 +264,27 @@ async function resolveSlugJob(job: ClaimedScheduledPost): Promise<boolean> {
     ...(job.result ?? {}),
     slug_video_id: selection.video.id,
     slug_reason: selection.reason,
+    repost_archive_id: selection.repost?.archive_id,
+    repost_tier: selection.repost?.tier,
   };
 
-  logScheduleEvent("info", "slug_resolved", `#${slug} → ${selection.reason}`, {
-    jobId: job.id,
-    meta: { slug, method, video_id: selection.video.id, considered: selection.considered },
-  });
+  logScheduleEvent(
+    "info",
+    selection.repost ? "repost_resolved" : "slug_resolved",
+    `#${slug} → ${selection.reason}${selection.repost ? " (trial reel, manual promotion)" : ""}`,
+    {
+      jobId: job.id,
+      meta: {
+        slug,
+        method,
+        video_id: selection.video.id,
+        considered: selection.considered,
+        ...(selection.repost
+          ? { repost: true, archive_id: selection.repost.archive_id, tier: selection.repost.tier }
+          : {}),
+      },
+    }
+  );
   return true;
 }
 
@@ -640,6 +700,8 @@ function withSlugTrace(job: ScheduledPost, result: ScheduleResult): ScheduleResu
     ...result,
     slug_video_id: job.result.slug_video_id,
     slug_reason: job.result.slug_reason,
+    repost_archive_id: job.result.repost_archive_id,
+    repost_tier: job.result.repost_tier,
   };
 }
 
@@ -659,27 +721,50 @@ function withSlugTrace(job: ScheduledPost, result: ScheduleResult): ScheduleResu
  */
 async function recordSlugPost(job: ScheduledPost, result: ScheduleResult): Promise<void> {
   const externalId = job.platform === "yt" ? result.video_id : result.media_id;
-  if (!job.slug || !externalId || result.dry_run) return;
+  if (!externalId || result.dry_run) return;
+
+  // A repost is the same video going out a second time. It must NOT reach the
+  // enrolment path below: that path records a pool post, which retires the
+  // candidate from its platform's pool and would score the repost's own media
+  // id into the video's original view total. Its ledger is a different table.
+  if (result.repost_archive_id) {
+    await recordRepostPost(job, result, externalId);
+    return;
+  }
+
+  // Preserve the bytes on the way out, whatever else this job was. Archiving is
+  // unconditional — a video published without a slug still gets a copy, so that
+  // enabling reposting on its slug later works retroactively rather than only
+  // for whatever happens to be published afterwards.
+  const archived = await archivePublished(job);
+
+  if (!job.slug) return;
 
   try {
     // The pick made at fire time, when its candidate is still in the pool. One
     // removed since then is treated as no pick at all — the enrolment below
     // puts the file back, so the post is recorded either way.
     if (result.slug_video_id && recordPost(result.slug_video_id, job.platform, externalId, job.id)) {
+      // The candidate existed already, so enrolment never runs and this is the
+      // only chance to attach the copy that will keep it alive.
+      if (archived) linkCandidate(result.slug_video_id, archived.id);
       return;
     }
 
     const source = videoSourceOf(job);
     if (!source) return;
-    if (source.owned) {
-      // A browser upload lives in data/staged and is deleted the moment this
-      // job finishes. Enrolling it would point the pool at a path that stops
-      // existing seconds later — a pool references your own library, so only a
-      // file that was already yours can join one.
+
+    // A browser upload lives in data/staged and is deleted the moment this job
+    // finishes, so its own path cannot back a pool candidate. The archived copy
+    // can: it is ours, it is permanent, and it is the same bytes. Enrolling
+    // against it is what lets a video dropped onto the calendar be reposted
+    // later — before the archive existed this case could only be refused.
+    const enrolPath = source.owned ? archived?.path : source.path;
+    if (!enrolPath) {
       logScheduleEvent(
         "warn",
         "slug_enrol_skipped",
-        `#${job.slug} — an uploaded file can't join a pool; schedule it by path instead`,
+        `#${job.slug} — the upload could not be archived, so it can't join a pool; schedule it by path instead`,
         { jobId: job.id, meta: { slug: job.slug } }
       );
       return;
@@ -687,8 +772,10 @@ async function recordSlugPost(job: ScheduledPost, result: ScheduleResult): Promi
 
     const enrolled = await enrolVideo({
       slug: job.slug,
-      path: source.path,
+      path: enrolPath,
       payload: payloadDefaultsOf(job),
+      archiveId: archived?.id,
+      trusted: source.owned,
     });
     recordPost(enrolled.id, job.platform, externalId, job.id);
     logScheduleEvent("info", "slug_enrolled", `Added to #${job.slug}`, {
@@ -704,6 +791,79 @@ async function recordSlugPost(job: ScheduledPost, result: ScheduleResult): Promi
       meta: { job: job.id, slug: job.slug, video: result.slug_video_id },
     });
   }
+}
+
+/**
+ * Preserve the bytes this job just published.
+ *
+ * Runs for every successful publish, slug or not. The archive is what makes
+ * reposting possible at all, and deciding at publish time which videos will one
+ * day be worth reposting is a decision we cannot make — so it keeps everything
+ * and lets the eligibility rules filter later. Never throws: the post is
+ * already live, and a failed copy is not worth failing a published job over.
+ */
+async function archivePublished(job: ScheduledPost) {
+  const source = videoSourceOf(job);
+  if (!source) return null;
+  return tryArchiveVideo({
+    path: source.path,
+    slug: job.slug,
+    label: labelOf(job),
+  });
+}
+
+/**
+ * Record that a repost went out, and set the clock on judging it.
+ *
+ * Deliberately writes `repost_events` and nothing else. The pool ledger is not
+ * touched: a repost is the same video appearing again, not a new candidate, and
+ * recording it as a pool post would both retire the candidate from its
+ * platform's pool and fold the repost's own views into the original's total —
+ * which is the number the next eligibility check reads.
+ */
+async function recordRepostPost(
+  job: ScheduledPost,
+  result: ScheduleResult,
+  externalId: string
+): Promise<void> {
+  try {
+    recordRepost({
+      archiveId: result.repost_archive_id!,
+      slug: job.slug,
+      platform: job.platform,
+      externalId,
+      jobId: job.id,
+      evaluateAfter: Date.now() + getEvaluateAfterHours() * 60 * 60 * 1000,
+    });
+    logScheduleEvent(
+      "info",
+      "repost_recorded",
+      `Repost published as a trial reel — views will be judged in ${getEvaluateAfterHours()}h`,
+      {
+        jobId: job.id,
+        meta: {
+          slug: job.slug,
+          archive_id: result.repost_archive_id,
+          tier: result.repost_tier,
+          media_id: externalId,
+        },
+      }
+    );
+  } catch (err) {
+    // Losing this row means the repost is never judged and the video never
+    // rests — worth an alert, not worth failing an already-published job.
+    reportError("repost", "ledger_write_failed", "could not record a repost", {
+      error: err,
+      meta: { job: job.id, archive: result.repost_archive_id },
+    });
+  }
+}
+
+/** A human-readable name for an archived video, from whatever the job carried. */
+function labelOf(job: ScheduledPost): string | undefined {
+  if (job.platform === "yt") return (job.payload as YoutubeJobPayload).title;
+  const caption = (job.payload as IgPublishInput).caption;
+  return caption?.split("\n")[0]?.slice(0, 80) || undefined;
 }
 
 /**

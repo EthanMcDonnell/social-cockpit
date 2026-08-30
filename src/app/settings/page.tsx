@@ -5,6 +5,7 @@ import { ExchangeTokenForm } from "@/components/settings/ExchangeTokenForm";
 import { TranscriptionSettingsPanel } from "@/components/settings/TranscriptionSettingsPanel";
 import { YouTubeConnectPanel } from "@/components/settings/YouTubeConnectPanel";
 import { PostingPolicyPanel } from "@/components/settings/PostingPolicyPanel";
+import { RepostPolicyPanel } from "@/components/settings/RepostPolicyPanel";
 import { SchedulerPanel } from "@/components/settings/SchedulerPanel";
 
 export const metadata = {
@@ -52,6 +53,7 @@ export default function SettingsPage() {
         <section className="space-y-3">
           <SectionLabel tag="S2">Publishing</SectionLabel>
           <PostingPolicyPanel />
+          <RepostPolicyPanel />
         </section>
 
         <section className="space-y-3">

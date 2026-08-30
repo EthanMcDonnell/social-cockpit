@@ -16,6 +16,7 @@ import {
   isSelectionFailure,
   isSelectionMethod,
   SELECTION_METHODS,
+  isSlugMode,
   type SchedulePlatformParam,
 } from "@/lib/slugs/types";
 
@@ -91,9 +92,27 @@ export async function PATCH(
     );
   }
 
+  // The repost opt-in. Explicitly a boolean rather than coerced: `false` and
+  // `"false"` must not both mean "off" in one direction while `0` quietly means
+  // "on" in another, on a flag whose whole job is to be unambiguous.
+  if (body?.repost_eligible !== undefined && typeof body.repost_eligible !== "boolean") {
+    return NextResponse.json(
+      { error: "invalid_param", message: "repost_eligible must be a boolean." },
+      { status: 400 }
+    );
+  }
+  if (body?.mode !== undefined && !isSlugMode(body.mode)) {
+    return NextResponse.json(
+      { error: "invalid_param", message: 'mode must be "pool" or "repost".' },
+      { status: 400 }
+    );
+  }
+
   const updated = updateSlug(slug, {
     ...(body?.name !== undefined ? { name: body.name } : {}),
     ...(body?.selection_method !== undefined ? { selection_method: body.selection_method } : {}),
+    ...(body?.repost_eligible !== undefined ? { repost_eligible: body.repost_eligible } : {}),
+    ...(body?.mode !== undefined ? { mode: body.mode } : {}),
   });
   if (!updated) {
     return NextResponse.json({ error: "not_found", message: `No slug "${slug}".` }, { status: 404 });

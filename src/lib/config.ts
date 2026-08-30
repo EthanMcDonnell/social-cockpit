@@ -247,6 +247,21 @@ export const config = {
   /** Confines which paths the local-publish endpoint may read. Unset allows any. */
   localMediaRoot: optional("LOCAL_MEDIA_ROOT"),
 
+  /**
+   * The durable copy of every video this app publishes — see lib/archive.
+   *
+   * Distinct from `schedule.mediaDir` in the one way that matters: staged media
+   * is a scratch copy deleted the moment its job finishes, while this is kept
+   * indefinitely so a clip stays repostable after the original is moved or
+   * deleted. Same disk, opposite lifetimes, so they get separate directories
+   * and separate ceilings rather than sharing either.
+   */
+  archive: {
+    dir: dataPath("ARCHIVE_DIR", "data", "archive"),
+    /** Nothing else bounds archive growth — every publish adds to it forever. */
+    capBytes: int("ARCHIVE_CAP_BYTES", 50 * 1024 * 1024 * 1024),
+  },
+
   cache: {
     ttlMs: int("CACHE_TTL_MS", 30 * 60 * 1000),
     syncIntervalMs: int("CACHE_SYNC_INTERVAL_MS", 30 * 60 * 1000),

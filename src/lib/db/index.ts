@@ -267,6 +267,85 @@ export function getDb(): Database.Database {
       value      TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
+    // ── reposting (see docs/reposting.md) ───────────────────────────────────
+    // The durable copy of every video this app publishes. A pool references the
+    // user's own library in place, which means a clip stops being postable the
+    // moment the original is moved — fine for cross-posting a library once,
+    // fatal for reposting something from eight months ago. This table plus
+    // `slug_videos.archive_id` is what makes a candidate outlive its source.
+    //
+    // `sha256` is the identity, not the path: the same clip published from two
+    // directories is one archived video with one set of repost history, rather
+    // than two that each get their own turn in the rotation.
+    `CREATE TABLE IF NOT EXISTS archived_videos (
+      id           TEXT PRIMARY KEY,
+      sha256       TEXT NOT NULL UNIQUE,
+      path         TEXT NOT NULL,
+      source_path  TEXT,
+      size_bytes   INTEGER NOT NULL,
+      content_type TEXT NOT NULL,
+      label        TEXT,
+      origin_slug  TEXT,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_archive_origin ON archived_videos(origin_slug)",
+    // The archived copy backing a pool candidate. Nullable: every row predating
+    // the archive has none, and `isMissing` falls back to the original path.
+    "ALTER TABLE slug_videos ADD COLUMN archive_id TEXT",
+    // ── repost opt-in, and what a slug is for ───────────────────────────────
+    // `repost_eligible` is USER INTENT and defaults to 0, so nothing on an
+    // existing install becomes repostable because this migration ran. It is
+    // deliberately not the same thing as `repost_blocks` below: this says "I am
+    // happy for this content to run again", that says "this one measurably
+    // flopped". Keeping them in separate tables at separate scopes is what
+    // stops the UI (or a future query) from collapsing the two into one
+    // ambiguous "disabled" state.
+    "ALTER TABLE slugs ADD COLUMN repost_eligible INTEGER NOT NULL DEFAULT 0",
+    // NULL/'pool' = today's behaviour. 'repost' draws from the archive instead
+    // of from this slug's own `slug_videos` rows.
+    "ALTER TABLE slugs ADD COLUMN mode TEXT",
+    // One repost that actually went out. `evaluate_after` is epoch MILLISECONDS
+    // for the same reason `scheduled_posts.scheduled_at` is — "is this due yet"
+    // has to be indexable and unambiguous.
+    `CREATE TABLE IF NOT EXISTS repost_events (
+      id             TEXT PRIMARY KEY,
+      archive_id     TEXT NOT NULL,
+      slug           TEXT,
+      platform       TEXT NOT NULL,
+      external_id    TEXT NOT NULL,
+      job_id         TEXT,
+      posted_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      evaluate_after INTEGER NOT NULL,
+      attempts       INTEGER NOT NULL DEFAULT 0,
+      evaluated_at   TEXT,
+      views          INTEGER,
+      outcome        TEXT NOT NULL DEFAULT 'pending'
+                       CHECK(outcome IN ('pending','ok','blocked')),
+      UNIQUE (archive_id, platform, external_id)
+    )`,
+    "CREATE INDEX IF NOT EXISTS idx_repost_events_archive ON repost_events(archive_id)",
+    "CREATE INDEX IF NOT EXISTS idx_repost_events_pending ON repost_events(outcome, evaluate_after)",
+    // A video whose repost underperformed. Machine-written from measured views,
+    // never from a user toggling a slug — see the note above. `views` and
+    // `blocked_at` are load-bearing for the UI: a block always explains itself
+    // with the number and date that caused it, which is what makes it
+    // distinguishable at a glance from a slug that was simply never enabled.
+    `CREATE TABLE IF NOT EXISTS repost_blocks (
+      archive_id      TEXT PRIMARY KEY,
+      reason          TEXT NOT NULL,
+      views           INTEGER,
+      repost_event_id TEXT,
+      blocked_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    // Every instant auto-booking has already claimed. Without this, deleting an
+    // auto-booked slot on the calendar would simply have it reappear on the
+    // next housekeeping pass — the row outlives the job on purpose.
+    `CREATE TABLE IF NOT EXISTS repost_autobook (
+      scheduled_at INTEGER PRIMARY KEY,
+      slug         TEXT NOT NULL,
+      job_id       TEXT,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
   ]) {
     try { _db.exec(sql); } catch { /* already exists */ }
   }

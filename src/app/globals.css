@@ -685,21 +685,6 @@ body {
   gap: 12px;
   margin-bottom: 20px;
 }
-.compose .cs-tag {
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  color: var(--amber-hi);
-  border: 1px solid var(--amber-dim);
-  background: rgba(255, 179, 36, 0.06);
-  padding: 2px 8px;
-}
-.compose .cs-title h1 {
-  font-family: var(--cond);
-  font-weight: 700;
-  font-size: 26px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
 .compose .cs-endpoint {
   margin-left: auto;
   font-size: 9px;
@@ -1487,26 +1472,6 @@ body {
   gap: 18px;
   padding: 4px 0 16px;
   flex-wrap: wrap;
-}
-.cal .cal-bar-left {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-.cal .cal-tag {
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  color: var(--amber-hi);
-  border: 1px solid var(--amber-dim);
-  background: rgba(255, 179, 36, 0.06);
-  padding: 2px 8px;
-}
-.cal .cal-bar h1 {
-  font-family: var(--cond);
-  font-weight: 700;
-  font-size: 26px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
 }
 .cal .cal-nav {
   display: flex;
@@ -2662,29 +2627,6 @@ body.cal-dragging * {
   padding: 4px 0 16px;
   flex-wrap: wrap;
 }
-.slugs .slugs-bar-left {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-.slugs .slugs-tag {
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  color: var(--amber-hi);
-  border: 1px solid var(--amber-dim);
-  background: rgba(255, 179, 36, 0.06);
-  padding: 2px 8px;
-}
-/* Matches .cal .cal-bar h1 exactly — a page title should not be recognisable
-   as belonging to a different app than the one next to it in the nav. */
-.slugs h1 {
-  font-family: var(--cond);
-  font-weight: 700;
-  font-size: 26px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--txt);
-}
 .slugs .slugs-lede {
   flex: 1;
   min-width: 260px;
@@ -3023,6 +2965,106 @@ body.cal-dragging * {
   line-height: 1.6;
   color: var(--mut);
   background: var(--panel);
+}
+
+/* ── reposting ──
+   Two toggles that read as adjacent but answer different questions: whether
+   this slug's content may run again, and whether this slug is the pool reposts
+   are drawn from. */
+.slugs .slugs-repost {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 12px 0;
+  background: var(--hair);
+  border: 1px solid var(--hair);
+}
+.slugs .slugs-repost-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 11px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.slugs .slugs-repost-row input {
+  margin-top: 2px;
+  accent-color: var(--amber);
+  cursor: pointer;
+}
+.slugs .slugs-repost-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.slugs .slugs-repost-row b {
+  font-family: var(--cond);
+  font-size: 12px;
+  color: var(--txt);
+}
+.slugs .slugs-repost-row em {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--mut);
+}
+
+.slugs .slugs-repost-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 9px 11px;
+  background: var(--char);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mut);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.slugs .slugs-repost-summary b {
+  color: var(--txt);
+  font-size: 12px;
+  margin-right: 4px;
+}
+.slugs .slugs-repost-summary .is-blocked b {
+  color: #e8a25a;
+}
+
+/* The repost table's last column carries an Unblock button, so it needs more
+   room than the pool table's 26px remove control. */
+.slugs .slugs-row.is-repost {
+  grid-template-columns: 1fr 70px 92px minmax(140px, 1.1fr) 78px;
+}
+.slugs .slugs-row.is-out {
+  color: var(--mut);
+}
+.slugs .slugs-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-family: var(--cond);
+  font-size: 13px;
+}
+.slugs .slugs-name em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mut);
+}
+.slugs .slugs-tag {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--mut);
+}
+.slugs .slugs-tag.is-ok {
+  color: var(--txt);
+}
+/* A retired video always states the figure and date that retired it. That is
+   what keeps it legible as a measurement rather than as another off switch. */
+.slugs .slugs-tag.is-blocked {
+  color: #e8a25a;
 }
 
 /* start a pool before anything has been posted to it */

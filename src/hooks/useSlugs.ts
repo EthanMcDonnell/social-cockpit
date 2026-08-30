@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   Slug,
+  SlugMode,
   SelectionMethod,
   SlugDetail,
   SlugPost,
@@ -13,6 +14,7 @@ import type {
   SlugVideoView,
 } from "@/lib/slugs/types";
 import type { SchedulePlatform } from "@/lib/schedule/types";
+import type { RepostCandidate } from "@/lib/repost/types";
 
 const LIST_KEY = ["slugs"];
 
@@ -31,6 +33,29 @@ export interface SlugDetailResponse {
   next_up: SlugSelection | null;
   /** Why nothing would, when nothing would. */
   blocked: SlugSelectionFailure | null;
+}
+
+export interface RepostsResponse {
+  platform: SchedulePlatform;
+  settings: {
+    min_views: number;
+    block_below_views: number;
+    min_gap_days: number;
+    graduation_strategy: string;
+  };
+  slugs: string[];
+  archive: { used: number; cap: number; count: number };
+  candidates: RepostCandidate[];
+  /** Archive ids, tier 1 before tier 2 — what would actually go out next. */
+  order: string[];
+  counts: {
+    total: number;
+    eligible: number;
+    tier1: number;
+    tier2: number;
+    awaiting_optin: number;
+    blocked: number;
+  };
 }
 
 async function asJson<T>(res: Response): Promise<T> {
@@ -105,6 +130,8 @@ export function useUpdateSlug() {
       slug: string;
       name?: string | null;
       selection_method?: SelectionMethod | null;
+      repost_eligible?: boolean;
+      mode?: SlugMode;
     }) =>
       asJson<{ slug: Slug }>(
         await fetch(`/api/slugs/${encodeURIComponent(slug)}`, {
@@ -241,5 +268,41 @@ export function useRemoveSlugVideo() {
         await fetch(`/api/slugs/${encodeURIComponent(slug)}/videos/${id}`, { method: "DELETE" })
       ),
     onSuccess: (_data, vars) => invalidate(vars.slug),
+  });
+}
+
+// ─── Reposting ───────────────────────────────────────────────────────────────
+
+const REPOSTS_KEY = ["reposts"];
+
+/**
+ * The repost pool: every archived video with its verdict, not just the runnable
+ * ones. The page has to be able to say *why* nothing is eligible, and that
+ * answer is per-video — one is waiting on its slug being opted in, another was
+ * retired for underperforming, a third is simply resting.
+ */
+export function useReposts(platform: SchedulePlatform = "ig", enabled = true) {
+  return useQuery({
+    queryKey: [...REPOSTS_KEY, platform],
+    enabled,
+    queryFn: async () =>
+      asJson<RepostsResponse>(await fetch(`/api/reposts?platform=${platform}`)),
+    // Scored against live insights, and a stale verdict is a misleading one.
+    staleTime: 60_000,
+  });
+}
+
+/** Lift a performance block. The only way one is ever removed. */
+export function useUnblockRepost() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (archiveId: string) =>
+      asJson<{ unblocked: boolean }>(
+        await fetch(`/api/reposts/blocks/${encodeURIComponent(archiveId)}`, { method: "DELETE" })
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: REPOSTS_KEY });
+      client.invalidateQueries({ queryKey: LIST_KEY });
+    },
   });
 }

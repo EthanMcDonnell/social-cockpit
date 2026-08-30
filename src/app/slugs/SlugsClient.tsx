@@ -15,6 +15,8 @@ import {
   useSlugs,
   useUpdateSlug,
   useUpdateSlugVideo,
+  useReposts,
+  useUnblockRepost,
 } from "@/hooks/useSlugs";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import {
@@ -23,9 +25,11 @@ import {
   SELECTION_METHODS,
   type SelectionMethod,
   type SlugPost,
+  type SlugMode,
   type SlugVideoPayload,
   type SlugVideoView,
 } from "@/lib/slugs/types";
+import { INELIGIBILITY_LABELS } from "@/lib/repost/types";
 
 const PLATFORMS: SchedulePlatform[] = ["ig", "yt"];
 const PLATFORM_NAME: Record<SchedulePlatform, string> = { ig: "Instagram", yt: "YouTube" };
@@ -60,10 +64,6 @@ export function SlugsClient() {
   return (
     <div className="slugs">
       <header className="slugs-bar">
-        <div className="slugs-bar-left">
-          <span className="slugs-tag">07</span>
-          <h1>Slugs</h1>
-        </div>
         <p className="slugs-lede">
           Book a calendar slot against a slug and the video is chosen when the slot arrives —
           highest views, longest wait, whatever you pick.
@@ -206,6 +206,9 @@ function SlugDetail({
 
   const pool = data?.slug.videos ?? [];
   const override = data?.slug.selection_method ?? "";
+  // A repost pool has no rows of its own — it draws from the archive — so the
+  // enrolment table below is replaced rather than shown empty and confusing.
+  const isRepost = data?.slug.mode === "repost";
 
   async function add() {
     setError(null);
@@ -306,6 +309,13 @@ function SlugDetail({
         </p>
       </div>
 
+      <RepostControls
+        slug={slug}
+        eligible={data?.slug.repost_eligible ?? false}
+        mode={data?.slug.mode ?? "pool"}
+        onChange={(patch) => update.mutate({ slug, ...patch })}
+      />
+
       {data?.blocked ? (
         <div className={`slugs-next ${data.blocked.exhausted ? "is-warn" : "is-err"}`}>
           <span className="slugs-next-tag">Next up on {PLATFORM_NAME[platform]}</span>
@@ -320,6 +330,9 @@ function SlugDetail({
         </div>
       ) : null}
 
+      {isRepost ? (
+        <RepostPool platform={platform} />
+      ) : (
       <div className="slugs-pool">
         <div className="slugs-row is-head">
           <span>Video</span>
@@ -344,6 +357,7 @@ function SlugDetail({
           />
         ))}
       </div>
+      )}
 
       <SlugHistory
         slug={slug}
@@ -352,6 +366,8 @@ function SlugDetail({
         platform={platform}
       />
 
+      {!isRepost && (
+      <>
       <div className="slugs-add">
         <input
           value={path}
@@ -370,8 +386,193 @@ function SlugDetail({
       <p className="slugs-hint">
         The file stays where it is — a pool holds a reference to your own library, never a copy.
       </p>
+      </>
+      )}
       {error && <p className="slugs-err">{error}</p>}
     </section>
+  );
+}
+
+/**
+ * The repost opt-in, and whether this slug *is* a repost pool.
+ *
+ * Two different questions that look adjacent, so they are labelled apart:
+ *
+ *   "May this content be reposted?" — a property of the videos published under
+ *   this slug. Off by default, and the whole mechanism for keeping dated
+ *   material (news, updates, anything time-bound) out of the rotation: such a
+ *   slug is simply never switched on.
+ *
+ *   "Is this slug the pool reposts come *from*?" — a property of the slug as a
+ *   scheduling target. Usually exactly one slug, and usually not one you also
+ *   publish original content under.
+ */
+function RepostControls({
+  slug,
+  eligible,
+  mode,
+  onChange,
+}: {
+  slug: string;
+  eligible: boolean;
+  mode: SlugMode;
+  onChange: (patch: { repost_eligible?: boolean; mode?: SlugMode }) => void;
+}) {
+  return (
+    <div className="slugs-repost">
+      <label className="slugs-repost-row">
+        <input
+          type="checkbox"
+          checked={eligible}
+          onChange={(e) => onChange({ repost_eligible: e.target.checked })}
+        />
+        <span>
+          <b>Allow reposting</b>
+          <em>
+            {eligible
+              ? `Videos published under #${slug} may be reposted once they clear the view threshold.`
+              : "Off. Leave it off for anything time-dependent — updates, news, announcements."}
+          </em>
+        </span>
+      </label>
+
+      <label className="slugs-repost-row">
+        <input
+          type="checkbox"
+          checked={mode === "repost"}
+          onChange={(e) => onChange({ mode: e.target.checked ? "repost" : "pool" })}
+        />
+        <span>
+          <b>Use as the repost pool</b>
+          <em>
+            Slots booked against #{slug} draw from your archive instead of a video list, and publish
+            as trial reels promoted by hand.
+          </em>
+        </span>
+      </label>
+    </div>
+  );
+}
+
+/**
+ * The repost pool: what would run, and why everything else would not.
+ *
+ * Deliberately lists ineligible videos too. "Nothing is eligible" is the state
+ * that most needs explaining, and the explanation differs per video — the two
+ * that matter most being a slug that was never opted in (your decision, one
+ * click away) and a video retired for underperforming (a measurement, shown
+ * with the number and date that produced it). Collapsing those into one grey
+ * "unavailable" would make the pool unreadable.
+ */
+function RepostPool({ platform }: { platform: SchedulePlatform }) {
+  const reposts = useReposts(platform);
+  const unblock = useUnblockRepost();
+  const data = reposts.data;
+
+  if (reposts.isLoading) return <p className="slugs-empty">Reading the archive…</p>;
+  if (!data) return <p className="slugs-empty">Could not read the repost pool.</p>;
+
+  if (!data.counts.total) {
+    return (
+      <p className="slugs-empty">
+        Nothing archived yet. Every video this app publishes from now on is preserved automatically,
+        and becomes repostable once it clears {data.settings.min_views.toLocaleString()} views.
+      </p>
+    );
+  }
+
+  const order = new Map(data.order.map((id, index) => [id, index]));
+  // Eligible first, in the order they would actually run; everything else after,
+  // so the top of the list always answers "what happens next".
+  const sorted = [...data.candidates].sort(
+    (a, b) => (order.get(a.archive.id) ?? 1e9) - (order.get(b.archive.id) ?? 1e9)
+  );
+
+  return (
+    <div className="slugs-pool">
+      <div className="slugs-repost-summary">
+        <span>
+          <b>{data.counts.tier1}</b> never reposted
+        </span>
+        <span>
+          <b>{data.counts.tier2}</b> ready for another run
+        </span>
+        {data.counts.awaiting_optin > 0 && (
+          <span className="is-muted">
+            <b>{data.counts.awaiting_optin}</b> awaiting opt-in
+          </span>
+        )}
+        {data.counts.blocked > 0 && (
+          <span className="is-blocked">
+            <b>{data.counts.blocked}</b> retired
+          </span>
+        )}
+      </div>
+
+      <div className="slugs-row is-repost is-head">
+        <span>Video</span>
+        <span>Views</span>
+        <span>Last repost</span>
+        <span>Status</span>
+        <span />
+      </div>
+
+      {sorted.map((candidate) => {
+        const rank = order.get(candidate.archive.id);
+        return (
+          <div
+            key={candidate.archive.id}
+            className={`slugs-row is-repost${rank === 0 ? " is-next" : ""}${
+              candidate.eligible ? "" : " is-out"
+            }`}
+          >
+            <span className="slugs-name">
+              {candidate.label}
+              {candidate.slug && <em> #{candidate.slug}</em>}
+            </span>
+            <span>{candidate.views !== undefined ? formatCount(candidate.views) : "—"}</span>
+            <span>
+              {candidate.last_reposted_at
+                ? new Date(candidate.last_reposted_at).toLocaleDateString()
+                : "Never"}
+            </span>
+            <span>
+              {candidate.block ? (
+                // The number and the date are the point: a retired video always
+                // says what retired it, which is what makes this state
+                // impossible to confuse with a slug that was never enabled.
+                <span className="slugs-tag is-blocked">
+                  Retired · {candidate.block.views?.toLocaleString() ?? "?"} views on{" "}
+                  {new Date(candidate.block.blocked_at).toLocaleDateString()}
+                </span>
+              ) : candidate.eligible ? (
+                <span className="slugs-tag is-ok">
+                  {candidate.tier === 1 ? "Never reposted" : "Rested"}
+                  {rank === 0 ? " · next up" : ""}
+                </span>
+              ) : (
+                <span className="slugs-tag">
+                  {INELIGIBILITY_LABELS[candidate.why ?? "unscored"]}
+                </span>
+              )}
+            </span>
+            <span>
+              {candidate.block && (
+                <button
+                  type="button"
+                  className="slugs-btn ghost"
+                  disabled={unblock.isPending}
+                  onClick={() => unblock.mutate(candidate.archive.id)}
+                  title="Put this video back in the repost pool. It still has to wait out the rest period."
+                >
+                  Unblock
+                </button>
+              )}
+            </span>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

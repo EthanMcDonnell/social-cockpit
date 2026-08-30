@@ -36,6 +36,12 @@ export interface CandidateMetrics {
 }
 
 /**
+ * Anything with an id and a list of posts behind it can be scored — a pool
+ * candidate, or an archived video the repost pool is considering.
+ */
+export type Scoreable = Pick<SlugVideo, "id" | "posts">;
+
+/**
  * How long a YouTube figure is reused. Long enough that resolving a pool,
  * previewing it in the UI, and firing the job minutes later cost one call;
  * short enough that "most views" means today's views, not last week's.
@@ -119,7 +125,12 @@ function instagramStats(mediaIds: string[]): Map<string, PostMetrics> {
  * API quota to answer a question it never asks.
  */
 export async function scoreCandidates(
-  videos: SlugVideo[],
+  // Widened from `SlugVideo[]` to the two fields this actually reads, so the
+  // repost pool can score archived videos on the same code path. A repost
+  // candidate is identified by its archive id rather than a pool row, but the
+  // question — "how did the posts behind this file perform" — is identical, and
+  // it would be scored differently here if it were asked twice.
+  videos: Scoreable[],
   opts: { needsMetrics: boolean } = { needsMetrics: true }
 ): Promise<Map<string, CandidateMetrics>> {
   const out = new Map<string, CandidateMetrics>();

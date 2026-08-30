@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
 import { ensureSlug, listSlugs, normalizeSlug, updateSlug } from "@/lib/slugs/store";
 import { getDefaultSelectionMethod } from "@/lib/slugs/settings";
-import { isSelectionMethod, SELECTION_METHODS } from "@/lib/slugs/types";
+import { isSelectionMethod, isSlugMode, SELECTION_METHODS } from "@/lib/slugs/types";
 
 export const dynamic = "force-dynamic";
 
@@ -51,10 +51,19 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (body.repost_eligible !== undefined && typeof body.repost_eligible !== "boolean") {
+    return invalid("repost_eligible must be a boolean.");
+  }
+  if (body.mode !== undefined && !isSlugMode(body.mode)) {
+    return invalid('mode must be "pool" or "repost".');
+  }
+
   ensureSlug(slug, typeof body.name === "string" ? body.name : undefined);
   const updated = updateSlug(slug, {
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.selection_method !== undefined ? { selection_method: body.selection_method } : {}),
+    ...(body.repost_eligible !== undefined ? { repost_eligible: body.repost_eligible } : {}),
+    ...(body.mode !== undefined ? { mode: body.mode } : {}),
   });
 
   return NextResponse.json({ slug: updated }, { status: 201 });

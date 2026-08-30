@@ -138,11 +138,6 @@ export function CalendarClient() {
   return (
     <div className="cal">
       <header className="cal-bar">
-        <div className="cal-bar-left">
-          <span className="cal-tag">06</span>
-          <h1>Calendar</h1>
-        </div>
-
         <div className="cal-nav">
           <button type="button" onClick={() => step(-1)} aria-label="Previous">
             ‹

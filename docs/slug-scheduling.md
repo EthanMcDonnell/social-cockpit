@@ -246,7 +246,9 @@ Additive only; no existing table is altered beyond two nullable columns.
 
 ```sql
 slugs             (slug PK, name, selection_method, …)     -- the registry
+                  + repost_eligible, + mode                -- see docs/reposting.md
 slug_videos       (id PK, slug, path, label, payload, …)   -- UNIQUE(slug, path)
+                  + archive_id                             -- the preserved copy
 slug_video_posts  (video_id, platform, external_id, job_id, posted_at)
 scheduled_posts   + slug, + selection_method
 ```
@@ -259,3 +261,17 @@ up with both.
 
 Deleting a pool leaves the automation flow sharing its name running — tearing
 down a live comment funnel is not something a pool delete should do quietly.
+
+## 7. Reposting
+
+A slug has a third setting beyond its pool and its flow: whether the videos
+published under it may ever be **reposted**, and whether the slug is itself the
+pool reposts are drawn from.
+
+Reposting inverts this document's central rule. A pool retires a candidate once
+it posts to a platform, which is what makes a recurring slot work through a
+library; a repost pool deliberately runs something again, and draws from an
+archive of published videos rather than from `slug_videos`. It is off by default
+on every slug — which is how time-dependent content is kept out of it.
+
+See [docs/reposting.md](reposting.md).

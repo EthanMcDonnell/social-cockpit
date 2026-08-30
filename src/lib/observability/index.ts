@@ -23,6 +23,8 @@ export type EventSource =
   | "token"
   | "transcription"
   | "slugs"
+  | "archive"
+  | "repost"
   | "instagram"
   | "db"
   | "api";

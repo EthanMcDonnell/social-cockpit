@@ -31,7 +31,7 @@ import type {
   SchedulePlatform,
   YoutubeJobPayload,
 } from "./types";
-import { ensureSlug, normalizeSlug } from "@/lib/slugs/store";
+import { ensureSlug, getSlug, normalizeSlug } from "@/lib/slugs/store";
 import { isSelectionMethod, SELECTION_METHODS, type SelectionMethod } from "@/lib/slugs/types";
 
 /** Filesystem-path sources, mirroring POST /api/publish/local. */
@@ -254,6 +254,17 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
   const slug = body.slug?.trim() ? normalizeSlug(body.slug) : "";
   if (body.slug?.trim() && !slug) {
     return fail("invalid_param", "A slug needs at least one letter or digit.");
+  }
+
+  // A repost publishes as a trial reel, and trial reels are an Instagram
+  // feature with no YouTube equivalent. Caught here rather than at fire time:
+  // the alternative is a slot that looks fine on the calendar for a fortnight
+  // and then fails at 3am with nothing the user can do about it.
+  if (slug && platform === "yt" && getSlug(slug)?.mode === "repost") {
+    return fail(
+      "invalid_param",
+      `#${slug} is a repost pool, and reposts publish as Instagram trial reels. Book it for Instagram, or use an ordinary pool for YouTube.`
+    );
   }
 
   /**

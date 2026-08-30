@@ -170,6 +170,14 @@ export interface SlugSummary {
   slug: string;
   name?: string;
   selection_method?: SelectionMethod;
+  /**
+   * Whether videos published under this slug may ever be reposted. Opt-in and
+   * off by default — the mechanism for keeping time-dependent content (updates,
+   * news) out of the repost rotation is simply never enabling it.
+   */
+  repost_eligible?: boolean;
+  /** `repost` draws from the archive of published videos instead of a file list. */
+  mode?: "pool" | "repost";
   video_count: number;
   /** Candidates still eligible for each platform (not yet posted there). */
   eligible: Record<SchedulePlatform, number>;

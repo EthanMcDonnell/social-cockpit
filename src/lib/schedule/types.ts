@@ -118,6 +118,9 @@ export interface ScheduleResult {
   /** Slug jobs: which candidate was chosen at fire time, and why. */
   slug_video_id?: string;
   slug_reason?: string;
+  /** Repost jobs: the archived video that ran, and which tier it came from. */
+  repost_archive_id?: string;
+  repost_tier?: 1 | 2;
   /** Set on failure. */
   error?: string;
   error_kind?: FailureKind;
