@@ -2987,8 +2987,20 @@ body.cal-dragging * {
   background: var(--panel);
   cursor: pointer;
 }
-.slugs .slugs-repost-row input {
-  margin-top: 2px;
+/* `.slugs input` sets `width: 100%` for this page's text fields. A checkbox
+   inheriting that becomes a full-width box with the glyph centred inside it,
+   which shunts the label halfway across the row — so the box model is reset
+   here rather than the shared rule being narrowed, which would touch every
+   other field on the page. */
+.slugs .slugs-repost-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  min-width: 0;
+  margin: 2px 0 0;
+  padding: 0;
+  background: none;
+  border: 0;
   accent-color: var(--amber);
   cursor: pointer;
 }
@@ -2996,6 +3008,9 @@ body.cal-dragging * {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  /* min-width:0 lets the description wrap instead of forcing the row wider
+     than its container, which is the usual flex-item overflow trap. */
+  flex: 1;
   min-width: 0;
 }
 .slugs .slugs-repost-row b {
@@ -3008,6 +3023,9 @@ body.cal-dragging * {
   font-size: 10px;
   line-height: 1.5;
   color: var(--mut);
+  /* Measure, not width: a 10px line running the full width of a wide panel is
+     hard to track back to the start of the next line. */
+  max-width: 62ch;
 }
 
 .slugs .slugs-repost-summary {
