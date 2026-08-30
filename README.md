@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/portfolio/identity/social-cockpit-radar.svg" alt="Social Cockpit" width="112" />
+
 # Social Cockpit
 
 **A self-hosted command center for your Instagram presence: analytics, publishing, inbox, and hands-off engagement automations, all running on your own machine.**
@@ -13,7 +15,9 @@
 
 <br />
 
-<img src="docs/screenshots/dashboard.png" alt="Social Cockpit dashboard: follower growth, video views, best time to post, and posts per day" width="100%" />
+<img src="docs/portfolio/screenshots/01-dashboard.png" alt="Social Cockpit's instrument-panel dashboard for a fictional creative studio: follower growth, reel views, an hourly views-and-engagement best-time instrument, and posting cadence." width="100%" />
+
+<sub>Screens show <strong>Lumen Field / Demo</strong>, a fabricated account kept for portfolio media — see <a href="docs/portfolio/README.md"><code>docs/portfolio/</code></a>.</sub>
 
 </div>
 
@@ -55,6 +59,27 @@ Today, Social Cockpit targets **Instagram only**. The architecture is provider-a
 - **💬 Inbox:** Read and reply to comments in threaded view.
 - **🎙️ Video Transcription (optional):** A background worker transcribes your Reels/videos locally with [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) so you can search and rank by script content.
 - **⚡ Smart local caching & token management:** Media and insights are cached in local SQLite with stale-while-revalidate reads; short-lived tokens exchange for long-lived ones in the UI with automatic background refresh before expiry.
+
+---
+
+## 📸 Screenshots
+
+<div align="center">
+
+<img src="docs/portfolio/screenshots/03-automations.png" alt="Social Cockpit's comment-to-DM builder, showing a fictional campaign resource, selected campaign posts, public replies, and the direct message sent." width="100%" />
+<br /><sub><strong>Engagement Automations</strong> — a comment → follow → DM flow built for a single campaign.</sub>
+
+<br /><br />
+
+<img src="docs/portfolio/screenshots/02-calendar.png" alt="A current week in Social Cockpit's scheduler, with a populated fictional Instagram Reels and YouTube Shorts publishing history." width="100%" />
+<br /><sub><strong>Scheduling Calendar</strong> — a week of Instagram Reels and YouTube Shorts, dropped in by hand or booked against a slug.</sub>
+
+<br /><br />
+
+<img src="docs/portfolio/screenshots/04-posts.png" alt="A grid of original campaign covers in Social Cockpit's post explorer, with engagement and performance indicators." width="100%" />
+<br /><sub><strong>Posts Explorer</strong> — every post with its insights, ranked and compared by any metric.</sub>
+
+</div>
 
 ---
 

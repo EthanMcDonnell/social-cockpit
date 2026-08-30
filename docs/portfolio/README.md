@@ -1,7 +1,9 @@
 # Social Cockpit portfolio media — review pack
 
-This folder is the review gate for potential portfolio media. Nothing here has
-been copied to the personal site.
+This folder is the review gate for portfolio media. The four screenshots and the
+radar mark below are **approved** and now live in the repository's root
+[`README.md`](../../README.md); the personal-site project page is text-only, so
+nothing here is copied there.
 
 Every screenshot uses **Lumen Field / Demo**, a fully fabricated creative-studio
 account. The account, campaign, performance figures, captions, scheduled queue,
@@ -16,13 +18,13 @@ a replacement brand identity.
 
 | Asset | Role | Source / provenance | Privacy treatment | Status | Draft alt text |
 | --- | --- | --- | --- | --- | --- |
-| [`screenshots/01-dashboard.png`](screenshots/01-dashboard.png) | Hero analytics still | Demo instance at `/dashboard` | Fabricated account; nothing to redact | `candidate` | "Social Cockpit's instrument-panel dashboard for a fictional creative studio: follower growth, reel views, an hourly views-and-engagement best-time instrument, and posting cadence." |
-| [`screenshots/02-calendar.png`](screenshots/02-calendar.png) | Scheduler still | Demo instance at `/calendar`, current week view | Fabricated account; nothing to redact | `candidate` | "A current week in Social Cockpit's scheduler, with a populated fictional Instagram Reels and YouTube Shorts publishing history." |
-| [`screenshots/03-automations.png`](screenshots/03-automations.png) | Automation-builder still | Demo instance at `/automations`, campaign flow opened | Fabricated account; nothing to redact | `candidate` | "Social Cockpit's comment-to-DM builder, showing a fictional campaign resource, selected campaign posts, public replies, and the direct message sent." |
-| [`screenshots/04-posts.png`](screenshots/04-posts.png) | Post-analytics still | Demo instance at `/posts`, campaign media grid | Fabricated account; nothing to redact | `candidate` | "A grid of original campaign covers in Social Cockpit's post explorer, with engagement and performance indicators." |
-| [`identity/social-cockpit-radar.svg`](identity/social-cockpit-radar.svg) | Icon logo | Export of [`RadarScope.tsx`](../../src/components/dashboard/cockpit/RadarScope.tsx), posed mid-rotation | No account data | `candidate` | "Social Cockpit radar icon with an amber scan sweep and contact blip." |
-| [`identity/social-cockpit-radar-512.png`](identity/social-cockpit-radar-512.png) | Raster icon logo | 512px export of the SVG above | No account data | `candidate` | "Square Social Cockpit radar icon on charcoal." |
-| [`identity/social-cockpit-lockup.svg`](identity/social-cockpit-lockup.svg) | Identity lockup | The radar beside the header's `SOCIAL·COCKPIT` treatment, glyphs converted to outlines | No account data | `candidate` | "Social Cockpit radar mark beside the Social Cockpit wordmark." |
+| [`screenshots/01-dashboard.png`](screenshots/01-dashboard.png) | Hero analytics still | Demo instance at `/dashboard` | Fabricated account; nothing to redact | `approved` — root README hero | "Social Cockpit's instrument-panel dashboard for a fictional creative studio: follower growth, reel views, an hourly views-and-engagement best-time instrument, and posting cadence." |
+| [`screenshots/02-calendar.png`](screenshots/02-calendar.png) | Scheduler still | Demo instance at `/calendar`, current week view | Fabricated account; nothing to redact | `approved` — root README Screenshots | "A current week in Social Cockpit's scheduler, with a populated fictional Instagram Reels and YouTube Shorts publishing history." |
+| [`screenshots/03-automations.png`](screenshots/03-automations.png) | Automation-builder still | Demo instance at `/automations`, campaign flow opened | Fabricated account; nothing to redact | `approved` — root README Screenshots | "Social Cockpit's comment-to-DM builder, showing a fictional campaign resource, selected campaign posts, public replies, and the direct message sent." |
+| [`screenshots/04-posts.png`](screenshots/04-posts.png) | Post-analytics still | Demo instance at `/posts`, campaign media grid | Fabricated account; nothing to redact | `approved` — root README Screenshots | "A grid of original campaign covers in Social Cockpit's post explorer, with engagement and performance indicators." |
+| [`identity/social-cockpit-radar.svg`](identity/social-cockpit-radar.svg) | Icon logo | Export of [`RadarScope.tsx`](../../src/components/dashboard/cockpit/RadarScope.tsx), posed mid-rotation | No account data | `approved` — root README title block | "Social Cockpit radar icon with an amber scan sweep and contact blip." |
+| [`identity/social-cockpit-radar-512.png`](identity/social-cockpit-radar-512.png) | Raster icon logo | 512px export of the SVG above | No account data | `approved` — available for favicons / avatars | "Square Social Cockpit radar icon on charcoal." |
+| [`identity/social-cockpit-lockup.svg`](identity/social-cockpit-lockup.svg) | Identity lockup | The radar beside the header's `SOCIAL·COCKPIT` treatment, glyphs converted to outlines | No account data | `approved` — available where a wordmark is needed | "Social Cockpit radar mark beside the Social Cockpit wordmark." |
 
 The older [`../screenshots/dashboard.png`](../screenshots/dashboard.png) is a
 historical product reference, not a portfolio-capture baseline. It depicts the
@@ -70,5 +72,11 @@ before running it.
 ## Approval gate
 
 These contain no personal data, so the earlier hold on identifying a real person
-no longer applies. Review each at full size, then copy web-sized derivatives to
-the personal site.
+no longer applies. All seven assets were reviewed at full size and approved on
+2026-08-30: `01-dashboard.png` is the root README hero, `02`–`04` sit in its
+Screenshots section, and the radar mark heads the README title block. The raster
+icon and the lockup are approved but not yet placed.
+
+Re-running `demo/run.sh` writes fresh `candidate` PNGs to a scratch directory; it
+does not touch this folder. Promote a replacement set the same way — review all
+four at native size, swap them in together, and update the Status column here.
