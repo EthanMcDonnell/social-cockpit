@@ -19,7 +19,7 @@
 import { reservedSlugVideoIds } from "@/lib/schedule/store";
 import { scoreCandidates, type CandidateMetrics } from "./metrics";
 import { basename } from "path";
-import { filenameOf, getSlug, isMissing, listVideos, postedTo } from "./store";
+import { filenameOf, isMissing, listVideos, postedTo } from "./store";
 import { describeRepost, rankCandidates, repostCandidates } from "@/lib/repost/candidates";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import {

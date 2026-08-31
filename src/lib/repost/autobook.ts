@@ -28,7 +28,6 @@ import { logScheduleEvent, createJobWithinScheduledCap } from "@/lib/schedule/st
 import { checkDailyCap } from "@/lib/schedule/capacity";
 import { getMaxPostsPerDay, getTimeZone } from "@/lib/schedule/settings";
 import { addDays, dayOfWeek, startOfDay, wallToUtc, utcToWall } from "@/lib/schedule/tz";
-import { reportWarn } from "@/lib/observability";
 import { repostCandidates, rankCandidates } from "./candidates";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import { autobookedInstants, cullAutobookLedger, recordAutobooked } from "./store";
