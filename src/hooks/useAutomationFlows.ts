@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { AutomationFlow, AutomationConfig, AutomationTemplateType } from "@/lib/db";
+import type { AutomationFlow, AutomationConfig, AutomationScope, AutomationTemplateType } from "@/lib/db";
 
 const QUERY_KEY = ["automation-flows"];
 
@@ -27,6 +27,7 @@ export function useCreateFlow() {
       config: AutomationConfig;
       media_id?: string;
       media_ids?: string[];
+      scope?: AutomationScope;
       template_type?: AutomationTemplateType;
     }) => {
       const res = await fetch("/api/automation-flows", {

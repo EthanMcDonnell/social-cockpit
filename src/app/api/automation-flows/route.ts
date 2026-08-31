@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, rowToFlow, type AutomationFlowRow, type AutomationConfig, type AutomationTemplateType } from "@/lib/db";
+import { getDb, rowToFlow, type AutomationFlowRow, type AutomationConfig, type AutomationScope, type AutomationTemplateType } from "@/lib/db";
 import { randomUUID } from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -20,12 +20,13 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, trigger_keywords, config, media_id, media_ids, template_type } = body as {
+    const { name, trigger_keywords, config, media_id, media_ids, template_type, scope: body_scope } = body as {
       name: string;
       trigger_keywords: string[];
       config: AutomationConfig;
       media_id?: string;
       media_ids?: string[];
+      scope?: AutomationScope;
       template_type?: AutomationTemplateType;
     };
 
@@ -54,9 +55,19 @@ export async function POST(request: NextRequest) {
           ? "comment_to_follow_dm"
           : "comment_to_dm";
 
+    // Scope is explicit from here on. A caller that does not send one gets the
+    // rule that used to be applied implicitly — no targets meant the whole
+    // account — so an existing API client keeps the behaviour it has today.
+    const scope: AutomationScope =
+      body_scope === "account" || body_scope === "posts"
+        ? body_scope
+        : mediaIds.length === 0
+          ? "account"
+          : "posts";
+
     // Persist the full target list inside config; keep the media_id column
     // populated with the primary id for backward-compatible list display.
-    const storedConfig = { ...(config ?? {}), media_ids: mediaIds };
+    const storedConfig = { ...(config ?? {}), media_ids: mediaIds, scope };
 
     const db = getDb();
     const id = randomUUID();

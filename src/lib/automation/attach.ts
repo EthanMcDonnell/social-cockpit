@@ -191,7 +191,9 @@ function createFlow(
     name,
     spec.templateType,
     JSON.stringify(spec.keywords),
-    JSON.stringify({ ...spec.config, media_ids }),
+    // Created for one specific post, so the scope is not in doubt. Stated
+    // rather than inferred — the inference is only there for older rows.
+    JSON.stringify({ ...spec.config, media_ids, scope: "posts" }),
     mediaId,
     isActive,
     activatedAt,

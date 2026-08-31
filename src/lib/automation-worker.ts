@@ -193,7 +193,7 @@ function commentFloorFor(
   flows: AutomationFlow[]
 ): string {
   const candidates = flows
-    .filter((f) => f.media_ids.length === 0 || f.media_ids.includes(postId))
+    .filter((f) => f.scope === "account" || f.media_ids.includes(postId))
     .map((f) => f.activated_at ?? f.created_at)
     .filter(Boolean);
   // Oldest activation wins among the applicable flows; a later cursor then trims
@@ -232,9 +232,10 @@ export async function processFlows(
       .all() as AutomationFlowRow[]
   )
     .map(rowToFlow)
-    // A flow applies to this post if it targets no specific posts (any post)
-    // or if this post is one of its targeted posts.
-    .filter((flow) => flow.media_ids.length === 0 || flow.media_ids.includes(postId));
+    // A flow applies to this post if it is scoped to the whole account, or if
+    // this post is one of its targeted posts. Scope is resolved in rowToFlow and
+    // falls back to the old empty-means-any-post rule for pre-scope rows.
+    .filter((flow) => flow.scope === "account" || flow.media_ids.includes(postId));
 
   if (flows.length === 0) return { deferredOldest: null };
 
@@ -655,7 +656,7 @@ export async function runAutomationCycle() {
 
   let hasAnyPostFlow = false;
   for (const flow of activeFlows) {
-    if (flow.media_ids.length === 0) {
+    if (flow.scope === "account") {
       hasAnyPostFlow = true;
     } else {
       for (const id of flow.media_ids) postIds.add(id);

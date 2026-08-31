@@ -411,19 +411,39 @@ export function setCursor(db: Database.Database, key: string, value?: string): v
 export type AutomationTemplateType =
   "comment_to_dm" | "comment_to_reply" | "comment_to_follow_dm";
 
+/**
+ * Which posts a flow is allowed to fire on.
+ *
+ *   "posts"   — only the ids in media_ids.
+ *   "account" — every post on the account, including ones posted later.
+ *
+ * This used to be inferred from media_ids being empty, which made the widest
+ * possible setting the one a flow got by saying nothing: a flow created and
+ * left alone fired on everything. Empty now means empty, and account-wide has
+ * to be asked for.
+ *
+ * Absent on every row written before this existed, so it is inferred from
+ * media_ids exactly the way the worker used to (see rowToFlow). Old flows keep
+ * firing on precisely the posts they fired on yesterday.
+ */
+export type AutomationScope = "account" | "posts";
+
 export interface CommentToDmConfig {
   comment_reply_fn?: string;
   comment_replies: string[];
   initial_message: string;
-  // Posts this flow applies to. Absent/empty = any post. Stored inside the
-  // config JSON so no schema migration is needed to support multiple videos.
+  // Posts this flow applies to. Stored inside the config JSON so no schema
+  // migration is needed to support multiple videos.
   media_ids?: string[];
+  // Absent on pre-scope rows; rowToFlow infers it. See AutomationScope.
+  scope?: AutomationScope;
 }
 
 export interface CommentToReplyConfig {
   comment_reply_fn?: string;
   comment_replies: string[];
   media_ids?: string[];
+  scope?: AutomationScope;
 }
 
 // Comment → Follow → DM (reply-to-confirm). DMs a reward only to people who
@@ -432,6 +452,7 @@ export interface CommentToFollowDmConfig {
   comment_reply_fn?: string;          // reuse public-reply machinery
   comment_replies?: string[];
   media_ids?: string[];
+  scope?: AutomationScope;
 
   opener_message?: string;            // "Follow me, then reply DONE and I'll send it 🔗"
   confirm_keyword?: string;           // reply-to-confirm keyword, default "DONE"
@@ -470,8 +491,10 @@ export interface AutomationFlow {
   created_at: string;
   // Primary/first targeted post — kept for backward compatibility and list display.
   media_id?: string;
-  // Full set of targeted posts. Empty = any post. Source of truth for matching.
+  // Full set of targeted posts. Source of truth for matching when scope is "posts".
   media_ids: string[];
+  // Always resolved, never absent — inferred for rows written before scope existed.
+  scope: AutomationScope;
   activated_at?: string;
   // Stable dedup slug set by API-driven publish+automate. Absent for UI flows.
   automation_key?: string;
@@ -499,6 +522,16 @@ export function rowToFlow(row: AutomationFlowRow): AutomationFlow {
     ? config.media_ids.filter(Boolean)
     : undefined;
   const media_ids = configMediaIds ?? (row.media_id ? [row.media_id] : []);
+  // Pre-scope rows carry no scope. Infer it with the exact test the worker used
+  // to apply inline (`media_ids.length === 0` meant any post), so a flow written
+  // before this field existed resolves to the behaviour it already had.
+  const storedScope = (config as { scope?: unknown }).scope;
+  const scope: AutomationScope =
+    storedScope === "account" || storedScope === "posts"
+      ? storedScope
+      : media_ids.length === 0
+        ? "account"
+        : "posts";
   return {
     id: row.id,
     name: row.name,
@@ -509,6 +542,7 @@ export function rowToFlow(row: AutomationFlowRow): AutomationFlow {
     created_at: row.created_at,
     media_id: media_ids[0] ?? row.media_id ?? undefined,
     media_ids,
+    scope,
     activated_at: row.activated_at ?? undefined,
     automation_key: row.automation_key ?? undefined,
   };
@@ -520,9 +554,12 @@ export function rowToFlow(row: AutomationFlowRow): AutomationFlow {
  * so the worker stops hammering the API every cycle for a post that will never
  * come back.
  *
- * A flow whose target list becomes empty is DEACTIVATED rather than left empty:
- * an empty media_ids reads as "any post", so blanking it would silently widen the
- * flow to every post instead of retiring it.
+ * A flow whose target list becomes empty is DEACTIVATED rather than left empty.
+ * This used to be load-bearing: an empty media_ids read as "any post", so
+ * blanking it silently widened the flow to every post instead of retiring it.
+ * Explicit scope closes that hole on its own — a "posts" flow with no targets
+ * now fires on nothing. Deactivating is kept anyway, because a flow that lost
+ * its last post should show up as retired rather than sit there looking live.
  *
  * Returns the flows that were changed, for logging.
  */
@@ -542,7 +579,7 @@ export function pruneMediaFromFlows(
     const remaining = flow.media_ids.filter((id) => id !== mediaId);
     const config = JSON.stringify({ ...flow.config, media_ids: remaining });
     const newMediaId = remaining[0] ?? null;
-    // Empty target list would read as "any post" — retire the flow instead.
+    // Retire rather than leave a live-looking flow with nothing to act on.
     const deactivated = remaining.length === 0;
     const isActive = deactivated ? 0 : row.is_active;
 

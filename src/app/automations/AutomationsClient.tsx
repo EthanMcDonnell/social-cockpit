@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { clsx } from "clsx";
-import type { AutomationFlow, AutomationConfig, CommentToDmConfig, CommentToReplyConfig, CommentToFollowDmConfig, AutomationTemplateType } from "@/lib/db";
+import type { AutomationFlow, AutomationConfig, AutomationScope, CommentToDmConfig, CommentToReplyConfig, CommentToFollowDmConfig, AutomationTemplateType } from "@/lib/db";
 import {
   useAutomationFlows,
   useCreateFlow,
@@ -519,11 +519,13 @@ function ReplyFunctionSelector({
 // ─── Video selector ────────────────────────────────────────────────────────────
 
 function VideoSelector({
+  scope,
   selectedIds,
   onChange,
 }: {
+  scope: AutomationScope;
   selectedIds: string[];
-  onChange: (ids: string[]) => void;
+  onChange: (scope: AutomationScope, ids: string[]) => void;
 }) {
   const { data, isLoading } = useMedia({ limit: 20 });
   const items = data?.data ?? [];
@@ -535,6 +537,7 @@ function VideoSelector({
 
   function toggle(id: string) {
     onChange(
+      "posts",
       selectedIds.includes(id)
         ? selectedIds.filter((x) => x !== id)
         : [...selectedIds, id]
@@ -565,10 +568,10 @@ function VideoSelector({
         <div className="flex gap-2 overflow-x-auto pb-1">
           <button
             type="button"
-            onClick={() => onChange([])}
+            onClick={() => onChange("account", [])}
             className={clsx(
               "flex-shrink-0 w-16 h-16 rounded-xl border text-[10px] font-medium transition-all",
-              count === 0
+              scope === "account"
                 ? "border-accent-cyan bg-accent-cyan/10 text-accent-cyan"
                 : "border-border bg-bg-base text-text-muted hover:border-border/80"
             )}
@@ -612,13 +615,17 @@ function VideoSelector({
           })}
         </div>
       )}
-      {count > 0 ? (
+      {scope === "account" ? (
+        <p className="text-[10px] text-text-muted/55">
+          Automation will trigger on any post, including ones you post later.
+        </p>
+      ) : count > 0 ? (
         <p className="text-[10px] text-text-muted/55">
           Automation will only trigger on comments from {count === 1 ? "the selected post" : `the ${count} selected posts`}. Tap a post to add or remove it.
         </p>
       ) : (
-        <p className="text-[10px] text-text-muted/55">
-          Automation will trigger on any post.
+        <p className="text-[10px] text-accent-amber/80">
+          No posts selected, so this flow will not trigger on anything. Pick a post, or choose Any post.
         </p>
       )}
     </div>
@@ -867,7 +874,7 @@ function FlowEditor({
 }: {
   flow?: AutomationFlow;
   templateType: AutomationTemplateType;
-  onSave: (data: { name: string; trigger_keywords: string[]; config: AutomationConfig; media_ids: string[]; template_type: AutomationTemplateType }) => void;
+  onSave: (data: { name: string; trigger_keywords: string[]; config: AutomationConfig; media_ids: string[]; scope: AutomationScope; template_type: AutomationTemplateType }) => void;
   onDelete?: () => void;
   onCancel: () => void;
   isSaving: boolean;
@@ -888,6 +895,10 @@ function FlowEditor({
   const [keywords, setKeywords] = useState<string[]>(flow?.trigger_keywords ?? ["LINK"]);
   const [config, setConfig] = useState<AutomationConfig>(flow?.config ?? defaultConfig);
   const [mediaIds, setMediaIds] = useState<string[]>(flow?.media_ids ?? []);
+  // A new flow starts in post scope with nothing selected: inert until someone
+  // chooses. Account-wide is now something you pick, never something you get by
+  // leaving the selector alone.
+  const [scope, setScope] = useState<AutomationScope>(flow?.scope ?? "posts");
   const [error, setError] = useState<string | null>(null);
 
   const isDm = templateType === "comment_to_dm";
@@ -935,7 +946,7 @@ function FlowEditor({
       if (!hasOpener) { setError("An opener message or a message pack is required"); return; }
       if (!followConfig.follower_message?.trim()) { setError("A follower reward message is required"); return; }
     }
-    onSave({ name: name.trim(), trigger_keywords: keywords, config, media_ids: mediaIds, template_type: templateType });
+    onSave({ name: name.trim(), trigger_keywords: keywords, config, media_ids: mediaIds, scope, template_type: templateType });
   }
 
   return (
@@ -955,7 +966,11 @@ function FlowEditor({
       </div>
 
       {/* Video selector */}
-      <VideoSelector selectedIds={mediaIds} onChange={setMediaIds} />
+      <VideoSelector
+        scope={scope}
+        selectedIds={mediaIds}
+        onChange={(nextScope, ids) => { setScope(nextScope); setMediaIds(ids); }}
+      />
 
       {/* ── Step 1: Trigger ── */}
       <StepCard icon={<IconComment />} label="Trigger — keyword in comment" color="cyan">
@@ -1359,6 +1374,7 @@ export function AutomationsClient() {
     trigger_keywords: string[];
     config: AutomationConfig;
     media_ids: string[];
+    scope: AutomationScope;
     template_type: AutomationTemplateType;
   }) {
     if (editor.mode === "new") {

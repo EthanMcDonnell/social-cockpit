@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, rowToFlow, type AutomationFlowRow, type AutomationConfig } from "@/lib/db";
+import { getDb, rowToFlow, type AutomationFlowRow, type AutomationConfig, type AutomationScope } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +40,17 @@ export async function PUT(
     // Merge media_ids into whichever config we persist (new body or existing).
     const baseConfig: AutomationConfig =
       body.config !== undefined ? body.config : existingFlow.config;
-    const config = JSON.stringify({ ...baseConfig, media_ids: mediaIds });
+    // Scope: an explicit one in the body wins, then whatever the config being
+    // persisted already carries, then the flow's resolved scope — which for a
+    // pre-scope row is the inference rowToFlow made from its targets. A caller
+    // that never mentions scope cannot change it.
+    const scope: AutomationScope =
+      body.scope === "account" || body.scope === "posts"
+        ? body.scope
+        : baseConfig.scope === "account" || baseConfig.scope === "posts"
+          ? baseConfig.scope
+          : existingFlow.scope;
+    const config = JSON.stringify({ ...baseConfig, media_ids: mediaIds, scope });
     const is_active =
       body.is_active !== undefined ? (body.is_active ? 1 : 0) : existing.is_active;
     const media_id = mediaIds[0] ?? null;
