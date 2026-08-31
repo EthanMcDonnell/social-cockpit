@@ -102,6 +102,7 @@ export type FailureKind =
   | "missing_file"
   | "storage_cap"
   | "no_candidate"
+  | "auth"
   | "internal";
 
 export interface ScheduleResult {

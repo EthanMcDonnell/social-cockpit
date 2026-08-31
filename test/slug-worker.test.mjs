@@ -24,6 +24,7 @@ const { getDb } = load("lib/db/index.js");
 const store = load("lib/slugs/store.js");
 const cache = load("lib/cache/store.js");
 const sched = load("lib/schedule/store.js");
+const media = load("lib/schedule/media.js");
 const worker = load("lib/schedule/worker.js");
 
 stampIntegrityMigration(getDb());
@@ -120,6 +121,73 @@ test("an exhausted pool fails the job terminally", async () => {
   assert.equal(done.result.error_kind, "no_candidate");
   assert.equal(done.attempts, 1, "waiting will not conjure a video — this is not retryable");
   assert.match(done.result.error, /already been posted to Instagram/);
+});
+
+/**
+ * The three tests below are one bug, seen from both ends: terminal cleanup used
+ * to delete a failed job's staged rows while leaving the job pointing at them,
+ * so every retry died on the missing reference rather than on whatever actually
+ * failed — and a slug job, whose re-pick only ran when it had no media at all,
+ * could never get out.
+ */
+
+test("terminal cleanup keeps a reference it does not own", async () => {
+  const staged = await media.registerLocalPath(clip("referenced.mp4"));
+  const job = sched.createJob({
+    platform: "yt",
+    scheduledAt: due(),
+    status: "failed",
+    payload: { title: "R" },
+    media: [{ role: "video", staged_id: staged.id }],
+  });
+  sched.updateJob(job.id, { result: { error: "token revoked", error_kind: "auth" } });
+
+  await worker.runScheduleCycle();
+
+  const after = sched.getJob(job.id);
+  assert.equal(after.result.cleanup_done, true, "cleanup ran");
+  assert.ok(media.getStagedMedia(staged.id), "the user's own file is not ours to deregister");
+  assert.equal(after.media.length, 1, "so the job keeps pointing at it, and can be re-run");
+});
+
+test("terminal cleanup drops an owned copy, and the reference with it", async () => {
+  const owned = await media.stageUpload(new Blob(["not really a video"]).stream(), {
+    filename: "owned.mp4",
+  });
+  const job = sched.createJob({
+    platform: "yt",
+    scheduledAt: due(),
+    status: "failed",
+    payload: { title: "O" },
+    media: [{ role: "video", staged_id: owned.id }],
+  });
+  sched.updateJob(job.id, { result: { error: "boom", error_kind: "invalid_param" } });
+
+  await worker.runScheduleCycle();
+
+  const after = sched.getJob(job.id);
+  assert.equal(media.getStagedMedia(owned.id), null, "an owned copy costs disk and goes");
+  assert.equal(after.media.length, 0, "and the job is never left holding the dead reference");
+});
+
+test("a slug job whose media has vanished re-picks instead of failing on it", async () => {
+  const video = await store.enrolVideo({ slug: "revive", path: clip("revive.mp4"), label: "V" });
+  const stale = await media.registerLocalPath(clip("stale.mp4"));
+  const job = sched.createJob({
+    platform: "yt",
+    scheduledAt: due(),
+    payload: {},
+    media: [{ role: "video", staged_id: stale.id }],
+    slug: "revive",
+  });
+  // Exactly the state the old cleanup left behind: a reference to nothing.
+  await media.releaseStaged([stale.id]);
+
+  await worker.runScheduleCycle();
+
+  const done = sched.getJob(job.id);
+  assert.equal(done.status, "published", done.result?.error);
+  assert.equal(done.result.slug_video_id, video.id, "the pool decided it again, at fire time");
 });
 
 test.after(cleanup);

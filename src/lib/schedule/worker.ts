@@ -24,6 +24,7 @@ import { getMedia } from "@/lib/instagram/endpoints/media";
 import { InstagramError, RateLimitError } from "@/lib/instagram/types";
 import { reclaimKeys } from "@/lib/storage/reclaim";
 import { uploadVideoFromR2, YoutubeUploadError } from "@/lib/youtube/upload";
+import { YoutubeAuthError } from "@/lib/youtube/oauth";
 import {
   backoffFor,
   claimDueJob,
@@ -159,9 +160,38 @@ async function cleanTerminalArtifacts(): Promise<void> {
     if (!job) break;
     const keys = job.result?.r2_keys ?? [];
     if (keys.length && !job.result?.skip_r2_cleanup) await reclaimKeys(keys);
-    await releaseStaged(job.media.map((media) => media.staged_id));
-    finishTerminalCleanup(job);
+    finishTerminalCleanup(job, await releaseTerminalMedia(job));
   }
+}
+
+/**
+ * Release a failed job's staged media, and return the references that survive.
+ *
+ * Only *owned* copies are dropped. They are ours, they cost disk, and nothing
+ * else will reclaim them. A referenced path costs one row and points at a file
+ * of the user's that is still sitting where it always was — so it is kept, and
+ * the job stays exactly as re-runnable as a job that failed retryably. Dropping
+ * those rows is what used to leave a failed job pointing at media that no longer
+ * existed: every retry then died on the reference rather than on the thing that
+ * actually went wrong, and a slug job could never re-pick its way out.
+ *
+ * A reference whose row has already gone is dropped too, which quietly heals any
+ * job left holding one.
+ */
+async function releaseTerminalMedia(job: ClaimedScheduledPost): Promise<ScheduledMediaRef[]> {
+  if (!job.media.length) return [];
+
+  const staged = getStagedMediaMany(job.media.map((media) => media.staged_id));
+  const keep: ScheduledMediaRef[] = [];
+  const release: string[] = [];
+  for (const ref of job.media) {
+    const media = staged.get(ref.staged_id);
+    if (media && !media.owned) keep.push(ref);
+    else release.push(ref.staged_id);
+  }
+
+  await releaseStaged(release);
+  return keep;
 }
 
 async function runJob(job: ClaimedScheduledPost): Promise<void> {
@@ -172,12 +202,25 @@ async function runJob(job: ClaimedScheduledPost): Promise<void> {
     // A slug job has no video until now. Resolving under the lease is the whole
     // point of the feature: the pick reflects the state of the pool at the
     // moment the slot arrives, not at the moment it was booked.
-    if (job.slug && !job.media.length && !(await resolveSlugJob(job))) return;
+    if (job.slug && !isResolved(job) && !(await resolveSlugJob(job))) return;
     if (job.platform === "yt") await runYoutubeJob(job);
     else await runInstagramJob(job);
   } catch (err) {
     await handlePublishingFailure(job, err);
   }
+}
+
+/**
+ * Whether a slug job already has its video in hand.
+ *
+ * Media it points at but that no longer exists counts for nothing: the publish
+ * below would only fail on the missing reference. Re-picking is both recoverable
+ * and more honest — the pool at fire time is what the feature promises.
+ */
+function isResolved(job: ScheduledPost): boolean {
+  if (!job.media.length) return false;
+  const staged = getStagedMediaMany(job.media.map((media) => media.staged_id));
+  return job.media.every((ref) => staged.has(ref.staged_id));
 }
 
 /** No video in the pool can go out on this platform right now. */
@@ -995,6 +1038,7 @@ function classify(err: unknown): FailureKind {
   if (err instanceof CapError) return "storage_cap";
   if (err instanceof NoCandidateError) return "no_candidate";
   if (err instanceof InvalidPayloadError) return "invalid_param";
+  if (err instanceof YoutubeAuthError) return "auth";
   if (err instanceof MissingSourceError || err instanceof PathError) return "missing_file";
   if (err instanceof ContainerFailedError) return "processing_failed";
   if (err instanceof AutomationAttachError) return "network";

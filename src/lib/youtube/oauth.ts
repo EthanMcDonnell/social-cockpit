@@ -78,12 +78,36 @@ export function buildAuthUrl(redirectUri: string, state: string): string {
   return url.toString();
 }
 
+/**
+ * The channel's consent is gone or was never given — a revoked refresh token, a
+ * password change, a client whose secret rotated. Typed rather than thrown as a
+ * plain Error so callers can tell it apart from a transient token-endpoint
+ * blip: no amount of retrying fixes it, and the only cure is reconnecting.
+ */
+export class YoutubeAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "YoutubeAuthError";
+  }
+}
+
 interface TokenResponse {
   access_token?: string;
   refresh_token?: string;
   expires_in?: number;
   error?: string;
   error_description?: string;
+}
+
+/**
+ * The token endpoint answered, and refused. Carries its status so the caller can
+ * tell "this credential is dead" from "Google is having a moment".
+ */
+class TokenEndpointError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "TokenEndpointError";
+  }
 }
 
 async function postToken(params: Record<string, string>): Promise<TokenResponse> {
@@ -95,8 +119,9 @@ async function postToken(params: Record<string, string>): Promise<TokenResponse>
   });
   const data = (await res.json().catch(() => ({}))) as TokenResponse;
   if (!res.ok || data.error) {
-    throw new Error(
-      data.error_description || data.error || `Token endpoint returned ${res.status}`
+    throw new TokenEndpointError(
+      data.error_description || data.error || `Token endpoint returned ${res.status}`,
+      res.status
     );
   }
   return data;
@@ -159,19 +184,32 @@ export async function getAccessToken(): Promise<string> {
 
   const refreshToken = getYoutubeRefreshToken();
   if (!refreshToken) {
-    throw new Error(
+    throw new YoutubeAuthError(
       "YouTube is not connected. Connect the channel in Settings before uploading."
     );
   }
 
-  const data = await postToken({
-    client_id: clientId(),
-    client_secret: clientSecret(),
-    refresh_token: refreshToken,
-    grant_type: "refresh_token",
-  });
+  // Google reports a dead refresh token as a plain 400 ("Token has been expired
+  // or revoked."). Re-throwing it as an auth failure is what stops a scheduled
+  // upload recording it as an unexplained internal fault. A 5xx, a rate limit,
+  // or a transport error is left alone: those are worth retrying, and the
+  // scheduler can only know that if they keep their own shape.
+  let data: TokenResponse;
+  try {
+    data = await postToken({
+      client_id: clientId(),
+      client_secret: clientSecret(),
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    });
+  } catch (err) {
+    if (err instanceof TokenEndpointError && err.status < 500 && err.status !== 429) {
+      throw new YoutubeAuthError(`${err.message} — reconnect the channel in Settings.`);
+    }
+    throw err;
+  }
   if (!data.access_token) {
-    throw new Error("Refresh did not return an access token — reconnect the channel.");
+    throw new YoutubeAuthError("Refresh did not return an access token — reconnect the channel.");
   }
 
   _cache = {

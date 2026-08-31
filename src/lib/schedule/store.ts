@@ -227,14 +227,30 @@ export function claimTerminalCleanup(now: number): ClaimedScheduledPost | null {
   return row ? rowToClaimedPost(row) : null;
 }
 
-export function finishTerminalCleanup(job: ClaimedScheduledPost): boolean {
+/**
+ * Close out that cleanup, recording which media the job still has.
+ *
+ * `media` is written in the same statement as the ledger deliberately: the rows
+ * released above and the references left behind describe one fact, and a job
+ * that survived a crash between two writes of it would point at media that no
+ * longer exists — which is precisely the state no retry can recover from.
+ */
+export function finishTerminalCleanup(
+  job: ClaimedScheduledPost,
+  media: ScheduledMediaRef[]
+): boolean {
   const info = getDb()
     .prepare(
       `UPDATE scheduled_posts
-          SET result = ?, lease_until = NULL, lease_token = NULL, updated_at = datetime('now')
+          SET result = ?, media = ?, lease_until = NULL, lease_token = NULL, updated_at = datetime('now')
         WHERE id = ? AND status = 'failed' AND lease_token = ?`
     )
-    .run(JSON.stringify({ ...(job.result ?? {}), cleanup_done: true }), job.id, job.leaseToken);
+    .run(
+      JSON.stringify({ ...(job.result ?? {}), cleanup_done: true }),
+      JSON.stringify(media),
+      job.id,
+      job.leaseToken
+    );
   return info.changes === 1;
 }
 
