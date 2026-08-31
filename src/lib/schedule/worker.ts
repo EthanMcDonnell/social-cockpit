@@ -6,7 +6,7 @@
 import { existsSync } from "fs";
 import { config } from "@/lib/config";
 import { getDb, hasSchedulerLeaseSchema } from "@/lib/db";
-import { planAutomation, type AutomationPlan } from "@/lib/automation/attach";
+import { planAutomation, type AutomationPlan, type AutomationSpec } from "@/lib/automation/attach";
 import {
   AUTOMATION_TIMEOUT_MS,
   executePublish,
@@ -42,10 +42,10 @@ import {
 } from "./store";
 import { getStagedMediaMany, registerLocalPath, releaseStaged, sweepOrphanedStaged } from "./media";
 import { selectVideo } from "@/lib/slugs/select";
-import { enrolVideo, recordPost } from "@/lib/slugs/store";
+import { enrolVideo, linkedAutomation, recordPost } from "@/lib/slugs/store";
 import { resolveSelectionMethod } from "@/lib/slugs/settings";
 import { isSelectionFailure, type SlugVideoPayload } from "@/lib/slugs/types";
-import { tryArchiveVideo, linkCandidate } from "@/lib/archive/store";
+import { getArchived, tryArchiveVideo, linkCandidate } from "@/lib/archive/store";
 import { asTrialRepost } from "@/lib/repost/publish";
 import { recordRepost } from "@/lib/repost/store";
 import { evaluateReposts } from "@/lib/repost/evaluate";
@@ -1026,11 +1026,50 @@ function describePlan(plan: AutomationPlan): string {
 }
 
 function replanAutomation(job: ScheduledPost): AutomationPlan | undefined {
-  if (!job.automation) return undefined;
-  const planned = planAutomation(getDb(), job.automation);
+  const spec = job.automation ?? repostAutomationSpec(job);
+  if (!spec) return undefined;
+  const planned = planAutomation(getDb(), spec);
   if ("error" in planned) {
     logScheduleEvent("warn", "automation_invalid", planned.error, { jobId: job.id });
     return undefined;
   }
   return planned.plan;
+}
+
+/**
+ * The automation a repost inherits from the topic it is a repost *of*.
+ *
+ * A repost job is booked against the repost pool — `#reposts` — because that is
+ * the slug that owns the calendar slot. But the video it picks belongs to a
+ * topic, and in this app a slug is one string with two facets: the pool it can
+ * post from and the automation flow it fires. Publishing under the pool's name
+ * keeps the first facet and silently drops the second, so a reposted video would
+ * lose the comment-to-DM funnel its original ran — on precisely the videos that
+ * did well enough to be worth reposting.
+ *
+ * So the flow is looked up under the *origin* slug recorded on the archived
+ * copy, not the job's slug.
+ *
+ * Append-only, deliberately. A missing flow returns undefined rather than
+ * planning a create: a flow needs trigger keywords and a message body that only
+ * a person can decide, and inventing one here would start DMing people from a
+ * flow nobody wrote. A topic with no automation simply reposts without one,
+ * which is what it did the first time too.
+ *
+ * Exported only so the test can assert against this rule rather than against a
+ * second copy of it.
+ */
+export function repostAutomationSpec(job: ScheduledPost): AutomationSpec | undefined {
+  const archiveId = job.result?.repost_archive_id;
+  if (!archiveId) return undefined;
+
+  const origin = getArchived(archiveId)?.origin_slug;
+  // Nothing to inherit: the archived copy predates origin tracking, or the
+  // topic has no flow. Both are ordinary states, so neither warns.
+  if (!origin || !linkedAutomation(origin)) return undefined;
+
+  // `existing_key_required` is what makes this append-only even if the flow is
+  // deleted between here and the attach, which happens under its own
+  // transaction after the platform returns a media id.
+  return { key: origin, existing_key_required: true };
 }

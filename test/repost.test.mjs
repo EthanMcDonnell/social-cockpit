@@ -21,6 +21,7 @@ const { load, mediaRoot, cleanup } = loadLib([
   "src/lib/slugs/**/*.ts",
   "src/lib/repost/**/*.ts",
   "src/lib/archive/**/*.ts",
+  "src/lib/schedule/**/*.ts",
 ]);
 
 const archive = load("lib/archive/store.js");
@@ -403,4 +404,63 @@ test("thresholds reject values that would break the rules they encode", () => {
   assert.throws(() => settings.setMinGapDays(0), /at least 1/);
   assert.throws(() => settings.setEvaluateAfterHours(0), /at least 1/);
   assert.throws(() => settings.setMinViews(1.5), /whole number/);
+});
+
+// ─── Inherited automation ────────────────────────────────────────────────────
+
+/** Give a slug an automation flow, the way a keyed publish would. */
+function flowFor(slug) {
+  const { getDb } = load("lib/db/index.js");
+  getDb()
+    .prepare(
+      `INSERT INTO automation_flows
+         (id, name, template_type, trigger_keyword, config, media_id, is_active, automation_key)
+       VALUES (?, ?, 'comment_to_dm', '["LINK"]', '{"media_ids":[]}', NULL, 1, ?)`
+    )
+    .run(`flow-${slug}`, slug, slug);
+}
+
+test("a repost inherits the automation of the topic it is a repost of", async () => {
+  const worker = load("lib/schedule/worker.js");
+  const { archived } = await published("inherit-topic", "inherit-topic.mp4", { views: 50_000 });
+  flowFor("inherit-topic");
+
+  // The job is booked against the repost pool, not the topic — that is the
+  // whole point. The flow must still be the topic's.
+  const spec = worker.repostAutomationSpec({
+    id: "job-1",
+    slug: "reposts",
+    result: { repost_archive_id: archived.id },
+  });
+
+  assert.equal(spec?.key, "inherit-topic", "the origin slug, not the pool slug");
+  assert.equal(spec?.existing_key_required, true, "append-only — never creates a flow");
+});
+
+test("a repost of a topic with no automation flow attaches nothing", async () => {
+  const worker = load("lib/schedule/worker.js");
+  const { archived } = await published("no-flow-topic", "no-flow-topic.mp4", { views: 50_000 });
+
+  // A topic nobody wired an automation to is an ordinary state, not an error:
+  // inventing a flow here would DM people from one nobody wrote.
+  assert.equal(
+    worker.repostAutomationSpec({
+      id: "job-2",
+      slug: "reposts",
+      result: { repost_archive_id: archived.id },
+    }),
+    undefined
+  );
+});
+
+test("an ordinary slug job is unaffected by the repost automation rule", async () => {
+  const worker = load("lib/schedule/worker.js");
+  flowFor("ordinary-topic");
+
+  // No repost_archive_id — this job is not a repost, so it must fall through to
+  // whatever automation it was booked with (here, none).
+  assert.equal(
+    worker.repostAutomationSpec({ id: "job-3", slug: "ordinary-topic", result: {} }),
+    undefined
+  );
 });
