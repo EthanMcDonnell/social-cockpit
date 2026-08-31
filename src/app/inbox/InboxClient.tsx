@@ -25,7 +25,7 @@ export function InboxClient() {
         selectedPostId ? "hidden md:flex" : "flex"
       )}>
         <div className="h-12 px-4 flex items-center border-b border-[var(--border)]">
-          <h2 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-widest">Posts</h2>
+          <h2 className="text-xs font-heading font-semibold text-[var(--text-muted)] uppercase tracking-widest">Posts</h2>
         </div>
         <div className="flex-1 overflow-y-auto">
           <PostList

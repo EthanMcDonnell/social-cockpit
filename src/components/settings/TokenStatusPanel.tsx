@@ -59,7 +59,7 @@ export function TokenStatusPanel() {
   return (
     <Card padding="none">
       <div className="px-5 py-4 border-b border-[var(--border)]">
-        <p className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-medium">
+        <p className="text-xs font-heading uppercase tracking-widest text-[var(--text-muted)] font-medium">
           Access Token
         </p>
       </div>

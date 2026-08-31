@@ -180,7 +180,7 @@ export function CommentThreadHeader({ postId }: { postId: string }) {
         {count} comment{count !== 1 ? "s" : ""}
       </span>
       {dataUpdatedAt > 0 && (
-        <span className="text-[10px] text-[var(--text-muted)]">
+        <span className="text-[10px] font-mono text-[var(--text-muted)]">
           Updated {new Date(dataUpdatedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
         </span>
       )}

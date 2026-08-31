@@ -161,7 +161,7 @@ export function LogsClient() {
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Header bar */}
       <div className="h-12 px-6 flex items-center gap-3 border-b border-border flex-shrink-0">
-        <span className="text-xs font-semibold text-text-muted uppercase tracking-widest">
+        <span className="text-xs font-heading font-semibold text-text-muted uppercase tracking-widest">
           System Logs
         </span>
         <span
@@ -269,7 +269,7 @@ export function LogsClient() {
         ) : (
           <table className="w-full text-xs border-collapse">
             <thead className="sticky top-0 bg-bg-base/95 backdrop-blur border-b border-border">
-              <tr className="text-[10px] uppercase tracking-wider text-text-muted/70">
+              <tr className="text-[10px] font-heading uppercase tracking-wider text-text-muted/70">
                 <th className="text-left font-medium px-4 py-2 whitespace-nowrap">Time</th>
                 <th className="text-left font-medium px-2 py-2">Level</th>
                 <th className="text-left font-medium px-2 py-2">Source</th>
@@ -290,7 +290,7 @@ export function LogsClient() {
                   <td className="px-2 py-2">
                     <span
                       className={clsx(
-                        "text-[10px] font-mono px-1.5 py-0.5 rounded border uppercase",
+                        "text-[10px] font-heading px-1.5 py-0.5 rounded border uppercase",
                         LEVEL_STYLES[e.level]
                       )}
                     >

@@ -75,7 +75,7 @@ export function PostList({ posts, selectedPostId, onSelect, loading }: PostListP
                 {caption.length > 55 ? caption.slice(0, 55) + "…" : caption}
               </p>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[10px] text-[var(--text-muted)]">{formatDate(post.timestamp)}</span>
+                <span className="text-[10px] font-mono text-[var(--text-muted)]">{formatDate(post.timestamp)}</span>
                 {post.comments_count != null && (
                   <span className="text-[10px] text-[var(--text-muted)]">
                     {post.comments_count} comment{post.comments_count !== 1 ? "s" : ""}

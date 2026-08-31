@@ -49,7 +49,7 @@ export function YouTubeConnectPanel() {
     <Card padding="none">
       <div className="px-5 py-4 border-b border-[var(--border)] flex items-center gap-2">
         <PlatformGlyph platform="yt" size={14} />
-        <p className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-medium">
+        <p className="text-xs font-heading uppercase tracking-widest text-[var(--text-muted)] font-medium">
           YouTube Channel
         </p>
       </div>

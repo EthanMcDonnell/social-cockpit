@@ -16,7 +16,7 @@ function UsageBar({ label, pct }: { label: string; pct: number }) {
   return (
     <div>
       <div className="flex items-center justify-between text-[10px] mb-0.5">
-        <span className="text-text-muted uppercase tracking-wider">{label}</span>
+        <span className="font-heading text-text-muted uppercase tracking-wider">{label}</span>
         <span className={clsx("font-mono font-semibold", t.text)}>{Math.round(pct)}%</span>
       </div>
       <div className="h-1.5 rounded-full bg-border overflow-hidden">
@@ -59,7 +59,7 @@ export function ApiUsageMeter() {
   return (
     <div className="border-t border-border p-3 space-y-2 flex-shrink-0">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold text-text-muted uppercase tracking-widest">
+        <span className="text-[10px] font-heading font-semibold text-text-muted uppercase tracking-widest">
           API usage
         </span>
         <button

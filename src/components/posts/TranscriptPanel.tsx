@@ -34,7 +34,7 @@ export function TranscriptPanel({ mediaId, mediaType }: TranscriptPanelProps) {
   return (
     <Card padding="none">
       <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
-        <p className="text-xs uppercase tracking-widest text-[var(--text-muted)] font-medium">
+        <p className="text-xs font-heading uppercase tracking-widest text-[var(--text-muted)] font-medium">
           Transcript
         </p>
         {transcript && (

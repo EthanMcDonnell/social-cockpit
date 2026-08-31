@@ -78,7 +78,7 @@ export function PostCard({ row, metric, metricMax, rank, isLoadingInsights }: Po
             ▶
           </div>
         )}
-        <span className="absolute left-1.5 top-1.5 rounded bg-black/55 px-1.5 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider text-white backdrop-blur-sm">
+        <span className="absolute left-1.5 top-1.5 rounded bg-black/55 px-1.5 py-0.5 font-heading text-[9px] font-medium uppercase tracking-wider text-white backdrop-blur-sm">
           {typeLabel}
         </span>
         {rank !== undefined && rank <= 3 && (

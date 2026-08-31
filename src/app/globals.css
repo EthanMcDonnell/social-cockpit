@@ -111,10 +111,16 @@ body {
   --txt: #f2efe9;
   --mut: #9b958a;
   --faint: #5c574e;
-  /* The one display face, loaded rather than borrowed from the OS. It has to
-     be genuinely condensed: every label below is tracked out to 0.14–0.3em on
-     the assumption the letterforms are narrow. A normal-width face at that
-     tracking is what makes the panels look stretched. */
+  /* Three faces, three jobs — the split layout.tsx describes, made literal.
+     --sans is the base: prose, field values, anything you read as a sentence.
+     --cond carries every uppercase label/heading/readout; it has to be
+     genuinely condensed, because those are tracked out to 0.14–0.3em on the
+     assumption the letterforms are narrow — a normal-width face at that
+     tracking is what makes the panels look stretched.
+     --mono is for figures and literals only: numeric columns, IDs, code,
+     timestamps. It is deliberately NOT the base — a page that declares no
+     family should read as prose, not as a readout. */
+  --sans: var(--font-sans), system-ui, sans-serif;
   --cond: var(--font-cond), "Avenir Next Condensed", "Arial Narrow", ui-sans-serif, sans-serif;
   --mono: var(--font-dm-mono), "Menlo", "SF Mono", ui-monospace, monospace;
 
@@ -141,7 +147,7 @@ body {
   min-height: 100vh;
   color: var(--txt);
   background: var(--char);
-  font-family: var(--mono);
+  font-family: var(--sans);
   overflow-y: auto;
   overflow-x: hidden;
 }
