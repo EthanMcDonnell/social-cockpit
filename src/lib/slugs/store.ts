@@ -183,8 +183,9 @@ export function updateSlug(
  * actually owns.
  */
 export function deleteSlug(slug: string): { deleted: boolean; blockedBy?: string } {
-  if (linkedAutomation(slug)) {
-    return { deleted: false, blockedBy: linkedAutomation(slug)!.name };
+  const blockers = linkedAutomations(slug);
+  if (blockers.length > 0) {
+    return { deleted: false, blockedBy: blockers.map((a) => a.name).join(", ") };
   }
 
   const db = getDb();
@@ -229,27 +230,54 @@ export function listSlugs(): SlugSummary[] {
       ...rowToSlug(row),
       video_count: videos.length,
       eligible,
-      automation: linkedAutomation(row.slug),
+      automations: linkedAutomations(row.slug),
     };
   });
 }
 
 /**
- * The automation flow firing on this slug, if any.
+ * Every automation flow firing on this slug.
  *
- * Not a second home for the slug — the registry row is the slug. This is the
- * other thing that references it, surfaced so the page can say what a pool is
+ * Not a second home for the slug — the registry row is the slug. These are the
+ * other things that reference it, surfaced so the page can say what a pool is
  * wired to.
+ *
+ * Plural, because a topic legitimately carries more than one: the same posts
+ * with a second trigger word is a second lead magnet, not a duplicate. This
+ * used to be a `LIMIT 1` returning whichever row SQLite reached first, which
+ * made every flow after the first invisible to the pool page.
+ *
+ * Ordered oldest first so the caller that wants a single representative gets a
+ * stable one rather than whatever the scan happened to hit.
  */
-export function linkedAutomation(
+export function linkedAutomations(
   slug: string
-): { flow_id: string; name: string; is_active: boolean } | undefined {
-  const row = getDb()
+): Array<{ flow_id: string; name: string; is_active: boolean }> {
+  const rows = getDb()
     .prepare(
-      "SELECT id, name, is_active FROM automation_flows WHERE automation_key = ? LIMIT 1"
+      "SELECT id, name, is_active FROM automation_flows WHERE automation_key = ? ORDER BY created_at, id"
     )
-    .get(slug) as { id: string; name: string; is_active: number } | undefined;
-  return row ? { flow_id: row.id, name: row.name, is_active: row.is_active === 1 } : undefined;
+    .all(slug) as Array<{ id: string; name: string; is_active: number }>;
+  return rows.map((row) => ({
+    flow_id: row.id,
+    name: row.name,
+    is_active: row.is_active === 1,
+  }));
+}
+
+/**
+ * Whether anything automates this slug.
+ *
+ * Separate from listing them because three callers only ever asked the yes/no
+ * question, and making them build and discard an array to answer it would be
+ * the kind of thing that reads as an oversight later.
+ */
+export function hasAutomation(slug: string): boolean {
+  return (
+    getDb()
+      .prepare("SELECT 1 FROM automation_flows WHERE automation_key = ? LIMIT 1")
+      .get(slug) !== undefined
+  );
 }
 
 // ─── Videos ──────────────────────────────────────────────────────────────────

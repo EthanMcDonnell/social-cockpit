@@ -157,12 +157,19 @@ export interface Slug {
   updated_at: string;
 }
 
+/** A flow that fires on a slug, as the pool page needs to show it. */
+export interface AutomationLink {
+  flow_id: string;
+  name: string;
+  is_active: boolean;
+}
+
 export interface SlugSummary extends Slug {
   video_count: number;
   /** Candidates still eligible for each platform (not yet posted there). */
   eligible: Record<SchedulePlatform, number>;
-  /** The automation flow sharing this slug, when there is one. */
-  automation?: { flow_id: string; name: string; is_active: boolean };
+  /** Every automation flow sharing this slug. Empty when nothing automates it. */
+  automations: AutomationLink[];
 }
 
 export interface SlugDetail extends SlugSummary {

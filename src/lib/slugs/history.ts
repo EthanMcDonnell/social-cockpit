@@ -18,26 +18,35 @@
  * Server-side only.
  */
 
-import { getDb } from "@/lib/db";
+import { getDb, rowToFlow, type AutomationFlowRow } from "@/lib/db";
 import { getCachedInsightsMany, getCachedMedia } from "@/lib/cache/store";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import type { SlugPost } from "./types";
 
 export type { SlugPost };
 
-/** Media ids wired to the automation flow that shares this slug. */
+/**
+ * Media ids wired to the automation flows that share this slug.
+ *
+ * Every flow, not the first one found: a topic can carry several, and taking
+ * one of them would drop the others' posts out of the history the pool page
+ * ranks on.
+ *
+ * Resolved through rowToFlow rather than by reading config.media_ids directly,
+ * because that is only one of the two places a target is stored — a flow made
+ * before the multi-video field keeps its post in the media_id column, and
+ * parsing the config alone reports it as targeting nothing.
+ */
 function automationMediaIds(slug: string): string[] {
-  const row = getDb()
-    .prepare("SELECT config FROM automation_flows WHERE automation_key = ? LIMIT 1")
-    .get(slug) as { config: string } | undefined;
-  if (!row) return [];
+  const rows = getDb()
+    .prepare("SELECT * FROM automation_flows WHERE automation_key = ? ORDER BY created_at, id")
+    .all(slug) as AutomationFlowRow[];
 
-  try {
-    const ids = (JSON.parse(row.config) as { media_ids?: unknown }).media_ids;
-    return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
-  } catch {
-    return [];
+  const ids = new Set<string>();
+  for (const row of rows) {
+    for (const id of rowToFlow(row).media_ids) ids.add(id);
   }
+  return Array.from(ids);
 }
 
 export function slugPostHistory(slug: string): SlugPost[] {

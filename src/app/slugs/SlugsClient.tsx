@@ -101,7 +101,14 @@ export function SlugsClient() {
                     <PlatformGlyph platform={p} size={9} /> {entry.eligible[p]}
                   </span>
                 ))}
-                {entry.automation && <span className="slugs-auto" title={`Automation: ${entry.automation.name}`}>⌁</span>}
+                {entry.automations.length > 0 && (
+                  <span
+                    className="slugs-auto"
+                    title={`Automation: ${entry.automations.map((a) => a.name).join(", ")}`}
+                  >
+                    ⌁
+                  </span>
+                )}
               </span>
             </button>
           ))}
@@ -223,6 +230,10 @@ function SlugDetail({
     }
   }
 
+  // A slug can carry several flows — the same posts with a second trigger word
+  // is a second lead magnet, not a duplicate.
+  const automations = data?.slug.automations ?? [];
+
   return (
     <section className="slugs-detail">
       <header className="slugs-head">
@@ -252,7 +263,7 @@ function SlugDetail({
           type="button"
           className="slugs-btn ghost danger"
           onClick={async () => {
-            const poolOnly = !!data?.slug.automation;
+            const poolOnly = automations.length > 0;
             try {
               await remove.mutateAsync({ slug, poolOnly });
               if (!poolOnly) onDeleted();
@@ -261,25 +272,32 @@ function SlugDetail({
             }
           }}
           title={
-            data?.slug.automation
-              ? `#${slug} is the automation "${data.slug.automation.name}" — only its videos can be removed here`
+            automations.length > 0
+              ? `#${slug} is the identity of ${automations.map((a) => `"${a.name}"`).join(", ")} — only its videos can be removed here`
               : "Remove this slug and its pool"
           }
         >
-          {data?.slug.automation ? "Empty pool" : "Delete slug"}
+          {automations.length > 0 ? "Empty pool" : "Delete slug"}
         </button>
       </header>
 
-      {data?.slug.automation ? (
+      {automations.length > 0 ? (
         <p className="slugs-note">
-          Shares its name with the automation flow{" "}
+          {automations.length === 1
+            ? "Shares its name with the automation flow "
+            : `Shares its name with ${automations.length} automation flows: `}
           {/* Deep link: the flow id, not just the section — landing on the list
               and having to find the row again is a step the link can take. */}
-          <Link href={`/automations?flow=${encodeURIComponent(data.slug.automation.flow_id)}`}>
-            {data.slug.automation.name}
-          </Link>
-          {data.slug.automation.is_active ? " (active)" : " (paused)"} — posting under this slug
-          attaches to it.
+          {automations.map((a, i) => (
+            <span key={a.flow_id}>
+              {i > 0 && ", "}
+              <Link href={`/automations?flow=${encodeURIComponent(a.flow_id)}`}>{a.name}</Link>
+              {a.is_active ? " (active)" : " (paused)"}
+            </span>
+          ))}
+          {automations.length === 1
+            ? " — posting under this slug attaches to it."
+            : " — posting under this slug attaches to all of them."}
         </p>
       ) : (
         <p className="slugs-note muted">No automation flow uses this slug yet.</p>

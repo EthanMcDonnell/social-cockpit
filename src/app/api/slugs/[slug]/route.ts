@@ -5,7 +5,7 @@ import {
   deleteSlug,
   eligibleVideos,
   getSlug,
-  linkedAutomation,
+  linkedAutomations,
   normalizeSlug,
   updateSlug,
 } from "@/lib/slugs/store";
@@ -66,7 +66,7 @@ export async function GET(
         ig: eligibleVideos(slug, "ig", videos).length,
         yt: eligibleVideos(slug, "yt", videos).length,
       },
-      automation: linkedAutomation(slug),
+      automations: linkedAutomations(slug),
       videos,
     },
     repost,

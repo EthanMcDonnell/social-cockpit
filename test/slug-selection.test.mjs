@@ -196,7 +196,7 @@ test("a keyed automation flow IS a slug — there is no second place to look", a
   assert.ok(registered, "creating a keyed flow must register its slug");
   const listed = store.listSlugs().find((entry) => entry.slug === "funnel-key");
   assert.equal(listed.video_count, 0, "with an empty pool, ready to fill");
-  assert.equal(listed.automation.name, "Funnel");
+  assert.equal(listed.automations[0].name, "Funnel");
 });
 
 test("flows that predate the registry are adopted on startup", () => {
@@ -268,3 +268,98 @@ test("an established slug's existing posts can be pointed at the files behind th
 });
 
 test.after(cleanup);
+
+/**
+ * A slug carries more than one flow.
+ *
+ * The same posts with a second trigger word is a second lead magnet, not a
+ * duplicate — so `automation_key` is deliberately not unique. Every lookup that
+ * resolved it with `LIMIT 1` silently picked whichever row SQLite reached first,
+ * which made the second flow invisible to the pool page and, worse, meant a new
+ * post was appended to only one of them: no error, just a flow that quietly
+ * stopped covering new posts.
+ */
+test("a slug carries every flow keyed to it, not the first one found", () => {
+  const db = getDb();
+  // Explicit timestamps: created_at is what orders these, and two rows written
+  // in the same second would otherwise be separated only by the id tiebreak,
+  // which would make this assert the tiebreak instead of the intent.
+  const insert = (id, name, kw, createdAt) =>
+    db
+      .prepare(
+        `INSERT INTO automation_flows (id, name, template_type, trigger_keyword, config, is_active, automation_key, created_at)
+         VALUES (?, ?, 'comment_to_follow_dm', ?, '{"media_ids":[]}', 1, 'two-flow-topic', ?)`
+      )
+      .run(id, name, JSON.stringify(kw), createdAt);
+  insert("flow-wrapped", "Wrapped", ["WRAPPED"], "2026-07-14T00:00:00.000Z");
+  insert("flow-consensus", "Consensus", ["CONSENSUS"], "2026-07-15T00:00:00.000Z");
+  store.ensureSlug("two-flow-topic");
+
+  const listed = store.listSlugs().find((e) => e.slug === "two-flow-topic");
+  assert.equal(listed.automations.length, 2, "both flows belong to the slug");
+  assert.deepEqual(
+    listed.automations.map((a) => a.name),
+    ["Wrapped", "Consensus"],
+    "oldest first, so a caller wanting one representative gets a stable one"
+  );
+
+  assert.ok(store.hasAutomation("two-flow-topic"));
+  const blocked = store.deleteSlug("two-flow-topic");
+  assert.equal(blocked.deleted, false, "a slug two flows depend on is not deletable");
+  assert.match(blocked.blockedBy, /Wrapped/);
+  assert.match(blocked.blockedBy, /Consensus/, "both blockers are named, not just one");
+});
+
+test("publishing under a shared slug attaches to every flow on it", () => {
+  const db = getDb();
+  for (const [id, name] of [["f-a", "Flow A"], ["f-b", "Flow B"]]) {
+    db.prepare(
+      `INSERT INTO automation_flows (id, name, template_type, trigger_keyword, config, is_active, automation_key)
+       VALUES (?, ?, 'comment_to_dm', '["LINK"]', '{"media_ids":[]}', 1, 'shared-topic')`
+    ).run(id, name);
+  }
+  store.ensureSlug("shared-topic");
+
+  const result = applyAutomationPlan(db, "fresh-post", {
+    mode: "append",
+    spec: {
+      key: "shared-topic",
+      keywords: ["LINK"],
+      templateType: "comment_to_dm",
+      config: {},
+      activate: true,
+      existing_key_required: true,
+    },
+  });
+
+  assert.equal(result.action, "appended");
+  assert.equal(result.also_appended?.length, 1, "the sibling flow is reported, not dropped");
+
+  // The property that matters: neither flow is left not knowing about the post.
+  for (const id of ["f-a", "f-b"]) {
+    const row = db.prepare("SELECT config FROM automation_flows WHERE id = ?").get(id);
+    assert.ok(
+      JSON.parse(row.config).media_ids.includes("fresh-post"),
+      `${id} must target the new post`
+    );
+  }
+});
+
+test("slug history spans every flow, including one storing its post in the legacy column", () => {
+  const db = getDb();
+  // config.media_ids is only one of the two places a target lives; a flow made
+  // before that field keeps its post in the media_id column, and reading the
+  // config alone reports it as targeting nothing.
+  db.prepare(
+    `INSERT INTO automation_flows (id, name, template_type, trigger_keyword, config, is_active, automation_key, media_id)
+     VALUES ('f-legacy', 'Legacy', 'comment_to_dm', '["LINK"]', '{}', 1, 'history-span', 'post-from-column')`
+  ).run();
+  db.prepare(
+    `INSERT INTO automation_flows (id, name, template_type, trigger_keyword, config, is_active, automation_key)
+     VALUES ('f-modern', 'Modern', 'comment_to_dm', '["LINK"]', '{"media_ids":["post-from-config"]}', 1, 'history-span')`
+  ).run();
+  store.ensureSlug("history-span");
+
+  const seen = slugPostHistory("history-span").map((p) => p.external_id).sort();
+  assert.deepEqual(seen, ["post-from-column", "post-from-config"]);
+});

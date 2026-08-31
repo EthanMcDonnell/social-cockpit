@@ -63,6 +63,13 @@ export interface AttachResult {
   automation_key?: string;
   /** The flow's full target list after the attach. */
   media_ids: string[];
+  /**
+   * The other flows sharing this key, which were appended to in the same
+   * transaction. Absent when the key resolves to a single flow, which is the
+   * ordinary case — present so a caller logging one attach can still say that
+   * more than one flow picked the post up.
+   */
+  also_appended?: AttachResult[];
 }
 
 function resolveTemplateType(t?: string): AutomationTemplateType {
@@ -163,6 +170,31 @@ function appendToFlow(
   };
 }
 
+/**
+ * Append a post to every flow keyed to this slug.
+ *
+ * A key identifies a topic, and a topic can carry more than one flow — the same
+ * posts with a second trigger word. Appending to the first row found would have
+ * left the others never learning the post exists, so they would never fire on
+ * it: no error, just a flow that quietly stops covering new posts.
+ *
+ * The first flow by age is returned as the result proper, so the shape callers
+ * already log stays what it was; the rest ride along in `also_appended`.
+ */
+function appendToKey(
+  db: Database.Database,
+  key: string,
+  mediaId: string
+): AttachResult | undefined {
+  const rows = db
+    .prepare("SELECT * FROM automation_flows WHERE automation_key = ? ORDER BY created_at, id")
+    .all(key) as AutomationFlowRow[];
+  if (rows.length === 0) return undefined;
+
+  const [first, ...rest] = rows.map((row) => appendToFlow(db, row, mediaId));
+  return rest.length > 0 ? { ...first, also_appended: rest } : first;
+}
+
 function createFlow(
   db: Database.Database,
   spec: NormalizedAutomationSpec,
@@ -217,10 +249,8 @@ export function applyAutomationPlan(
     const { spec } = plan;
     if (!spec.key) return createFlow(db, spec, mediaId);
 
-    const row = db
-      .prepare("SELECT * FROM automation_flows WHERE automation_key = ? LIMIT 1")
-      .get(spec.key) as AutomationFlowRow | undefined;
-    if (row) return appendToFlow(db, row, mediaId);
+    const appended = appendToKey(db, spec.key, mediaId);
+    if (appended) return appended;
 
     if (plan.mode === "append") {
       throw new Error(`automation flow for key "${spec.key}" no longer exists`);
@@ -238,11 +268,9 @@ export function applyAutomationPlan(
       throw err;
     }
     const appendAfterConflict = db.transaction(() => {
-      const row = db
-        .prepare("SELECT * FROM automation_flows WHERE automation_key = ? LIMIT 1")
-        .get(plan.spec.key!) as AutomationFlowRow | undefined;
-      if (!row) throw err;
-      return appendToFlow(db, row, mediaId);
+      const appended = appendToKey(db, plan.spec.key!, mediaId);
+      if (!appended) throw err;
+      return appended;
     });
     return appendAfterConflict.immediate();
   }

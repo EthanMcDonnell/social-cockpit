@@ -86,7 +86,7 @@ const SUMMARY = {
   updated_at: "2026-08-01",
   video_count: 2,
   eligible: { ig: 1, yt: 2 },
-  automation: { flow_id: "f1", name: "Gym funnel", is_active: true },
+  automations: [{ flow_id: "f1", name: "Gym funnel", is_active: true }],
 };
 
 const listOnly = (client) =>

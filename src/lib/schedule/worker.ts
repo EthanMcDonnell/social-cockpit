@@ -43,7 +43,7 @@ import {
 } from "./store";
 import { getStagedMediaMany, registerLocalPath, releaseStaged, sweepOrphanedStaged } from "./media";
 import { selectVideo } from "@/lib/slugs/select";
-import { enrolVideo, linkedAutomation, recordPost } from "@/lib/slugs/store";
+import { enrolVideo, hasAutomation, recordPost } from "@/lib/slugs/store";
 import { resolveSelectionMethod } from "@/lib/slugs/settings";
 import { isSelectionFailure, type SlugVideoPayload } from "@/lib/slugs/types";
 import { tryArchiveVideo, linkCandidate } from "@/lib/archive/store";
@@ -1107,7 +1107,7 @@ export function repostAutomationSpec(job: ScheduledPost): AutomationSpec | undef
   if (!job.is_repost || !job.slug) return undefined;
   // A topic nobody wired an automation to is an ordinary state, so this does
   // not warn.
-  if (!linkedAutomation(job.slug)) return undefined;
+  if (!hasAutomation(job.slug)) return undefined;
 
   // `existing_key_required` is what makes this append-only even if the flow is
   // deleted between here and the attach, which happens under its own
