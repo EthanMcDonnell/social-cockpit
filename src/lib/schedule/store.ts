@@ -43,6 +43,7 @@ interface ScheduledPostRow {
   media: string;
   automation: string | null;
   slug: string | null;
+  is_repost: number | null;
   selection_method: string | null;
   attempts: number;
   max_attempts: number;
@@ -82,6 +83,7 @@ export function rowToPost(row: ScheduledPostRow): ScheduledPost {
     media: parseJson<ScheduledMediaRef[]>(row.media, []),
     automation: row.automation ? parseJson<AutomationSpec>(row.automation, {}) : undefined,
     slug: row.slug ?? undefined,
+    is_repost: row.is_repost === 1 ? true : undefined,
     selection_method: (row.selection_method as SelectionMethod | null) ?? undefined,
     attempts: row.attempts,
     max_attempts: row.max_attempts,
@@ -108,6 +110,8 @@ export interface CreateJobInput {
   media: ScheduledMediaRef[];
   automation?: AutomationSpec;
   slug?: string;
+  /** Run this slot from the slug's archive rather than its unposted files. */
+  isRepost?: boolean;
   selectionMethod?: SelectionMethod;
   graceMinutes?: number;
   maxAttempts?: number;
@@ -121,8 +125,8 @@ export function createJob(input: CreateJobInput): ScheduledPost {
   db.prepare(
     `INSERT INTO scheduled_posts
        (id, platform, status, scheduled_at, payload, media, automation,
-        slug, selection_method, max_attempts, grace_minutes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        slug, is_repost, selection_method, max_attempts, grace_minutes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.platform,
@@ -132,6 +136,7 @@ export function createJob(input: CreateJobInput): ScheduledPost {
     JSON.stringify(input.media),
     input.automation ? JSON.stringify(input.automation) : null,
     input.slug ?? null,
+    input.isRepost ? 1 : null,
     input.selectionMethod ?? null,
     input.maxAttempts ?? 3,
     input.graceMinutes ?? defaultGraceMinutes()

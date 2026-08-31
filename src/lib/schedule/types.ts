@@ -154,6 +154,16 @@ export interface ScheduledPost {
    * onto the row.
    */
   slug?: string;
+  /**
+   * Draw from the archive of what this slug has already published, rather than
+   * from its unposted files — a second run of something that worked.
+   *
+   * On the booking rather than on the slug, deliberately. A slug names a topic;
+   * whether a given Monday runs new material or a repeat is a property of that
+   * slot. Modelling it as a kind of slug meant inventing one that was not a
+   * topic, which then owned the calendar slot and published under its own name.
+   */
+  is_repost?: boolean;
   /** Overrides the slug's own method and the global default. */
   selection_method?: SelectionMethod;
   attempts: number;

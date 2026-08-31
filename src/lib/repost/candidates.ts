@@ -120,7 +120,16 @@ function postsByArchive(): Map<string, SlugVideoPost[]> {
  * one retired for underperforming, which is the distinction the whole feature
  * hangs on.
  */
-export async function repostCandidates(platform: SchedulePlatform): Promise<RepostCandidate[]> {
+export async function repostCandidates(
+  platform: SchedulePlatform,
+  /**
+   * Narrow to one topic's archived videos. A repost slot is booked against the
+   * slug it will publish under, so at fire time the question is "the best cut
+   * *of this topic*" — the whole archive is only the right question for the
+   * Slugs page, which is showing the pool rather than picking from it.
+   */
+  originSlug?: string
+): Promise<RepostCandidate[]> {
   const rows = getDb()
     .prepare(
       `SELECT a.*, s.repost_eligible AS repost_eligible,
@@ -135,10 +144,11 @@ export async function repostCandidates(platform: SchedulePlatform): Promise<Repo
         ORDER BY a.created_at DESC`
     )
     .all() as JoinedRow[];
-  if (!rows.length) return [];
+  const scoped = originSlug ? rows.filter((row) => row.origin_slug === originSlug) : rows;
+  if (!scoped.length) return [];
 
   const posts = postsByArchive();
-  const ids = rows.map((row) => row.id);
+  const ids = scoped.map((row) => row.id);
   const blocks = blocksFor(ids);
   const reposts = repostsFor(ids);
 
@@ -146,7 +156,7 @@ export async function repostCandidates(platform: SchedulePlatform): Promise<Repo
   // slug pool scores: the question is "did this clip work", not "did this one
   // posting of it work".
   const scores = await scoreCandidates(
-    rows.map((row) => ({ id: row.id, posts: posts.get(row.id) ?? [] })),
+    scoped.map((row) => ({ id: row.id, posts: posts.get(row.id) ?? [] })),
     { needsMetrics: true }
   );
 
@@ -155,7 +165,7 @@ export async function repostCandidates(platform: SchedulePlatform): Promise<Repo
   const blockBelow = getBlockBelowViews();
   const now = Date.now();
 
-  return rows.map((row) => {
+  return scoped.map((row) => {
     const archive = rowToArchived(row);
     const metrics = scores.get(row.id);
     const allPosts = posts.get(row.id) ?? [];
@@ -236,12 +246,17 @@ export function rankCandidates(candidates: RepostCandidate[]): RepostCandidate[]
   return [...tier1, ...tier2];
 }
 
-/** The whole pool as the Slugs page and the MCP server want to see it. */
+/**
+ * One topic's repost pool, as the Slugs page and the MCP server want to see it.
+ *
+ * Scoped to the slug, because that is what a repost slot booked against this
+ * slug would actually choose between.
+ */
 export async function viewRepostPool(
   slug: string,
   platform: SchedulePlatform
 ): Promise<RepostPoolView> {
-  const candidates = await repostCandidates(platform);
+  const candidates = await repostCandidates(platform, slug);
   return {
     slug,
     platform,

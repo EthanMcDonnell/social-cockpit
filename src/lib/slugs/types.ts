@@ -133,19 +133,6 @@ export interface SlugVideoView extends SlugVideo {
   scored: boolean;
 }
 
-/**
- * What a slug's pool is for.
- *
- * `pool` works through a library and retires each video as it posts. `repost`
- * inverts that: it draws from the archive of what has already been published
- * and deliberately runs things again. See src/lib/repost/candidates.ts.
- */
-export type SlugMode = "pool" | "repost";
-
-export function isSlugMode(value: unknown): value is SlugMode {
-  return value === "pool" || value === "repost";
-}
-
 export interface Slug {
   slug: string;
   name?: string;
@@ -166,8 +153,6 @@ export interface Slug {
    * kept in different places so they cannot be reported as the same thing.
    */
   repost_eligible: boolean;
-  /** Unset behaves as `pool`. */
-  mode: SlugMode;
   created_at: string;
   updated_at: string;
 }

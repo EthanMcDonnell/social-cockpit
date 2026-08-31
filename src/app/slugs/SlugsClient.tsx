@@ -25,7 +25,6 @@ import {
   SELECTION_METHODS,
   type SelectionMethod,
   type SlugPost,
-  type SlugMode,
   type SlugVideoPayload,
   type SlugVideoView,
 } from "@/lib/slugs/types";
@@ -206,9 +205,11 @@ function SlugDetail({
 
   const pool = data?.slug.videos ?? [];
   const override = data?.slug.selection_method ?? "";
-  // A repost pool has no rows of its own — it draws from the archive — so the
-  // enrolment table below is replaced rather than shown empty and confusing.
-  const isRepost = data?.slug.mode === "repost";
+  // A slug opted in to reposting has a second pool — the archive of what it has
+  // already published — shown alongside its unposted files rather than instead
+  // of them. Both are real, and a slot draws on one or the other depending on
+  // how it was booked.
+  const isRepost = Boolean(data?.repost);
 
   async function add() {
     setError(null);
@@ -312,7 +313,6 @@ function SlugDetail({
       <RepostControls
         slug={slug}
         eligible={data?.slug.repost_eligible ?? false}
-        mode={data?.slug.mode ?? "pool"}
         onChange={(patch) => update.mutate({ slug, ...patch })}
       />
 
@@ -394,29 +394,25 @@ function SlugDetail({
 }
 
 /**
- * The repost opt-in, and whether this slug *is* a repost pool.
+ * The repost opt-in: may videos published under this slug ever run again?
  *
- * Two different questions that look adjacent, so they are labelled apart:
+ * Off by default, and the whole mechanism for keeping dated material (news,
+ * updates, anything time-bound) out of the rotation — such a slug is simply
+ * never switched on.
  *
- *   "May this content be reposted?" — a property of the videos published under
- *   this slug. Off by default, and the whole mechanism for keeping dated
- *   material (news, updates, anything time-bound) out of the rotation: such a
- *   slug is simply never switched on.
- *
- *   "Is this slug the pool reposts come *from*?" — a property of the slug as a
- *   scheduling target. Usually exactly one slug, and usually not one you also
- *   publish original content under.
+ * There used to be a second checkbox here, naming this slug as *the* pool
+ * reposts came from. It is gone: whether a slot repeats something is a property
+ * of that booking, not of the topic, and modelling it here meant inventing a
+ * slug that was not a topic just to own a calendar slot.
  */
 function RepostControls({
   slug,
   eligible,
-  mode,
   onChange,
 }: {
   slug: string;
   eligible: boolean;
-  mode: SlugMode;
-  onChange: (patch: { repost_eligible?: boolean; mode?: SlugMode }) => void;
+  onChange: (patch: { repost_eligible?: boolean }) => void;
 }) {
   return (
     <div className="slugs-repost">
@@ -436,20 +432,6 @@ function RepostControls({
         </span>
       </label>
 
-      <label className="slugs-repost-row">
-        <input
-          type="checkbox"
-          checked={mode === "repost"}
-          onChange={(e) => onChange({ mode: e.target.checked ? "repost" : "pool" })}
-        />
-        <span>
-          <b>Use as the repost pool</b>
-          <em>
-            Slots booked against #{slug} draw from your archive instead of a video list, and publish
-            as trial reels promoted by hand.
-          </em>
-        </span>
-      </label>
     </div>
   );
 }

@@ -66,6 +66,13 @@ export interface SelectOptions {
   slug: string;
   platform: SchedulePlatform;
   method: SelectionMethod;
+  /**
+   * This slot runs from the slug's archive rather than its unposted files.
+   *
+   * Comes from the job, not from the slug. A slug names a topic; whether a
+   * given slot repeats something is a property of that booking.
+   */
+  repost?: boolean;
 }
 
 /**
@@ -78,10 +85,10 @@ export interface SelectOptions {
 export async function selectVideo(
   opts: SelectOptions
 ): Promise<SlugSelection | SlugSelectionFailure> {
-  // A repost pool has no rows of its own — it draws from the archive of what
-  // has already been published, and inverts the "already posted here" rule that
-  // governs every method below. Branch before touching `slug_videos`.
-  if (getSlug(opts.slug)?.mode === "repost") return selectRepost(opts);
+  // A repost draws from the archive of what this slug has already published,
+  // and inverts the "already posted here" rule that governs every method below.
+  // Branch before touching `slug_videos`.
+  if (opts.repost) return selectRepost(opts);
 
   const pool = listVideos(opts.slug);
   if (!pool.length) {
@@ -204,10 +211,13 @@ function platformName(platform: SchedulePlatform): string {
 async function selectRepost(
   opts: SelectOptions
 ): Promise<SlugSelection | SlugSelectionFailure> {
-  const candidates = await repostCandidates(opts.platform);
+  // Scoped to this slot's own topic: the slot was booked to repost *this*, so
+  // reaching across to another topic's archive would publish something the
+  // calendar never said it would.
+  const candidates = await repostCandidates(opts.platform, opts.slug);
   if (!candidates.length) {
     return {
-      error: `Nothing has been archived yet, so #${opts.slug} has nothing to repost.`,
+      error: `#${opts.slug} has nothing archived to repost.`,
       exhausted: false,
     };
   }
@@ -223,8 +233,8 @@ async function selectRepost(
     if (awaiting) {
       return {
         error:
-          `#${opts.slug} has nothing to repost: ${awaiting} archived video(s) belong to slugs ` +
-          `that are not enabled for reposting. Enable one on the Slugs page.`,
+          `#${opts.slug} has nothing to repost: ${awaiting} archived video(s) are not ` +
+          `enabled for reposting. Enable the slug on the Slugs page.`,
         exhausted: false,
       };
     }

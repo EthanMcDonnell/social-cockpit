@@ -71,6 +71,15 @@ const POST_SPEC = {
         "against the pool itself and the video is chosen when the slot arrives — by views, by longest wait, or " +
         "whatever selection_method says. A slug shares its name with the automation flow it fires."
     ),
+  is_repost: z
+    .boolean()
+    .optional()
+    .describe(
+      "Book this slot as a REPOST: it runs from `slug`'s archive of already-published videos rather than its " +
+        "unposted files, picking the best one that has not been run again recently. Requires `slug`, and Instagram " +
+        "only — a repost publishes as a trial reel promoted by hand, which YouTube has no equivalent of. The slug " +
+        "must also have repost_eligible on, or the slot will find nothing to run."
+    ),
   repost_eligible: z
     .boolean()
     .optional()
@@ -123,6 +132,10 @@ const JOB_SUMMARY = z.object({
   caption: z.string().optional(),
   video: z.string().optional().describe("The video this post is a hook of, if tagged."),
   slug: z.string().optional().describe("The content pool this post draws from or joins."),
+  is_repost: z
+    .boolean()
+    .optional()
+    .describe("This slot runs from the slug's archive rather than its unposted files."),
   selection: z
     .string()
     .optional()
@@ -164,6 +177,7 @@ function summarize(job: ScheduledPostView, timeZone: string) {
     caption: job.payload.caption ?? job.payload.title,
     video: typeof job.payload.video === "string" ? job.payload.video : undefined,
     slug: job.slug,
+    is_repost: job.is_repost,
     // Only a slug job still waiting on its pool has no files of its own.
     selection: job.media.length ? undefined : job.selection_effective,
     files: job.media_files.map((m) => m.filename),

@@ -31,7 +31,7 @@ import type {
   SchedulePlatform,
   YoutubeJobPayload,
 } from "./types";
-import { ensureSlug, getSlug, normalizeSlug } from "@/lib/slugs/store";
+import { ensureSlug, normalizeSlug } from "@/lib/slugs/store";
 import { isSelectionMethod, SELECTION_METHODS, type SelectionMethod } from "@/lib/slugs/types";
 
 /** Filesystem-path sources, mirroring POST /api/publish/local. */
@@ -63,6 +63,12 @@ export type ScheduleRequestBody = Partial<PublishInput> &
      * is chosen when the slot arrives — see docs/slug-scheduling.md.
      */
     slug?: string;
+    /**
+     * Run this slot from the slug's archive of already-published videos rather
+     * than from its unposted files. Instagram only — a repost publishes as a
+     * trial reel.
+     */
+    is_repost?: boolean;
     selection_method?: string;
   };
 
@@ -256,14 +262,22 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
     return fail("invalid_param", "A slug needs at least one letter or digit.");
   }
 
+  // Run this slot from the slug's archive rather than its unposted files. A
+  // property of the booking, not of the slug: the same topic can have an
+  // ordinary slot on Tuesday and a repost slot on Monday.
+  const isRepost = body.is_repost === true;
+  if (isRepost && !slug) {
+    return fail("missing_param", "a repost slot needs a slug — it reposts that slug's archive.");
+  }
+
   // A repost publishes as a trial reel, and trial reels are an Instagram
   // feature with no YouTube equivalent. Caught here rather than at fire time:
   // the alternative is a slot that looks fine on the calendar for a fortnight
   // and then fails at 3am with nothing the user can do about it.
-  if (slug && platform === "yt" && getSlug(slug)?.mode === "repost") {
+  if (isRepost && platform === "yt") {
     return fail(
       "invalid_param",
-      `#${slug} is a repost pool, and reposts publish as Instagram trial reels. Book it for Instagram, or use an ordinary pool for YouTube.`
+      "A repost publishes as an Instagram trial reel, which YouTube has no equivalent of. Book it for Instagram, or book an ordinary slot for YouTube."
     );
   }
 
@@ -308,6 +322,7 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
         media: [],
         automation: checked.automation,
         slug: slug,
+        isRepost: isRepost || undefined,
         selectionMethod,
         graceMinutes: grace_minutes ?? defaultGraceMinutes(),
         maxAttempts: max_attempts,

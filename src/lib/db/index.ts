@@ -303,6 +303,13 @@ export function getDb(): Database.Database {
     "ALTER TABLE slugs ADD COLUMN repost_eligible INTEGER NOT NULL DEFAULT 0",
     // NULL/'pool' = today's behaviour. 'repost' draws from the archive instead
     // of from this slug's own `slug_videos` rows.
+    //
+    // SUPERSEDED by `scheduled_posts.is_repost` below, and no longer read. It
+    // was the wrong place for the decision: a slug names a topic — the pool it
+    // posts from and the automation flow it fires — and putting the mode here
+    // forced a slug that was not a topic (`#reposts`) into that namespace just
+    // to own a calendar slot. Reposting is a property of the *booking*, not of
+    // the content. Kept as a column so the migration list stays append-only.
     "ALTER TABLE slugs ADD COLUMN mode TEXT",
     // One repost that actually went out. `evaluate_after` is epoch MILLISECONDS
     // for the same reason `scheduled_posts.scheduled_at` is — "is this due yet"
@@ -346,6 +353,11 @@ export function getDb(): Database.Database {
       job_id       TEXT,
       created_at   TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
+    // This slot runs from the archive rather than from its slug's unposted
+    // files. It replaces `slugs.mode`: the slot names a real topic in `slug`,
+    // and this flag says which of that topic's two pools it draws on. NULL is
+    // an ordinary job, so nothing already booked changes meaning.
+    "ALTER TABLE scheduled_posts ADD COLUMN is_repost INTEGER",
   ]) {
     try { _db.exec(sql); } catch { /* already exists */ }
   }

@@ -309,14 +309,17 @@ test("a repost is always a trial reel promoted by hand", () => {
   assert.equal(forced.caption, "hello", "the rest of the payload is left alone");
 });
 
-test("selecting from a repost-mode slug returns an archived video, marked as a repost", async () => {
-  store.ensureSlug("reposts");
-  store.updateSlug("reposts", { mode: "repost" });
+test("a repost slot runs the topic it was booked against", async () => {
   store.updateSlug("evergreen", { repost_eligible: true });
 
-  const pick = await select.selectVideo({ slug: "reposts", platform: "ig", method: "most_views" });
+  const pick = await select.selectVideo({
+    slug: "evergreen",
+    platform: "ig",
+    method: "most_views",
+    repost: true,
+  });
 
-  assert.ok(!("error" in pick), `a configured repost pool should produce a pick: ${pick.error ?? ""}`);
+  assert.ok(!("error" in pick), `a repost slot should produce a pick: ${pick.error ?? ""}`);
   assert.ok(pick.repost, "the selection must be flagged as a repost");
   assert.ok(pick.repost.archive_id);
   assert.equal(pick.video.missing, false);
@@ -326,50 +329,69 @@ test("selecting from a repost-mode slug returns an archived video, marked as a r
   );
 });
 
+test("the same slug without the repost flag runs its ordinary pool", async () => {
+  // The flag on the booking is what decides, not anything about the slug. This
+  // is the whole reason reposting is not a kind of slug: one topic can have an
+  // ordinary slot on Tuesday and a repost slot on Monday.
+  const pick = await select.selectVideo({ slug: "evergreen", platform: "ig", method: "most_views" });
+
+  assert.ok(!("error" in pick), `the ordinary pool still has unposted material: ${pick.error ?? ""}`);
+  assert.equal(pick.repost, undefined, "not flagged as a repost");
+  assert.ok(
+    !pick.video.path.includes("archive"),
+    "it publishes the file in the user's own library, not the archived copy"
+  );
+});
+
+test("a repost slot never reaches another topic's archive", async () => {
+  // The invariant the whole model rests on. #weekly-update holds one 80k video;
+  // #evergreen holds a 400k one. A slot booked against weekly-update must pick
+  // its own, or the calendar would say one thing and the feed do another.
+  store.updateSlug("weekly-update", { repost_eligible: true });
+
+  const pick = await select.selectVideo({
+    slug: "weekly-update",
+    platform: "ig",
+    method: "most_views",
+    repost: true,
+  });
+
+  assert.ok(!("error" in pick), `weekly-update has an eligible video: ${pick.error ?? ""}`);
+  assert.equal(pick.video.label, "update-42.mp4", "its own video, not the higher-scoring one next door");
+
+  const view = await candidates.viewRepostPool("weekly-update", "ig");
+  assert.ok(
+    view.candidates.every((c) => c.archive.origin_slug === "weekly-update"),
+    "and the pool it is shown from is scoped the same way"
+  );
+
+  store.updateSlug("weekly-update", { repost_eligible: false });
+});
+
 test("an empty repost pool explains which rule emptied it", async () => {
-  store.ensureSlug("nothing-enabled");
-  store.updateSlug("nothing-enabled", { mode: "repost" });
   store.updateSlug("evergreen", { repost_eligible: false });
 
   const pick = await select.selectVideo({
-    slug: "nothing-enabled",
+    slug: "evergreen",
     platform: "ig",
     method: "most_views",
+    repost: true,
   });
 
   assert.ok("error" in pick);
   assert.match(
     pick.error,
     /not enabled for reposting/i,
-    "the actionable reason wins: the user can turn a slug on"
+    "the actionable reason wins: the user can turn the slug on"
   );
 
   store.updateSlug("evergreen", { repost_eligible: true });
 });
 
-test("a repost pool reports the archive's counts, not its own empty video list", async () => {
-  store.ensureSlug("reposts");
-  store.updateSlug("reposts", { mode: "repost" });
-  store.updateSlug("evergreen", { repost_eligible: true });
-
-  // The bug this pins: a repost slug has no `slug_videos` rows, so anything
-  // counting them reports "0 videos, 0 eligible" directly above a `next_up`
-  // naming the video it is about to publish.
-  assert.equal(store.listVideos("reposts").length, 0, "a repost pool holds no rows of its own");
-
-  const view = await candidates.viewRepostPool("reposts", "ig");
-  assert.ok(view.candidates.length > 0, "its members come from the archive");
-  assert.ok(view.tier1 + view.tier2 > 0, "and at least one of them can actually run");
-
-  const pick = await select.selectVideo({ slug: "reposts", platform: "ig", method: "most_views" });
-  assert.ok(!("error" in pick), "so the counts and the pick have to agree");
-});
-
 test("the pool separates awaiting-opt-in from retired in its own counts", async () => {
-  store.ensureSlug("never-enabled");
   await published("never-enabled", "unopted.mp4", { views: 70_000 });
 
-  const view = await candidates.viewRepostPool("reposts", "ig");
+  const view = await candidates.viewRepostPool("never-enabled", "ig");
   assert.ok(view.awaiting_optin > 0, "a slug that was never enabled is counted as such");
   assert.ok(
     view.candidates.some((c) => c.why === "not_enabled" && !c.block),
@@ -422,33 +444,27 @@ function flowFor(slug) {
 
 test("a repost inherits the automation of the topic it is a repost of", async () => {
   const worker = load("lib/schedule/worker.js");
-  const { archived } = await published("inherit-topic", "inherit-topic.mp4", { views: 50_000 });
+  await published("inherit-topic", "inherit-topic.mp4", { views: 50_000 });
   flowFor("inherit-topic");
 
-  // The job is booked against the repost pool, not the topic — that is the
-  // whole point. The flow must still be the topic's.
   const spec = worker.repostAutomationSpec({
     id: "job-1",
-    slug: "reposts",
-    result: { repost_archive_id: archived.id },
+    slug: "inherit-topic",
+    is_repost: true,
   });
 
-  assert.equal(spec?.key, "inherit-topic", "the origin slug, not the pool slug");
+  assert.equal(spec?.key, "inherit-topic", "the topic's own flow");
   assert.equal(spec?.existing_key_required, true, "append-only — never creates a flow");
 });
 
 test("a repost of a topic with no automation flow attaches nothing", async () => {
   const worker = load("lib/schedule/worker.js");
-  const { archived } = await published("no-flow-topic", "no-flow-topic.mp4", { views: 50_000 });
+  await published("no-flow-topic", "no-flow-topic.mp4", { views: 50_000 });
 
   // A topic nobody wired an automation to is an ordinary state, not an error:
   // inventing a flow here would DM people from one nobody wrote.
   assert.equal(
-    worker.repostAutomationSpec({
-      id: "job-2",
-      slug: "reposts",
-      result: { repost_archive_id: archived.id },
-    }),
+    worker.repostAutomationSpec({ id: "job-2", slug: "no-flow-topic", is_repost: true }),
     undefined
   );
 });
@@ -457,10 +473,7 @@ test("an ordinary slug job is unaffected by the repost automation rule", async (
   const worker = load("lib/schedule/worker.js");
   flowFor("ordinary-topic");
 
-  // No repost_archive_id — this job is not a repost, so it must fall through to
-  // whatever automation it was booked with (here, none).
-  assert.equal(
-    worker.repostAutomationSpec({ id: "job-3", slug: "ordinary-topic", result: {} }),
-    undefined
-  );
+  // Not a repost, so it must fall through to whatever automation it was booked
+  // with (here, none) even though its topic has a flow.
+  assert.equal(worker.repostAutomationSpec({ id: "job-3", slug: "ordinary-topic" }), undefined);
 });

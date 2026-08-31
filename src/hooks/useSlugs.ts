@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   Slug,
-  SlugMode,
+
   SelectionMethod,
   SlugDetail,
   SlugPost,
@@ -14,7 +14,7 @@ import type {
   SlugVideoView,
 } from "@/lib/slugs/types";
 import type { SchedulePlatform } from "@/lib/schedule/types";
-import type { RepostCandidate } from "@/lib/repost/types";
+import type { RepostCandidate, RepostPoolView } from "@/lib/repost/types";
 
 const LIST_KEY = ["slugs"];
 
@@ -26,6 +26,13 @@ interface SlugListResponse {
 
 export interface SlugDetailResponse {
   slug: SlugDetail;
+  /**
+   * This slug's archive of already-published videos, when it is opted in to
+   * reposting. Alongside `slug.videos`, not instead of it: the two pools answer
+   * different questions, and a slot draws on one or the other depending on
+   * whether it was booked as a repost.
+   */
+  repost: RepostPoolView | null;
   /** Posts already published under this slug, linked or not. */
   history: SlugPost[];
   effective_method: SelectionMethod;
@@ -131,7 +138,6 @@ export function useUpdateSlug() {
       name?: string | null;
       selection_method?: SelectionMethod | null;
       repost_eligible?: boolean;
-      mode?: SlugMode;
     }) =>
       asJson<{ slug: Slug }>(
         await fetch(`/api/slugs/${encodeURIComponent(slug)}`, {

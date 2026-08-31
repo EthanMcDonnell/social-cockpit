@@ -45,7 +45,7 @@ import { selectVideo } from "@/lib/slugs/select";
 import { enrolVideo, linkedAutomation, recordPost } from "@/lib/slugs/store";
 import { resolveSelectionMethod } from "@/lib/slugs/settings";
 import { isSelectionFailure, type SlugVideoPayload } from "@/lib/slugs/types";
-import { getArchived, tryArchiveVideo, linkCandidate } from "@/lib/archive/store";
+import { tryArchiveVideo, linkCandidate } from "@/lib/archive/store";
 import { asTrialRepost } from "@/lib/repost/publish";
 import { recordRepost } from "@/lib/repost/store";
 import { evaluateReposts } from "@/lib/repost/evaluate";
@@ -209,7 +209,12 @@ async function resolveSlugJob(job: ClaimedScheduledPost): Promise<boolean> {
     job.media = [];
   }
 
-  const selection = await selectVideo({ slug, platform: job.platform, method });
+  const selection = await selectVideo({
+    slug,
+    platform: job.platform,
+    method,
+    repost: job.is_repost,
+  });
   if (isSelectionFailure(selection)) throw new NoCandidateError(selection.error);
 
   const staged = await registerLocalPath(selection.video.path);
@@ -1037,18 +1042,13 @@ function replanAutomation(job: ScheduledPost): AutomationPlan | undefined {
 }
 
 /**
- * The automation a repost inherits from the topic it is a repost *of*.
+ * The automation a repost inherits from its topic.
  *
- * A repost job is booked against the repost pool — `#reposts` — because that is
- * the slug that owns the calendar slot. But the video it picks belongs to a
- * topic, and in this app a slug is one string with two facets: the pool it can
- * post from and the automation flow it fires. Publishing under the pool's name
- * keeps the first facet and silently drops the second, so a reposted video would
- * lose the comment-to-DM funnel its original ran — on precisely the videos that
- * did well enough to be worth reposting.
- *
- * So the flow is looked up under the *origin* slug recorded on the archived
- * copy, not the job's slug.
+ * A repost slot is booked against the slug it will publish under, so the flow
+ * is simply that slug's — the same one the original post used. This exists only
+ * because auto-booking creates its jobs without an automation spec, and looking
+ * one up at fire time rather than at booking time means a flow wired up in the
+ * meantime still attaches.
  *
  * Append-only, deliberately. A missing flow returns undefined rather than
  * planning a create: a flow needs trigger keywords and a message body that only
@@ -1060,16 +1060,13 @@ function replanAutomation(job: ScheduledPost): AutomationPlan | undefined {
  * second copy of it.
  */
 export function repostAutomationSpec(job: ScheduledPost): AutomationSpec | undefined {
-  const archiveId = job.result?.repost_archive_id;
-  if (!archiveId) return undefined;
-
-  const origin = getArchived(archiveId)?.origin_slug;
-  // Nothing to inherit: the archived copy predates origin tracking, or the
-  // topic has no flow. Both are ordinary states, so neither warns.
-  if (!origin || !linkedAutomation(origin)) return undefined;
+  if (!job.is_repost || !job.slug) return undefined;
+  // A topic nobody wired an automation to is an ordinary state, so this does
+  // not warn.
+  if (!linkedAutomation(job.slug)) return undefined;
 
   // `existing_key_required` is what makes this append-only even if the flow is
   // deleted between here and the attach, which happens under its own
   // transaction after the platform returns a media id.
-  return { key: origin, existing_key_required: true };
+  return { key: job.slug, existing_key_required: true };
 }

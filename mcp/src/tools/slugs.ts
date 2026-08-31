@@ -68,11 +68,11 @@ export function registerSlugTools(server: McpServer): void {
         "each platform, and — the point of it — which one would actually go out if a slot booked against this slug " +
         "fired right now. Call it before booking a slug-only post with schedule_posts, and to confirm a cross-post " +
         "has something to draw from. Omit `slug` to list every pool. " +
-        "A slug in REPOST mode works the opposite way: it draws from the archive of already-published videos and " +
-        "publishes them again as trial reels, so its members are listed under `repost` rather than `videos`. There, " +
-        "note the difference between a video awaiting opt-in (its slug's repost_eligible is off — a setting, fixable " +
-        "with schedule_posts or the Slugs page) and one that is retired (a repost of it measurably underperformed, " +
-        "and it reports the view count that did it). Read-only.",
+        "A slug opted in to reposting also has a second pool, listed under `repost`: the archive of what it has " +
+        "already published, which a slot booked with is_repost draws on instead of `videos`. There, note the " +
+        "difference between a video awaiting opt-in (repost_eligible is off — a setting, fixable with schedule_posts " +
+        "or the Slugs page) and one that is retired (a repost of it measurably underperformed, and it reports the " +
+        "view count that did it). Read-only.",
       inputSchema: z.object({
         slug: z
           .string()
@@ -103,10 +103,6 @@ export function registerSlugTools(server: McpServer): void {
                   "Whether videos published under this slug may ever be reposted. Off by default — " +
                     "leave it off for time-dependent content such as updates or news."
                 ),
-              mode: z
-                .string()
-                .optional()
-                .describe("'repost' means this slug draws from the archive of published videos."),
               automation: z.string().optional().describe("The comment flow sharing this slug's name."),
             })
           )
@@ -116,7 +112,6 @@ export function registerSlugTools(server: McpServer): void {
           .boolean()
           .optional()
           .describe("Whether this slug's videos may be reposted. Off by default."),
-        mode: z.string().optional().describe("'pool' or 'repost'."),
         effective_method: z
           .string()
           .optional()
@@ -157,7 +152,7 @@ export function registerSlugTools(server: McpServer): void {
             ),
           })
           .optional()
-          .describe("Present only for a slug in repost mode, whose pool is the archive rather than a file list."),
+          .describe("The slug's archive of already-published videos, when it is opted in to reposting."),
       }),
       annotations: {
         readOnlyHint: true,
@@ -176,7 +171,6 @@ export function registerSlugTools(server: McpServer): void {
           eligible_yt: s.eligible.yt,
           selection_method: s.selection_method,
           repost_eligible: s.repost_eligible ?? false,
-          mode: s.mode ?? "pool",
           automation: s.automation?.name,
         }));
         const text = rows.length
@@ -187,7 +181,6 @@ export function registerSlugTools(server: McpServer): void {
                   `  ${r.slug} — ${r.video_count} video(s) · ${r.eligible_ig} left for ig, ` +
                   `${r.eligible_yt} for yt` +
                   (r.selection_method ? ` · picks by ${r.selection_method}` : "") +
-                  (r.mode === "repost" ? " · REPOST POOL" : "") +
                   (r.repost_eligible ? " · reposting on" : "") +
                   (r.automation ? ` · automation "${r.automation}"` : "")
               ),
@@ -244,7 +237,7 @@ export function registerSlugTools(server: McpServer): void {
       const text = [
         `${detail.slug.slug} — ${detail.slug.video_count} video(s), ${eligible} eligible for ${platform} · ` +
           `picks by ${detail.effective_method}` +
-          (detail.slug.mode === "repost" ? " · REPOST POOL (publishes as trial reels, promoted by hand)" : ""),
+          (detail.repost ? ` · ${detail.repost.candidates.length} repostable` : ""),
         `Reposting: ${detail.slug.repost_eligible ? "enabled" : "not enabled"}`,
         next
           ? `Next up on ${platform}: ${describe(next.video)}\n  ${next.reason} (from ${next.considered} eligible)`
@@ -258,7 +251,6 @@ export function registerSlugTools(server: McpServer): void {
         structuredContent: {
           slug: detail.slug.slug,
           repost_eligible: detail.slug.repost_eligible ?? false,
-          mode: detail.slug.mode ?? "pool",
           effective_method: detail.effective_method,
           eligible,
           next_up: next,

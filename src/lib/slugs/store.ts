@@ -24,9 +24,7 @@ import { getArchived } from "@/lib/archive/store";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import {
   isSelectionMethod,
-  isSlugMode,
   type Slug,
-  type SlugMode,
   type SelectionMethod,
   type SlugVideo,
   type SlugVideoPayload,
@@ -55,7 +53,6 @@ interface SlugRow {
   name: string | null;
   selection_method: string | null;
   repost_eligible: number | null;
-  mode: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -91,7 +88,6 @@ function rowToSlug(row: SlugRow): Slug {
     // to 0, but a row written before the migration reads back NULL, and the
     // safe reading of an unknown value here is the one that does not repost.
     repost_eligible: row.repost_eligible === 1,
-    mode: isSlugMode(row.mode) ? row.mode : "pool",
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -148,7 +144,6 @@ export function updateSlug(
     name?: string | null;
     selection_method?: SelectionMethod | null;
     repost_eligible?: boolean;
-    mode?: SlugMode;
   }
 ): Slug | null {
   const sets: string[] = [];
@@ -169,10 +164,6 @@ export function updateSlug(
   if (patch.repost_eligible !== undefined) {
     sets.push("repost_eligible = ?");
     params.push(patch.repost_eligible ? 1 : 0);
-  }
-  if (patch.mode !== undefined) {
-    sets.push("mode = ?");
-    params.push(patch.mode);
   }
   if (!sets.length) return getSlug(slug);
 

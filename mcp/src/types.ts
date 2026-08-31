@@ -48,6 +48,8 @@ export interface ScheduledPostView {
   payload: { caption?: string; title?: string; media_type?: string } & Record<string, unknown>;
   /** Booked against a content pool rather than a file. */
   slug?: string;
+  /** Runs from the slug's archive of published videos rather than its unposted files. */
+  is_repost?: boolean;
   /** The method that will actually run, after the job → slug → default fallback. */
   selection_effective?: string;
   /** Empty on a slug job until the worker resolves its pool at fire time. */
@@ -176,8 +178,6 @@ export interface SlugSummary {
    * news) out of the repost rotation is simply never enabling it.
    */
   repost_eligible?: boolean;
-  /** `repost` draws from the archive of published videos instead of a file list. */
-  mode?: "pool" | "repost";
   video_count: number;
   /** Candidates still eligible for each platform (not yet posted there). */
   eligible: Record<SchedulePlatform, number>;
@@ -214,7 +214,7 @@ export interface RepostPoolView {
 
 export interface SlugDetailResponse {
   slug: SlugSummary & { videos: SlugVideoView[] };
-  /** Present only for a slug in `repost` mode, whose pool is the archive. */
+  /** The slug's archive of already-published videos, when it is opted in. */
   repost?: RepostPoolView | null;
   effective_method: SelectionMethod;
   /** The pick the worker would make right now, from the real selector. */

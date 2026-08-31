@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { repostCandidates, rankCandidates } from "@/lib/repost/candidates";
 import { getRepostSettings } from "@/lib/repost/settings";
 import { REPOST_GRADUATION_STRATEGY } from "@/lib/repost/publish";
-import { repostSlugs } from "@/lib/repost/autobook";
 import { archiveUsage } from "@/lib/archive/store";
 import { requireScheduleAuth } from "@/lib/schedule/auth";
 import type { SchedulePlatform } from "@/lib/schedule/types";
@@ -34,7 +33,12 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     platform,
     settings: { ...getRepostSettings(), graduation_strategy: REPOST_GRADUATION_STRATEGY },
-    slugs: repostSlugs(),
+    // The topics that could actually fill a repost slot. Formerly the slugs in
+    // repost mode — there is no such thing now that reposting is a property of
+    // a booking, so this is derived from what is eligible.
+    slugs: Array.from(
+      new Set(ranked.map((candidate) => candidate.archive.origin_slug).filter(Boolean))
+    ).sort(),
     archive: archiveUsage(),
     candidates,
     order: ranked.map((candidate) => candidate.archive.id),

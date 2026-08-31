@@ -17,7 +17,6 @@ import {
   isSelectionFailure,
   isSelectionMethod,
   SELECTION_METHODS,
-  isSlugMode,
   type SchedulePlatformParam,
 } from "@/lib/slugs/types";
 
@@ -49,27 +48,24 @@ export async function GET(
   const selection = await selectVideo({ slug, platform, method });
 
   /**
-   * A repost pool holds no `slug_videos` rows — it draws from the archive — so
-   * counting them would report "0 videos, 0 eligible" directly above a `next_up`
-   * naming the video it is about to post. Its counts come from the archive
-   * instead, and the candidates ride along under `repost` so a client can show
-   * the tiers and the retired ones rather than an empty table.
+   * A slug has two pools, and they answer different questions: `videos` is the
+   * material it has not posted yet, `repost` is the archive of what it already
+   * published and could run again. A slot booked against this slug draws on one
+   * or the other depending on whether it was booked as a repost.
    *
-   * `yt` is genuinely 0: reposts publish as trial reels, which YouTube has no
-   * equivalent of, and booking one for `yt` is refused.
+   * So both are reported rather than one standing in for the other. `eligible`
+   * always describes the ordinary pool, which is what `next_up` previews.
    */
-  const repost = record.mode === "repost" ? await viewRepostPool(slug, platform) : null;
+  const repost = record.repost_eligible ? await viewRepostPool(slug, platform) : null;
 
   return NextResponse.json({
     slug: {
       ...record,
-      video_count: repost ? repost.candidates.length : videos.length,
-      eligible: repost
-        ? { ig: repost.tier1 + repost.tier2, yt: 0 }
-        : {
-            ig: eligibleVideos(slug, "ig", videos).length,
-            yt: eligibleVideos(slug, "yt", videos).length,
-          },
+      video_count: videos.length,
+      eligible: {
+        ig: eligibleVideos(slug, "ig", videos).length,
+        yt: eligibleVideos(slug, "yt", videos).length,
+      },
       automation: linkedAutomation(slug),
       videos,
     },
@@ -117,18 +113,11 @@ export async function PATCH(
       { status: 400 }
     );
   }
-  if (body?.mode !== undefined && !isSlugMode(body.mode)) {
-    return NextResponse.json(
-      { error: "invalid_param", message: 'mode must be "pool" or "repost".' },
-      { status: 400 }
-    );
-  }
 
   const updated = updateSlug(slug, {
     ...(body?.name !== undefined ? { name: body.name } : {}),
     ...(body?.selection_method !== undefined ? { selection_method: body.selection_method } : {}),
     ...(body?.repost_eligible !== undefined ? { repost_eligible: body.repost_eligible } : {}),
-    ...(body?.mode !== undefined ? { mode: body.mode } : {}),
   });
   if (!updated) {
     return NextResponse.json({ error: "not_found", message: `No slug "${slug}".` }, { status: 404 });

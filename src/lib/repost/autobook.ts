@@ -30,6 +30,7 @@ import { getMaxPostsPerDay, getTimeZone } from "@/lib/schedule/settings";
 import { addDays, dayOfWeek, startOfDay, wallToUtc, utcToWall } from "@/lib/schedule/tz";
 import { reportWarn } from "@/lib/observability";
 import { repostCandidates, rankCandidates } from "./candidates";
+import type { SchedulePlatform } from "@/lib/schedule/types";
 import { autobookedInstants, cullAutobookLedger, recordAutobooked } from "./store";
 import {
   getHorizonDays,
@@ -42,13 +43,19 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Ledger rows older than this are of no further use. */
 const LEDGER_RETENTION_DAYS = 60;
 
-/** Slugs in repost mode. Usually one; nothing stops there being several. */
-export function repostSlugs(): string[] {
-  return (
-    getDb()
-      .prepare("SELECT slug FROM slugs WHERE mode = 'repost' ORDER BY slug ASC")
-      .all() as { slug: string }[]
-  ).map((row) => row.slug);
+/**
+ * The topics with something worth reposting, best first, one entry per video.
+ *
+ * A topic appears once per eligible candidate it holds, so a slug with two
+ * archived cuts can legitimately take two slots in a horizon while one with a
+ * single cut takes one. Booking the same topic more often than it has material
+ * would leave the later slot resolving to nothing at fire time.
+ */
+async function bookableTopics(platform: SchedulePlatform): Promise<string[]> {
+  const ranked = rankCandidates(await repostCandidates(platform));
+  return ranked
+    .map((candidate) => candidate.archive.origin_slug)
+    .filter((slug): slug is string => Boolean(slug));
 }
 
 export interface AutobookSummary {
@@ -59,9 +66,6 @@ export interface AutobookSummary {
 export async function autobookReposts(now = Date.now()): Promise<AutobookSummary> {
   const summary: AutobookSummary = { booked: 0, skipped: 0 };
   if (!isAutobookEnabled()) return summary;
-
-  const slugs = repostSlugs();
-  if (!slugs.length) return summary;
 
   cullAutobookLedger(now - LEDGER_RETENTION_DAYS * DAY_MS);
 
@@ -74,24 +78,16 @@ export async function autobookReposts(now = Date.now()): Promise<AutobookSummary
   const to = addDays(from, horizon + 1, timeZone);
   const claimed = autobookedInstants(from, to);
 
-  // Only the first repost slug is auto-booked. Two pools competing for the same
-  // configured times would just fight over the daily cap, and the setting names
-  // one cadence rather than one per pool.
-  const slug = slugs[0];
-  if (slugs.length > 1) {
-    reportWarn(
-      "repost",
-      "multiple_repost_slugs",
-      `${slugs.length} slugs are in repost mode; auto-booking only #${slug}`,
-      { meta: { slugs } }
-    );
-  }
-
   // Resolved once for the whole pass rather than per slot: this reads insights
   // for every archived video, and the answer cannot meaningfully change between
   // two slots booked in the same second.
-  const eligible = rankCandidates(await repostCandidates("ig")).length;
-  if (!eligible) return summary;
+  //
+  // Consumed as a queue. Each slot takes the next topic down the ranking, so a
+  // pass books the best material first and never gives one topic more slots
+  // than it has eligible videos.
+  const topics = await bookableTopics("ig");
+  if (!topics.length) return summary;
+  let next = 0;
 
   const maxPerWeek = getMaxPerWeek();
   let bookedThisPass = 0;
@@ -108,9 +104,15 @@ export async function autobookReposts(now = Date.now()): Promise<AutobookSummary
       if (instant <= now) continue;
       if (claimed.has(instant)) continue;
 
+      // Out of material — the remaining slots stay empty rather than being
+      // booked against a topic that cannot fill them. Read without consuming:
+      // a slot skipped by a cap below must not burn the topic it would have had.
+      if (next >= topics.length) return summary;
+      const slug = topics[next];
+
       // The cap is a rolling seven days from now, not a calendar week, so the
       // rate holds no matter which day the pass happens to run on.
-      if (maxPerWeek > 0 && bookedThisPass + existingInWeek(instant, slug) >= maxPerWeek) {
+      if (maxPerWeek > 0 && bookedThisPass + existingInWeek(instant) >= maxPerWeek) {
         summary.skipped += 1;
         continue;
       }
@@ -131,6 +133,7 @@ export async function autobookReposts(now = Date.now()): Promise<AutobookSummary
           payload: {} as never,
           media: [],
           slug,
+          isRepost: true,
         },
         cap.usage.dayStart,
         addDays(cap.usage.dayStart, 1, timeZone),
@@ -144,6 +147,7 @@ export async function autobookReposts(now = Date.now()): Promise<AutobookSummary
 
       recordAutobooked(instant, slug, job.id);
       claimed.add(instant);
+      next += 1;
       bookedThisPass += 1;
       summary.booked += 1;
 
@@ -159,15 +163,21 @@ export async function autobookReposts(now = Date.now()): Promise<AutobookSummary
   return summary;
 }
 
-/** Repost jobs already on the calendar in the seven days around an instant. */
-function existingInWeek(instant: number, slug: string): number {
+/**
+ * Repost jobs already on the calendar in the seven days around an instant.
+ *
+ * Counted across every topic, not per slug: `max_per_week` is a ceiling on how
+ * often the account repeats itself, and three reposts in a week are three
+ * reposts whether they are three topics or one.
+ */
+function existingInWeek(instant: number): number {
   const row = getDb()
     .prepare(
       `SELECT COUNT(*) AS count FROM scheduled_posts
-        WHERE slug = ? AND scheduled_at >= ? AND scheduled_at < ?
+        WHERE is_repost = 1 AND scheduled_at >= ? AND scheduled_at < ?
           AND status IN ('pending','paused','publishing','finalizing','published')`
     )
-    .get(slug, instant - 7 * DAY_MS, instant + 7 * DAY_MS) as { count: number };
+    .get(instant - 7 * DAY_MS, instant + 7 * DAY_MS) as { count: number };
   return row.count;
 }
 

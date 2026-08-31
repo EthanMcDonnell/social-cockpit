@@ -14,8 +14,8 @@ feedback loop so a repost that flops is not tried again.
 
 1. **Enable reposting on a slug.** Off by default. Do this only for evergreen
    content — never for updates, news, or anything dated.
-2. **Make one slug a repost pool.** Slots booked against it draw from the
-   archive rather than a list of files.
+2. **Book a slot as a repost.** Pass `is_repost` when booking against that
+   slug, and the slot draws from its archive rather than its unposted files.
 3. **Set a cadence** in Settings → Publishing → Reposting, or book slots by hand.
 
 Everything the app publishes from that point is archived automatically. A video
@@ -112,6 +112,29 @@ the moment its rest period elapsed.
 
 ---
 
+## A repost is a booking, not a kind of slug
+
+A slug names a **topic** — all the cuts of one piece of content — and it is the
+string an automation flow fires on. Both facets hang off that one name.
+
+So "which topic" and "new material or a repeat" are different questions, and
+only the first belongs to the slug. Reposting used to be a *mode* on a slug,
+which forced you to invent one that was not a topic (`#reposts`) purely to own a
+calendar slot — and anything published under it lost its topic's automation.
+
+Now the slot carries it:
+
+```jsonc
+{ "slug": "gym-tips", "is_repost": true, "scheduled_at": "..." }
+```
+
+`#gym-tips` on Monday reposts from its archive; `#gym-tips` on Tuesday posts new
+material from its file list. Same topic, same automation flow, two kinds of
+slot. A repost slot only ever draws on **its own** slug's archive, so the
+calendar cannot say one thing and the feed do another.
+
+---
+
 ## Trial reels, promoted by hand
 
 Every repost publishes as a **trial reel** with
@@ -123,8 +146,8 @@ you want for something your followers have already seen. And automatic
 graduation would push recycled material back into your main feed on Instagram's
 judgement rather than yours — you promote it, or it stays where it is.
 
-YouTube has no equivalent, so booking a repost pool for `yt` is rejected when
-you book it, not at 3am when it fires.
+YouTube has no equivalent, so booking a repost for `yt` is rejected when you
+book it, not at 3am when it fires.
 
 ---
 
@@ -174,7 +197,9 @@ announce itself as one. Switch a day off to skip it entirely.
 
 With auto-booking on (the default), the scheduler keeps the next
 `horizon_days` (default 14) topped up, subject to `max_per_week` (default 3)
-*and* the account-wide `max_posts_per_day`. It books through the same
+*and* the account-wide `max_posts_per_day`. Each slot is booked against a real
+topic, taken from the ranked shortlist — best material first, and never more
+slots for a topic than it has eligible videos. It books through the same
 `createJobWithinScheduledCap` path the API uses, so it can never overbook a day.
 
 Auto-booked slots are ordinary calendar jobs — move them, pause them, delete
@@ -182,8 +207,8 @@ them. **Deleting one keeps it deleted**: every booked instant is recorded in
 `repost_autobook`, and that row outlives the job precisely so the next pass does
 not helpfully put it back.
 
-Auto-booking does nothing at all until a slug is set to `repost` mode, which is
-why it can default to on safely.
+Auto-booking does nothing at all until some slug is opted in to reposting and
+has a video past the threshold, which is why it can default to on safely.
 
 ---
 
@@ -213,7 +238,7 @@ All stored in `app_settings`, so changes take effect without restarting.
 | --- | --- |
 | `GET /api/reposts?platform=ig` | The pool — every archived video with its verdict, plus the ranked order |
 | `DELETE /api/reposts/blocks/:archiveId` | Lift a block |
-| `PATCH /api/slugs/:slug` | `{ "repost_eligible": true }`, `{ "mode": "repost" }` |
+| `PATCH /api/slugs/:slug` | `{ "repost_eligible": true }` |
 | `GET/PUT /api/schedule/settings` | Read and write the `repost` policy |
 
 `GET /api/reposts` deliberately returns ineligible videos too, each with a
@@ -232,9 +257,9 @@ archived_videos   the preserved copies, keyed by content hash
 repost_events     one row per repost, with its evaluation deadline
 repost_blocks     videos retired on measured performance
 repost_autobook   instants auto-booking has claimed
-slugs.repost_eligible   the opt-in (defaults to 0)
-slugs.mode              'pool' (default) or 'repost'
-slug_videos.archive_id  links a candidate to its preserved copy
+slugs.repost_eligible       the opt-in (defaults to 0)
+scheduled_posts.is_repost   this slot runs from the archive
+slug_videos.archive_id      links a candidate to its preserved copy
 ```
 
 `repost_eligible` defaulting to `0` means existing slugs stay out of reposting
