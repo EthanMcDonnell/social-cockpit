@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    await runAutomationCycle();
+    await runAutomationCycle({ force: true });
     // Also run the comment_to_follow_dm confirm poll so a manual trigger
     // processes confirm taps too (isolated so a poll failure won't fail here).
     await runFollowConfirmPoll().catch((err) =>

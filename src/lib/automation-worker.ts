@@ -37,6 +37,7 @@ import { instagramFetch } from "@/lib/instagram/client";
 import { getTombstonedIds, tombstoneMedia } from "@/lib/cache/store";
 import { throttledSend, hasSendBudget, logEvent } from "@/lib/automation-sender";
 import { reportError, reportWarn } from "@/lib/observability";
+import { isDue, lastActivityAt, pollIntervalFor } from "@/lib/automation/cadence";
 
 // ─── comment_to_follow_dm tunables (top of module, easy to tune) ─────────────
 const PENDING_TTL_DAYS = 7;   // matches Instagram's 7-day private-reply window
@@ -110,6 +111,13 @@ function clearPostFailure(postId: string): number {
   postFailures.delete(postId);
   return prev;
 }
+
+/**
+ * When each post's comments were last fetched, keyed by post id. In memory for
+ * the same reason as `postFailures`: after a restart every post gets one
+ * immediate check, and the cadence re-derives from there.
+ */
+const lastPolledAt = new Map<string, number>();
 
 /**
  * Whether firing this flow puts an outbound DM on the wire — i.e. whether it's
@@ -643,8 +651,14 @@ export async function runFollowConfirmPoll() {
   setCursor(db, CONFIRM_CURSOR_KEY, cursor);
 }
 
-export async function runAutomationCycle() {
-  console.log(`[automation] cycle running at ${new Date().toISOString()}`);
+/**
+ * `force` checks every post regardless of how quiet it is — the manual trigger
+ * uses it, since someone pressing "run now" wants an answer now. Failure backoff
+ * still applies: forcing a post that is erroring only buys another error.
+ */
+export async function runAutomationCycle({ force = false }: { force?: boolean } = {}) {
+  const now = Date.now();
+  console.log(`[automation] cycle running at ${new Date(now).toISOString()}`);
   const db = getDb();
 
   // Collect post IDs to check: explicitly targeted posts + recent posts for any-post flows
@@ -663,10 +677,17 @@ export async function runAutomationCycle() {
     }
   }
 
+  // Publish times for posts picked up via listMedia, so a brand-new post on an
+  // account-wide flow counts as active before it has a single comment.
+  const postedAt = new Map<string, string>();
+
   if (hasAnyPostFlow) {
     try {
       const media = await listMedia(50);
-      for (const m of media.data) postIds.add(m.id);
+      for (const m of media.data) {
+        postIds.add(m.id);
+        if (m.timestamp) postedAt.set(m.id, m.timestamp);
+      }
     } catch (err) {
       reportError("automation", "media_list_failed", "failed to fetch media list", { error: err });
     }
@@ -683,12 +704,32 @@ export async function runAutomationCycle() {
   for (const id of Array.from(postFailures.keys())) {
     if (!targets.includes(id)) postFailures.delete(id);
   }
+  for (const id of Array.from(lastPolledAt.keys())) {
+    if (!targets.includes(id)) lastPolledAt.delete(id);
+  }
 
+  let checked = 0;
   for (const postId of targets) {
     // Still inside a backoff window from an earlier run of failures — skip it
     // entirely rather than spending a call and a log row on it.
     const backoff = postFailures.get(postId);
-    if (backoff && backoff.nextAttemptAt > Date.now()) continue;
+    if (backoff && backoff.nextAttemptAt > now) continue;
+
+    // Quiet posts rest between checks; see lib/automation/cadence.ts.
+    if (!force) {
+      const activity = lastActivityAt([
+        getCursor(db, postId),
+        postedAt.get(postId),
+        ...activeFlows
+          .filter((f) => f.scope === "account" || f.media_ids.includes(postId))
+          .map((f) => f.activated_at ?? f.created_at),
+      ]);
+      if (!isDue(lastPolledAt.get(postId), pollIntervalFor(activity, now), now)) continue;
+    }
+    // Stamped with the cycle's start time, not the call's, so a 15-minute tier
+    // comes due on exactly the fifteenth tick rather than drifting to the next.
+    lastPolledAt.set(postId, now);
+    checked += 1;
 
     try {
       const floor = commentFloorFor(db, postId, activeFlows);
@@ -770,5 +811,9 @@ export async function runAutomationCycle() {
         }
       }
     }
+  }
+
+  if (checked < targets.length) {
+    console.log(`[automation] checked ${checked} of ${targets.length} posts (${targets.length - checked} resting or backed off)`);
   }
 }
