@@ -44,6 +44,7 @@ interface ScheduledPostRow {
   automation: string | null;
   slug: string | null;
   is_repost: number | null;
+  is_promote: number | null;
   selection_method: string | null;
   attempts: number;
   max_attempts: number;
@@ -84,6 +85,7 @@ export function rowToPost(row: ScheduledPostRow): ScheduledPost {
     automation: row.automation ? parseJson<AutomationSpec>(row.automation, {}) : undefined,
     slug: row.slug ?? undefined,
     is_repost: row.is_repost === 1 ? true : undefined,
+    is_promote: row.is_promote === 1 ? true : undefined,
     selection_method: (row.selection_method as SelectionMethod | null) ?? undefined,
     attempts: row.attempts,
     max_attempts: row.max_attempts,
@@ -112,6 +114,8 @@ export interface CreateJobInput {
   slug?: string;
   /** Run this slot from the slug's archive rather than its unposted files. */
   isRepost?: boolean;
+  /** Promote the slug's best trial reel to the main feed. */
+  isPromote?: boolean;
   selectionMethod?: SelectionMethod;
   graceMinutes?: number;
   maxAttempts?: number;
@@ -125,8 +129,8 @@ export function createJob(input: CreateJobInput): ScheduledPost {
   db.prepare(
     `INSERT INTO scheduled_posts
        (id, platform, status, scheduled_at, payload, media, automation,
-        slug, is_repost, selection_method, max_attempts, grace_minutes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        slug, is_repost, is_promote, selection_method, max_attempts, grace_minutes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     input.platform,
@@ -137,6 +141,7 @@ export function createJob(input: CreateJobInput): ScheduledPost {
     input.automation ? JSON.stringify(input.automation) : null,
     input.slug ?? null,
     input.isRepost ? 1 : null,
+    input.isPromote ? 1 : null,
     input.selectionMethod ?? null,
     input.maxAttempts ?? 3,
     input.graceMinutes ?? defaultGraceMinutes()
@@ -326,6 +331,25 @@ export function reservedSlugVideoIds(
     if (id) reserved.add(id);
   }
   return reserved;
+}
+
+/**
+ * A job that has put, or will put, this slug on the Instagram main feed: a
+ * promote slot, or any non-repost Instagram job booked without trial_params.
+ * A slug is one video, and it reaches followers once — this is what booking
+ * checks so a second feed post is refused at the terminal rather than at 3am.
+ */
+export function feedJobFor(slug: string): ScheduledPost | undefined {
+  const row = getDb()
+    .prepare(
+      `SELECT * FROM scheduled_posts
+        WHERE slug = ? AND platform = 'ig' AND is_repost IS NULL
+          AND status IN ('pending', 'paused', 'publishing', 'finalizing', 'published')
+          AND (is_promote = 1 OR json_extract(payload, '$.trial_params') IS NULL)
+        ORDER BY scheduled_at ASC LIMIT 1`
+    )
+    .get(slug) as ScheduledPostRow | undefined;
+  return row ? rowToPost(row) : undefined;
 }
 
 /** Every staged-media id still referenced by a job — used by the sweep. */

@@ -23,7 +23,7 @@ import { parseScheduledAt } from "./tz";
 import type {
   CreateJobInput,
 } from "./store";
-import { defaultGraceMinutes } from "./store";
+import { defaultGraceMinutes, feedJobFor } from "./store";
 import type {
   MediaRole,
   ScheduledMediaRef,
@@ -31,7 +31,7 @@ import type {
   SchedulePlatform,
   YoutubeJobPayload,
 } from "./types";
-import { ensureSlug, normalizeSlug } from "@/lib/slugs/store";
+import { ensureSlug, feedPostOf, normalizeSlug } from "@/lib/slugs/store";
 import { isSelectionMethod, SELECTION_METHODS, type SelectionMethod } from "@/lib/slugs/types";
 
 /** Filesystem-path sources, mirroring POST /api/publish/local. */
@@ -69,6 +69,11 @@ export type ScheduleRequestBody = Partial<PublishInput> &
      * trial reel.
      */
     is_repost?: boolean;
+    /**
+     * Promote the slug's most successful trial reel to the main feed. Instagram
+     * only, slug-only, and once per slug.
+     */
+    is_promote?: boolean;
     selection_method?: string;
   };
 
@@ -203,6 +208,22 @@ function withSlugKey(
   return { ...automation, key: slug };
 }
 
+/**
+ * A slug is one video's hooks, and only one of them goes to the main feed.
+ * Refuse a second feed booking now — the first may still be pending.
+ */
+function checkOneFeedPost(slug: string): ParseFailure | undefined {
+  const posted = feedPostOf(slug);
+  if (posted) {
+    return fail("feed_taken", `#${slug} already has its main-feed post (${posted.label ?? posted.path}). Book it as a trial reel instead.`, 409);
+  }
+  const booked = feedJobFor(slug);
+  if (booked) {
+    return fail("feed_taken", `#${slug} already has a main-feed slot booked (job ${booked.id}, ${booked.status}). Book it as a trial reel instead.`, 409);
+  }
+  return undefined;
+}
+
 export async function parseScheduleBody(body: ScheduleRequestBody): Promise<ParseResult> {
   const timeZone = getTimeZone();
 
@@ -236,6 +257,7 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
     "media",
     "automation",
     "slug",
+    "is_promote",
     "selection_method",
     "video_path",
     "image_path",
@@ -281,6 +303,15 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
     );
   }
 
+  const isPromote = body.is_promote === true;
+  if (isPromote) {
+    if (!slug) return fail("missing_param", "a promote slot needs a slug — it promotes that slug's best trial reel.");
+    if (platform === "yt") return fail("invalid_param", "Promotion moves an Instagram trial reel to the main feed; it has no YouTube meaning.");
+    if (isRepost) return fail("invalid_param", "A slot is either a repost or a promotion, not both.");
+    // The point of the slot is that it is NOT a trial.
+    delete rest.trial_params;
+  }
+
   /**
    * Create the pool on first mention, mirroring how a new automation_key
    * creates its flow — booking should not need a separate setup call for what
@@ -305,9 +336,18 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
   // is enrolled when it publishes. A slug on its own books the *slot*, and only
   // that case defers the choice of video to fire time: there is no media to
   // resolve, and no payload to validate against a media type nobody has picked.
+  if (isPromote && hasSource) {
+    return fail("invalid_param", "A promote slot picks its video from the slug's trial reels at fire time — book it without a file.");
+  }
+
   if (slug && !hasSource) {
     const checked = checkAutomation(platform === "ig" ? withSlugKey(automation, slug) : undefined);
     if (isFailure(checked)) return checked;
+
+    if (platform === "ig" && !isRepost && !rest.trial_params) {
+      const taken = checkOneFeedPost(slug);
+      if (taken) return taken;
+    }
 
     claimSlug();
     return {
@@ -323,6 +363,7 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
         automation: checked.automation,
         slug: slug,
         isRepost: isRepost || undefined,
+        isPromote: isPromote || undefined,
         selectionMethod,
         graceMinutes: grace_minutes ?? defaultGraceMinutes(),
         maxAttempts: max_attempts,
@@ -375,6 +416,11 @@ export async function parseScheduleBody(body: ScheduleRequestBody): Promise<Pars
   // ── automation ──
   const checked = checkAutomation(withSlugKey(automation, slug));
   if (isFailure(checked)) return checked;
+
+  if (slug && !input.trial_params) {
+    const taken = checkOneFeedPost(slug);
+    if (taken) return taken;
+  }
 
   claimSlug();
   return {

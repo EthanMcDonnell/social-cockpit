@@ -257,6 +257,7 @@ async function resolveSlugJob(job: ClaimedScheduledPost): Promise<boolean> {
     platform: job.platform,
     method,
     repost: job.is_repost,
+    promote: job.is_promote,
   });
   if (isSelectionFailure(selection)) throw new NoCandidateError(selection.error);
 
@@ -269,10 +270,14 @@ async function resolveSlugJob(job: ClaimedScheduledPost): Promise<boolean> {
   // copied from the original publish — can turn a repost into an ordinary feed
   // post that followers see again unannounced. YouTube has no trial concept and
   // is rejected at booking time, so this only ever applies to Instagram.
+  // A promotion is the opposite: the hook already ran as a trial, and this time
+  // it goes to followers, so whatever trial_params it carried are dropped.
   const payload =
     selection.repost && job.platform === "ig"
       ? asTrialRepost(merged as IgPublishInput)
-      : merged;
+      : job.is_promote
+        ? withoutTrial(merged as IgPublishInput)
+        : merged;
 
   // Every other route into a publish validates its payload before booking. A
   // slug job cannot: there is no video to validate against until now. This is
@@ -334,6 +339,12 @@ async function resolveSlugJob(job: ClaimedScheduledPost): Promise<boolean> {
     }
   );
   return true;
+}
+
+function withoutTrial(input: IgPublishInput): IgPublishInput {
+  const feed = { ...input };
+  delete feed.trial_params;
+  return feed;
 }
 
 /**
@@ -767,6 +778,10 @@ function withSlugTrace(job: ScheduledPost, result: ScheduleResult): ScheduleResu
  * A dry run is deliberately excluded — its media id is a stub, and recording it
  * would silently retire a candidate that never actually posted.
  */
+function isTrialPayload(job: ScheduledPost): boolean {
+  return !!(job.payload as Partial<IgPublishInput>).trial_params;
+}
+
 async function recordSlugPost(job: ScheduledPost, result: ScheduleResult): Promise<void> {
   const externalId = job.platform === "yt" ? result.video_id : result.media_id;
   if (!externalId || result.dry_run) return;
@@ -792,7 +807,8 @@ async function recordSlugPost(job: ScheduledPost, result: ScheduleResult): Promi
     // The pick made at fire time, when its candidate is still in the pool. One
     // removed since then is treated as no pick at all — the enrolment below
     // puts the file back, so the post is recorded either way.
-    if (result.slug_video_id && recordPost(result.slug_video_id, job.platform, externalId, job.id)) {
+    const trial = job.platform === "ig" ? isTrialPayload(job) : undefined;
+    if (result.slug_video_id && recordPost(result.slug_video_id, job.platform, externalId, job.id, trial)) {
       // The candidate existed already, so enrolment never runs and this is the
       // only chance to attach the copy that will keep it alive.
       if (archived) linkCandidate(result.slug_video_id, archived.id);
@@ -825,7 +841,7 @@ async function recordSlugPost(job: ScheduledPost, result: ScheduleResult): Promi
       archiveId: archived?.id,
       trusted: source.owned,
     });
-    recordPost(enrolled.id, job.platform, externalId, job.id);
+    recordPost(enrolled.id, job.platform, externalId, job.id, trial);
     logScheduleEvent("info", "slug_enrolled", `Added to #${job.slug}`, {
       jobId: job.id,
       meta: { slug: job.slug, video_id: enrolled.id },

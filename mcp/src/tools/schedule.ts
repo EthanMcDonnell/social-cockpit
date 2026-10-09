@@ -80,6 +80,15 @@ const POST_SPEC = {
         "only — a repost publishes as a trial reel promoted by hand, which YouTube has no equivalent of. The slug " +
         "must also have repost_eligible on, or the slot will find nothing to run."
     ),
+  is_promote: z
+    .boolean()
+    .optional()
+    .describe(
+      "Book this slot as a PROMOTION: when it fires, the slug's most successful trial reel (by selection_method, " +
+        "default most_views) is published again as an ordinary reel, to the main feed. Requires `slug` and no file; " +
+        "Instagram only. A slug gets ONE main-feed post — booking a second, or promoting after one went out, is " +
+        "refused with feed_taken."
+    ),
   repost_eligible: z
     .boolean()
     .optional()
@@ -136,6 +145,10 @@ const JOB_SUMMARY = z.object({
     .boolean()
     .optional()
     .describe("This slot runs from the slug's archive rather than its unposted files."),
+  is_promote: z
+    .boolean()
+    .optional()
+    .describe("This slot promotes the slug's best trial reel to the main feed."),
   selection: z
     .string()
     .optional()
@@ -156,7 +169,8 @@ function toRequestBody(spec: PostSpec): Record<string, unknown> {
   // The cockpit infers media_type: REELS from a lone video source, so the only
   // thing worth translating is the trial-reel shorthand.
   const wantsTrial =
-    trial_reel ?? (spec.platform !== "yt" && (!!spec.video_path || (!!spec.slug && !spec.image_path)));
+    !spec.is_promote &&
+    (trial_reel ?? (spec.platform !== "yt" && (!!spec.video_path || (!!spec.slug && !spec.image_path))));
   if (wantsTrial && spec.platform !== "yt") {
     body.trial_params = { graduation_strategy: "MANUAL" };
   }
@@ -178,6 +192,7 @@ function summarize(job: ScheduledPostView, timeZone: string) {
     video: typeof job.payload.video === "string" ? job.payload.video : undefined,
     slug: job.slug,
     is_repost: job.is_repost,
+    is_promote: job.is_promote,
     // Only a slug job still waiting on its pool has no files of its own.
     selection: job.media.length ? undefined : job.selection_effective,
     files: job.media_files.map((m) => m.filename),

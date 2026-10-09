@@ -15,7 +15,8 @@ import {
   type AutomationSpec,
   type AutomationPlan,
 } from "@/lib/automation/attach";
-import { enrolVideo, normalizeSlug, recordPost } from "@/lib/slugs/store";
+import { enrolVideo, feedPostOf, normalizeSlug, recordPost } from "@/lib/slugs/store";
+import { feedJobFor } from "@/lib/schedule/store";
 import { reportError } from "@/lib/observability";
 
 export const dynamic = "force-dynamic";
@@ -99,6 +100,17 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+  // A slug is one video's hooks, and only one of them reaches the main feed.
+  if (slug && video_path && !input.trial_params && (feedPostOf(slug) || feedJobFor(slug))) {
+    return NextResponse.json(
+      {
+        error: "feed_taken",
+        message: `#${slug} already has its main-feed post, or one booked. Post this as a trial reel instead.`,
+      },
+      { status: 409 }
+    );
+  }
+
   // One slug, two facets: an automation block naming no key of its own inherits
   // the slug, so the pool a video joins and the flow it fires are one string.
   const spec = automation && slug && !automation.key?.trim() ? { ...automation, key: slug } : automation;
@@ -166,7 +178,7 @@ export async function POST(request: NextRequest) {
       plan,
     });
     if (slug && video_path && result.published && result.media_id) {
-      await enrolPublished(slug, video_path, input.caption, result.media_id);
+      await enrolPublished(slug, video_path, input.caption, result.media_id, !!input.trial_params);
     }
     return NextResponse.json(attach ? { ...result, automation: attach } : result, { status });
   } catch (err) {
@@ -186,11 +198,12 @@ async function enrolPublished(
   slug: string,
   videoPath: string,
   caption: string | undefined,
-  mediaId: string
+  mediaId: string,
+  trial: boolean
 ): Promise<void> {
   try {
     const video = await enrolVideo({ slug, path: videoPath, payload: { ig: { caption } } });
-    recordPost(video.id, "ig", mediaId);
+    recordPost(video.id, "ig", mediaId, undefined, trial);
   } catch (err) {
     reportError("slugs", "enrol_failed", "could not add a published video to its slug pool", {
       error: err,

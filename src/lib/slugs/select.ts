@@ -19,7 +19,7 @@
 import { reservedSlugVideoIds } from "@/lib/schedule/store";
 import { scoreCandidates, type CandidateMetrics } from "./metrics";
 import { basename } from "path";
-import { filenameOf, isMissing, listVideos, postedTo } from "./store";
+import { filenameOf, isMissing, listVideos, postedTo, postedToFeed } from "./store";
 import { describeRepost, rankCandidates, repostCandidates } from "@/lib/repost/candidates";
 import type { SchedulePlatform } from "@/lib/schedule/types";
 import {
@@ -73,6 +73,11 @@ export interface SelectOptions {
    * given slot repeats something is a property of that booking.
    */
   repost?: boolean;
+  /**
+   * This slot promotes the slug's best trial reel to the main feed. Inverts the
+   * Instagram rule: only a candidate that has run as a trial is considered.
+   */
+  promote?: boolean;
 }
 
 /**
@@ -89,6 +94,7 @@ export async function selectVideo(
   // and inverts the "already posted here" rule that governs every method below.
   // Branch before touching `slug_videos`.
   if (opts.repost) return selectRepost(opts);
+  if (opts.promote) return selectPromotion(opts);
 
   const pool = listVideos(opts.slug);
   if (!pool.length) {
@@ -123,6 +129,56 @@ export async function selectVideo(
     return {
       error: `Every remaining video in "${opts.slug}" is already being published by another slot.`,
       exhausted: true,
+    };
+  }
+
+  const scores = await scoreCandidates(eligible, { needsMetrics: needsMetrics(opts.method) });
+  const views = eligible.map((video) => toView(video, scores.get(video.id)));
+  const chosen = rank(views, opts.method);
+
+  return {
+    video: chosen,
+    method: opts.method,
+    reason: describe(chosen, opts.method, views.length),
+    considered: views.length,
+  };
+}
+
+/**
+ * Resolve a promote slot to the trial reel that earned a place on the feed.
+ *
+ * A slug is one video's hooks, and only one of them reaches followers: a slug
+ * that already has a feed post has nothing left to promote. Otherwise the
+ * candidates are the hooks that have run on Instagram (a post of unknown kind
+ * counts as a trial — this account's hooks only ever went out as trials), on
+ * disk, and not mid-publish, ranked by the slot's method.
+ */
+async function selectPromotion(
+  opts: SelectOptions
+): Promise<SlugSelection | SlugSelectionFailure> {
+  const pool = listVideos(opts.slug);
+  const onFeed = pool.find(postedToFeed);
+  if (onFeed) {
+    return {
+      error: `#${opts.slug} already has its feed post (${onFeed.label ?? filenameOf(onFeed)}) — one per slug.`,
+      exhausted: true,
+    };
+  }
+
+  const trialled = pool.filter((video) => postedTo(video, "ig"));
+  if (!trialled.length) {
+    return {
+      error: `Nothing in #${opts.slug} has run as a trial reel yet, so there is nothing to promote.`,
+      exhausted: false,
+    };
+  }
+
+  const reserved = reservedSlugVideoIds(opts.slug, "ig");
+  const eligible = trialled.filter((video) => !isMissing(video) && !reserved.has(video.id));
+  if (!eligible.length) {
+    return {
+      error: `Every trial reel in #${opts.slug} is missing from disk or being published right now.`,
+      exhausted: false,
     };
   }
 

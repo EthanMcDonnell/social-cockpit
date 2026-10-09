@@ -72,6 +72,11 @@ export interface SlugVideoPost {
   external_id: string;
   job_id?: string;
   posted_at: string;
+  /**
+   * Instagram only: true for a trial reel, false for a main-feed post,
+   * undefined when unknown (recorded before this was tracked, or linked by hand).
+   */
+  trial?: boolean;
 }
 
 export interface SlugVideo {

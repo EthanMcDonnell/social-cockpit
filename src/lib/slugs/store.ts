@@ -313,6 +313,7 @@ function postsFor(ids: string[]): Map<string, SlugVideoPost[]> {
       external_id: string;
       job_id: string | null;
       posted_at: string;
+      trial: number | null;
     }[];
 
   for (const row of rows) {
@@ -322,6 +323,7 @@ function postsFor(ids: string[]): Map<string, SlugVideoPost[]> {
       external_id: row.external_id,
       job_id: row.job_id ?? undefined,
       posted_at: row.posted_at,
+      trial: row.trial == null ? undefined : row.trial === 1,
     });
     out.set(row.video_id, list);
   }
@@ -502,7 +504,9 @@ export function recordPost(
   videoId: string,
   platform: SchedulePlatform,
   externalId: string,
-  jobId?: string
+  jobId?: string,
+  /** Instagram: whether it went out as a trial reel. Leave unset when unknown. */
+  trial?: boolean
 ): boolean {
   const db = getDb();
   const write = db.transaction(() => {
@@ -513,10 +517,16 @@ export function recordPost(
     if (!exists) return false;
 
     db.prepare(
-      `INSERT INTO slug_video_posts (video_id, platform, external_id, job_id)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO slug_video_posts (video_id, platform, external_id, job_id, trial)
+       VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(video_id, platform, external_id) DO NOTHING`
-    ).run(videoId, platform, externalId, jobId ?? null);
+    ).run(
+      videoId,
+      platform,
+      externalId,
+      jobId ?? null,
+      platform === "ig" && trial !== undefined ? (trial ? 1 : 0) : null
+    );
     return true;
   });
   return write.immediate();
@@ -553,6 +563,19 @@ export function postIsLinked(externalId: string, platform: SchedulePlatform): bo
 /** Has this candidate already gone out on this platform? */
 export function postedTo(video: SlugVideo, platform: SchedulePlatform): boolean {
   return video.posts.some((post) => post.platform === platform);
+}
+
+/** Has this candidate gone out on the Instagram main feed, not just as a trial? */
+export function postedToFeed(video: SlugVideo): boolean {
+  return video.posts.some((post) => post.platform === "ig" && post.trial === false);
+}
+
+/**
+ * The slug's one main-feed post, if it has had it. A slug is one video's hooks,
+ * and only one of them may reach followers — the rest stay trial reels.
+ */
+export function feedPostOf(slug: string): SlugVideo | undefined {
+  return listVideos(slug).find(postedToFeed);
 }
 
 /**

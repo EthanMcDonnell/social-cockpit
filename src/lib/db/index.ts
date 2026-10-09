@@ -358,6 +358,20 @@ export function getDb(): Database.Database {
     // and this flag says which of that topic's two pools it draws on. NULL is
     // an ordinary job, so nothing already booked changes meaning.
     "ALTER TABLE scheduled_posts ADD COLUMN is_repost INTEGER",
+    // Whether an Instagram post went out as a trial reel (1) or to the main
+    // feed (0). NULL is a post recorded before this column, or linked by hand —
+    // unknown, and read as "not known to be on the feed".
+    "ALTER TABLE slug_video_posts ADD COLUMN trial INTEGER",
+    // Backfill what the scheduler can still prove: its own jobs kept the
+    // payload, and a payload either carried trial_params or it did not.
+    `UPDATE slug_video_posts
+        SET trial = (SELECT CASE WHEN json_extract(sp.payload, '$.trial_params') IS NULL
+                                 THEN 0 ELSE 1 END
+                       FROM scheduled_posts sp WHERE sp.id = slug_video_posts.job_id)
+      WHERE trial IS NULL AND platform = 'ig' AND job_id IS NOT NULL`,
+    // This slot promotes the slug's best trial reel to the main feed. NULL is
+    // an ordinary job.
+    "ALTER TABLE scheduled_posts ADD COLUMN is_promote INTEGER",
   ]) {
     try { _db.exec(sql); } catch { /* already exists */ }
   }

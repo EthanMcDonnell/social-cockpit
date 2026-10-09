@@ -50,6 +50,8 @@ export interface ScheduledPostView {
   slug?: string;
   /** Runs from the slug's archive of published videos rather than its unposted files. */
   is_repost?: boolean;
+  /** Promotes the slug's best trial reel to the main feed. */
+  is_promote?: boolean;
   /** The method that will actually run, after the job → slug → default fallback. */
   selection_effective?: string;
   /** Empty on a slug job until the worker resolves its pool at fire time. */

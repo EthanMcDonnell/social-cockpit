@@ -250,7 +250,8 @@ slugs             (slug PK, name, selection_method, …)     -- the registry
 slug_videos       (id PK, slug, path, label, payload, …)   -- UNIQUE(slug, path)
                   + archive_id                             -- the preserved copy
 slug_video_posts  (video_id, platform, external_id, job_id, posted_at)
-scheduled_posts   + slug, + selection_method
+                  + trial                                  -- ig: 1 trial reel, 0 main feed, NULL unknown
+scheduled_posts   + slug, + selection_method, + is_promote
 ```
 
 On an existing install the additive list adopts what came before: rows from the
@@ -275,3 +276,33 @@ archive of published videos rather than from `slug_videos`. It is off by default
 on every slug — which is how time-dependent content is kept out of it.
 
 See [docs/reposting.md](reposting.md).
+
+## 8. Promoting a trial reel to the feed
+
+A slug is one video's hooks. Each hook runs as a trial reel, which only
+non-followers see; afterwards **one** of them, the one that earned it, goes to
+the main feed.
+
+The ledger tells the two apart: every Instagram row in `slug_video_posts` records
+whether it was a trial (`trial`). A post recorded before that column existed is
+backfilled from its scheduler job's payload on startup. A row with no job behind
+it stays `NULL` and is treated as a trial.
+
+Book a slot with `is_promote` and a slug, but no file:
+
+```jsonc
+{ "slug": "figma-outages", "is_promote": true, "selection_method": "most_views", "scheduled_at": "..." }
+```
+
+When it fires, it considers only hooks that have run on Instagram, ranks them by
+the method, and publishes the winner **without** `trial_params`, so followers see
+it. Ordinary slots are unchanged, because they still treat a trial as "posted to
+Instagram" and keep draining the untried hooks.
+
+**One feed post per slug.** Any Instagram booking on a slug that would reach the
+feed (a promotion, or a file booked without `trial_params`) is refused with
+`409 feed_taken` once the slug has a feed post, or has one booked.
+`POST /api/publish/local` applies the same check. A promotion that fires after a
+feed post somehow went out fails terminally with `no_candidate`, so it never
+posts twice.
+

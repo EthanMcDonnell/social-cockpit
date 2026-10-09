@@ -165,6 +165,11 @@ export interface ScheduledPost {
    * topic, which then owned the calendar slot and published under its own name.
    */
   is_repost?: boolean;
+  /**
+   * Promote the slug's most successful trial reel to the main feed: picks among
+   * hooks that have run only as trials, and publishes without trial_params.
+   */
+  is_promote?: boolean;
   /** Overrides the slug's own method and the global default. */
   selection_method?: SelectionMethod;
   attempts: number;
