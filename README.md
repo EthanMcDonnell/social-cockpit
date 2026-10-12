@@ -102,6 +102,8 @@ Social Cockpit uses the **[Instagram API with Instagram Login](https://developer
 
 **→ Full walkthrough: [docs/instagram-setup.md](docs/instagram-setup.md)** covers creating the Meta app, connecting your Instagram account, picking permission scopes, and grabbing your credentials.
 
+**Optional: look up other creators.** Instagram Login only sees your own account. To read other public Business/Creator accounts' posts and view counts, add the Facebook Login setup to the same Meta app and link your Instagram account to a Facebook Page. See [Looking up other accounts](docs/instagram-setup.md#optional-looking-up-other-accounts).
+
 > [!WARNING]
 > This project is **not affiliated with, endorsed by, or sponsored by Meta or Instagram**. You are responsible for complying with the [Meta Platform Terms](https://developers.facebook.com/terms/) and Instagram's policies when using your own app and tokens.
 
@@ -208,6 +210,10 @@ R2_BUCKET=social-cockpit-media
 # SCHEDULE_MEDIA_CAP_BYTES=            # local-disk ceiling for staged media (default 20 GB)
 # SCHEDULE_API_TOKEN=                  # require a bearer token on /api/schedule*
 # YOUTUBE_AUDIT_PASSED=false           # post-audit: let YouTube hold the schedule itself
+
+# ── Looking up other accounts (see docs/instagram-setup.md) ───────────
+# FACEBOOK_ACCESS_TOKEN=               # Facebook Login user token; ~60 days, not auto-refreshed
+# FACEBOOK_INSTAGRAM_ACCOUNT_ID=       # your Instagram id as that token sees it
 ```
 
 > All application data (cache, transcripts, tokens, automation state) is stored locally in the git-ignored `data/` directory. Nothing leaves your machine except direct calls to the Instagram API.

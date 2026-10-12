@@ -1,8 +1,8 @@
 # social-cockpit MCP server
 
-Exposes the scheduling API (`docs/scheduling.md`) to MCP clients, plus one
-read-only analytics tool for grounding scheduling decisions in what actually
-performed.
+Exposes the scheduling API (`docs/scheduling.md`) to MCP clients, plus
+read-only analytics: what your own posts did, and what other public creators'
+posts did.
 
 Built on **`@modelcontextprotocol/server` v2** — the stable v2 line implementing
 the [2026-07-28 spec](https://modelcontextprotocol.io/specification/2026-07-28).
@@ -81,6 +81,7 @@ Tools then appear as `mcp__social-cockpit__<tool>`.
 | `cancel_scheduled_post` | Cancel and clean up staged media. Destructive. |
 | `run_scheduled_post_now` | Publish immediately, ignoring the clock. Destructive; blocks for minutes. |
 | `list_top_posts` | Published posts ranked by views/reach/likes/etc., with account totals. Read-only. |
+| `list_account_posts` | Another public Business/Creator account's recent posts ranked by views/likes/comments/engagement, with full captions. For researching video ideas. Read-only; live Graph call. Needs the cockpit's `FACEBOOK_*` settings ([setup](../docs/instagram-setup.md#optional-looking-up-other-accounts)). |
 
 Resource `schedule://settings` carries the timezone and whether the worker is
 enabled or in dry run.

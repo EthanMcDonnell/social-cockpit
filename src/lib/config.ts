@@ -190,11 +190,25 @@ const youtubeOAuth = group("YouTube OAuth", {
   clientSecret: "YOUTUBE_OAUTH_CLIENT_SECRET",
 });
 
+// Business Discovery (reading other public accounts) exists only in the Facebook
+// Login flavour of the API, so it needs a Facebook user token and the Instagram
+// id that token sees — neither of which the Instagram Login token above can
+// stand in for. See docs/instagram-setup.md.
+const facebook = group("Business Discovery", {
+  accessToken: "FACEBOOK_ACCESS_TOKEN",
+  instagramAccountId: "FACEBOOK_INSTAGRAM_ACCOUNT_ID",
+});
+
 export const config = {
   instagram: {
     accountId: instagramAccountId,
     /** Only needed to exchange a short-lived token for a long-lived one. */
     appSecret: optional("INSTAGRAM_APP_SECRET"),
+  },
+
+  facebook: {
+    configured: facebook.configured,
+    ...facebook.values,
   },
 
   r2: {

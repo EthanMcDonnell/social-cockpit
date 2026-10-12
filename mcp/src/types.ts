@@ -224,3 +224,26 @@ export interface SlugDetailResponse {
   /** Why the pool could not produce a candidate, when it could not. */
   blocked: { error: string; exhausted: boolean } | null;
 }
+
+/** GET /api/instagram/discovery — mirror of `src/lib/instagram/endpoints/discovery.ts`. */
+export interface DiscoveredPost {
+  id: string;
+  caption?: string;
+  media_type: string;
+  media_product_type?: string;
+  timestamp: string;
+  permalink?: string;
+  media_url?: string;
+  view_count?: number;
+  like_count?: number;
+  comments_count?: number;
+}
+
+export interface DiscoveredAccount {
+  username: string;
+  name?: string;
+  biography?: string;
+  followers_count?: number;
+  media_count?: number;
+  posts: DiscoveredPost[];
+}

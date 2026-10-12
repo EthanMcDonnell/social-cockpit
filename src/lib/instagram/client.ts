@@ -30,6 +30,8 @@ export interface FetchOptions {
   body?: unknown;
   /** Skip rate limit check for this request */
   skipRateLimitCheck?: boolean;
+  /** Sign with this token instead of the Instagram Login one (graph.facebook.com calls). */
+  accessToken?: string;
 }
 
 function buildUrl(path: string, params?: FetchOptions["params"]): string {
@@ -121,7 +123,7 @@ export async function instagramFetch<T>(
 async function attemptFetch<T>(path: string, options: FetchOptions): Promise<T> {
   const { method = "GET", params, body, skipRateLimitCheck = false } = options;
 
-  const token = getAccessToken();
+  const token = options.accessToken ?? getAccessToken();
   const url = buildUrl(path, params);
 
   const controller = new AbortController();
